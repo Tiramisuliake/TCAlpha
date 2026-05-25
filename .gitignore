@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.venv/
+venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+.vite/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Data (本地数据/缓存，不入库)
+data/
+arctic/
+*.db
+*.sqlite
+*.sqlite3
+
+# Alembic 自动生成的版本以外的临时
+backend/alembic/__pycache__/
+
+# 前端构建
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# Docker
+.docker-data/
+
+# OS
+Thumbs.db

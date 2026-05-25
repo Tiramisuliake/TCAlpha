@@ -1,0 +1,37 @@
+# 开发环境：只起依赖服务（PG + Redis），app 在宿主机用 uv/pnpm 跑
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tcalpha-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tcalpha
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: tcalpha
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tcalpha -d tcalpha"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tcalpha-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

@@ -12,11 +12,11 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.postgres import async_session_factory
+import app.db.postgres as _pg
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    async with async_session_factory() as session:
+    async with _pg.async_session_factory() as session:
         yield session
 
 

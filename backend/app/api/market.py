@@ -8,11 +8,19 @@ from app.deps import get_db
 from app.schemas.market import (
     DownloadTriggerResponse,
     KlineResponse,
+    RefreshTriggerResponse,
     SymbolListResponse,
 )
 from app.services import market as market_svc
 
 router = APIRouter()
+
+
+@router.post("/symbols/refresh", response_model=RefreshTriggerResponse)
+async def refresh_symbols():
+    """触发 Celery 刷新全市场股票列表（异步，立即返回 task_id）。"""
+    task_id = market_svc.trigger_refresh_symbols()
+    return RefreshTriggerResponse(task_id=task_id)
 
 
 @router.get("/symbols", response_model=SymbolListResponse)

@@ -45,3 +45,8 @@ class DownloadTriggerResponse(BaseModel):
     symbol: str
     task_id: str
     message: str = Field(default="download task submitted")
+
+
+class RefreshTriggerResponse(BaseModel):
+    task_id: str
+    message: str = Field(default="refresh task submitted")

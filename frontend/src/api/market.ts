@@ -1,17 +1,21 @@
 import { api } from "./client";
+import type { KlineResponse, SymbolListResponse } from "@/types";
 
-export interface Bar {
-  symbol: string;
-  dt: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  amount?: number;
+export interface SymbolsParams {
+  search?: string;
+  exchange?: string;
+  limit?: number;
+  offset?: number;
 }
 
-export async function getKline(symbol: string, period = "1d", limit = 200) {
-  const r = await api.get("/market/kline", { params: { symbol, period, limit } });
-  return r.data as { symbol: string; period: string; data: Bar[] };
-}
+export const getSymbols = (params: SymbolsParams = {}) =>
+  api.get<SymbolListResponse>("/market/symbols", { params }).then((r) => r.data);
+
+export const getKline = (symbol: string, period = "1d", limit = 300) =>
+  api.get<KlineResponse>(`/market/kline/${symbol}`, { params: { period, limit } }).then((r) => r.data);
+
+export const triggerDownload = (symbol: string, period = "1d") =>
+  api.post(`/market/kline/${symbol}/download`, null, { params: { period } }).then((r) => r.data);
+
+export const refreshSymbols = () =>
+  api.post<{ task_id: string; message: string }>("/market/symbols/refresh").then((r) => r.data);

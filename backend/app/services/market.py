@@ -74,6 +74,14 @@ def get_kline(symbol: str, period: str = "1d", limit: int = 200) -> KlineRespons
         return KlineResponse(symbol=sym_key, period=period, bars=[], total=0)
 
 
+def trigger_refresh_symbols() -> str:
+    """触发 Celery 刷新全市场股票列表，返回 task_id。"""
+    from app.tasks.data_tasks import refresh_symbol_list
+
+    result = refresh_symbol_list.delay()
+    return result.id
+
+
 def trigger_download(symbol: str, period: str = "1d") -> str:
     """触发 Celery 下载任务，返回 task_id。"""
     from app.tasks.data_tasks import download_one_symbol

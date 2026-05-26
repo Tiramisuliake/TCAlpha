@@ -1,0 +1,6 @@
+{
+  "name": ".claude-tooling",
+  "private": true,
+  "description": "TCAlpha Claude Code 项目配置（hooks 用 commonjs）",
+  "type": "commonjs"
+}

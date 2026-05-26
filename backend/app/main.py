@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+from app import __version__
 from app.api import ai, backtest, data, health, market, sim, strategy, ws
 from app.config import settings
 from app.db.postgres import dispose_engine, init_engine
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TCAlpha API",
-    version="0.1.0",
+    version=__version__,
     description="A 股量化分析、回测与模拟交易后端",
     lifespan=lifespan,
 )
@@ -49,4 +50,10 @@ app.include_router(ws.router, tags=["ws"])
 
 @app.get("/")
 def root():
-    return {"name": "TCAlpha API", "version": "0.1.0", "docs": "/docs"}
+    return {"name": "TCAlpha API", "version": __version__, "docs": "/docs"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -51,93 +51,107 @@ class StrategyRuntime:
         # 标记运行中
         r.set(running_key(self.strategy_id), celery_task_id, ex=86400)
 
-        # 2. 实例化策略
-        cls = get_strategy_class(class_name)
-        strategy = cls(symbol, params)
-        strategy.state.pos = 0
-
-        gw = SimGateway(user_id=user_id, strategy_id=self.strategy_id)
-
-        # 3. 热身：从 ArcticDB 加载历史 bars
-        from datetime import timedelta
-        end = datetime.now(tz=timezone.utc)
-        start = end - timedelta(days=365)
-        bars = _load_bars(symbol, str(start.date()), str(end.date()))
-        warmup_bars = bars[-_WARMUP_BARS:] if len(bars) >= _WARMUP_BARS else bars
-
-        for bar in warmup_bars:
-            strategy.on_bar(bar)
-            strategy._pending_signal = None  # 热身期不下单
-
-        logger.info(
-            "StrategyRuntime: strategy={} symbol={} warmed up with {} bars",
-            self.strategy_id, symbol, len(warmup_bars),
-        )
-
-        # 4. 主循环 — 用最新日 K 驱动（Phase 4 简化版；Phase 5 接 AKShare 实时分钟 K）
+        final_status = "stopped"
         tick_count = 0
-        last_bar_dt = bars[-1].datetime if bars else None
 
-        while True:
-            # 检查停止标志
-            if r.exists(stop_key(self.strategy_id)):
-                logger.info("StrategyRuntime: stop signal received for strategy={}", self.strategy_id)
-                r.delete(stop_key(self.strategy_id))
-                break
+        try:
+            # 2. 实例化策略
+            cls = get_strategy_class(class_name)
+            strategy = cls(symbol, params)
+            strategy.state.pos = 0
 
-            # 拉取最新 bar（每轮拉一次，判断是否有新 K 线）
-            fresh_bars = _load_bars(symbol, str(start.date()), str(end.date()))
-            if fresh_bars and (last_bar_dt is None or fresh_bars[-1].datetime > last_bar_dt):
-                new_bars = [b for b in fresh_bars if last_bar_dt is None or b.datetime > last_bar_dt]
-                for bar in new_bars:
-                    # 撮合上一轮挂单
-                    gw.match(bar)
-                    strategy.state.pos = gw.get_position(symbol)
+            gw = SimGateway(user_id=user_id, strategy_id=self.strategy_id)
 
-                    # 策略计算
-                    strategy.on_bar(bar)
+            # 3. 热身：从 ArcticDB 加载历史 bars
+            from datetime import timedelta
+            end = datetime.now(tz=timezone.utc)
+            start = end - timedelta(days=365)
+            bars = _load_bars(symbol, str(start.date()), str(end.date()))
+            warmup_bars = bars[-_WARMUP_BARS:] if len(bars) >= _WARMUP_BARS else bars
 
-                    # 处理信号
-                    sig = getattr(strategy, "_pending_signal", None)
-                    if sig:
-                        direction, offset, volume = sig
-                        order_id = gw.send_order(symbol, direction, offset, bar.close_price, volume)
-                        strategy._pending_signal = None
-                        logger.info(
-                            "StrategyRuntime: signal {} {} vol={} → order={}",
-                            direction, offset, volume, order_id,
+            for bar in warmup_bars:
+                strategy.on_bar(bar)
+                strategy._pending_signal = None  # 热身期不下单
+
+            logger.info(
+                "StrategyRuntime: strategy={} symbol={} warmed up with {} bars",
+                self.strategy_id, symbol, len(warmup_bars),
+            )
+
+            # 4. 主循环 — 用最新日 K 驱动（Phase 4 简化版；Phase 5 接 AKShare 实时分钟 K）
+            last_bar_dt = bars[-1].datetime if bars else None
+
+            while True:
+                # 检查停止标志
+                if r.exists(stop_key(self.strategy_id)):
+                    logger.info("StrategyRuntime: stop signal received for strategy={}", self.strategy_id)
+                    r.delete(stop_key(self.strategy_id))
+                    break
+
+                # 拉取最新 bar（每轮拉一次，判断是否有新 K 线）
+                fresh_bars = _load_bars(symbol, str(start.date()), str(end.date()))
+                if fresh_bars and (last_bar_dt is None or fresh_bars[-1].datetime > last_bar_dt):
+                    new_bars = [b for b in fresh_bars if last_bar_dt is None or b.datetime > last_bar_dt]
+                    for bar in new_bars:
+                        # 撮合上一轮挂单
+                        gw.match(bar)
+                        strategy.state.pos = gw.get_position(symbol)
+
+                        # 策略计算
+                        strategy.on_bar(bar)
+
+                        # 处理信号
+                        sig = getattr(strategy, "_pending_signal", None)
+                        if sig:
+                            direction, offset, volume = sig
+                            order_id = gw.send_order(symbol, direction, offset, bar.close_price, volume)
+                            strategy._pending_signal = None
+                            logger.info(
+                                "StrategyRuntime: signal {} {} vol={} → order={}",
+                                direction, offset, volume, order_id,
+                            )
+
+                        # 发布信号状态到 Redis
+                        publish_signal(
+                            self.strategy_id,
+                            {
+                                "strategy_id": self.strategy_id,
+                                "symbol": symbol,
+                                "bar_dt": str(bar.datetime.date()),
+                                "direction": strategy.vars.direction,
+                                "strength": strategy.vars.strength,
+                                "tip": strategy.vars.tip,
+                                "pos": strategy.state.pos,
+                                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                            },
                         )
+                        last_bar_dt = bar.datetime
+                        tick_count += 1
 
-                    # 发布信号状态到 Redis
-                    publish_signal(
-                        self.strategy_id,
-                        {
-                            "strategy_id": self.strategy_id,
-                            "symbol": symbol,
-                            "bar_dt": str(bar.datetime.date()),
-                            "direction": strategy.vars.direction,
-                            "strength": strategy.vars.strength,
-                            "tip": strategy.vars.tip,
-                            "pos": strategy.state.pos,
-                            "ts": datetime.now(tz=timezone.utc).isoformat(),
-                        },
-                    )
-                    last_bar_dt = bar.datetime
-                    tick_count += 1
+                # 更新 running_key TTL 心跳
+                r.expire(running_key(self.strategy_id), 86400)
 
-            # 更新 running_key TTL 心跳
-            r.expire(running_key(self.strategy_id), 86400)
+                time.sleep(_POLL_INTERVAL)
+        except Exception:
+            # 任何异常都翻译成 status=error，并继续向上抛让 Celery 标记 FAILURE
+            final_status = "error"
+            logger.exception(
+                "StrategyRuntime crashed for strategy={}",
+                self.strategy_id,
+            )
+            raise
+        finally:
+            # 无论正常退出还是异常退出，都清理 Redis 状态键并同步 DB
+            r.delete(running_key(self.strategy_id))
+            r.delete(stop_key(self.strategy_id))
+            with SyncSessionLocal() as db:
+                cfg = db.get(StrategyConfig, self.strategy_id)
+                if cfg:
+                    cfg.status = final_status
+                    db.commit()
+            logger.info(
+                "StrategyRuntime cleanup done: strategy={} status={} ticks={}",
+                self.strategy_id, final_status, tick_count,
+            )
 
-            time.sleep(_POLL_INTERVAL)
-
-        # 清理
-        r.delete(running_key(self.strategy_id))
-
-        # 更新 DB 状态
-        with SyncSessionLocal() as db:
-            cfg = db.get(StrategyConfig, self.strategy_id)
-            if cfg:
-                cfg.status = "stopped"
-                db.commit()
-
-        return {"strategy_id": self.strategy_id, "ticks": tick_count, "status": "stopped"}
+        return {"strategy_id": self.strategy_id, "ticks": tick_count, "status": final_status}

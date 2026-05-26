@@ -19,6 +19,10 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
+  restrictToHorizontalAxis,
+  restrictToParentElement,
+} from "@dnd-kit/modifiers";
+import {
   SortableContext,
   horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
@@ -144,6 +148,7 @@ export function WorkspaceTabs({ className }: WorkspaceTabsProps) {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
+        modifiers={[restrictToHorizontalAxis, restrictToParentElement]}
         onDragEnd={onDragEnd}
       >
         <SortableContext

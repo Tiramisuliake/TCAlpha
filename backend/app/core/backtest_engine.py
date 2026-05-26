@@ -99,8 +99,11 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
         return []
 
     df = lib.read(sym_key).data
-    # 按日期过滤
-    df = df[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end))]
+    # 按日期过滤（兼容 tz-aware 与 tz-naive index）
+    tz = df.index.tz
+    start_ts = pd.Timestamp(start, tz=tz) if tz is not None else pd.Timestamp(start)
+    end_ts = pd.Timestamp(end, tz=tz) if tz is not None else pd.Timestamp(end)
+    df = df[(df.index >= start_ts) & (df.index <= end_ts)]
     if df.empty:
         return []
 

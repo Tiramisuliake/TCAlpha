@@ -1,4 +1,4 @@
-"""策略管理路由（Phase 3）。"""
+"""策略管理路由（Phase 3+4）。"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import DB, CurrentUserId
 from app.schemas.strategy import StrategyCreate, StrategyOut
+from app.services import sim as sim_svc
 from app.services import strategy as strategy_svc
 
 router = APIRouter()
@@ -56,3 +57,35 @@ async def delete_strategy(
     ok = await strategy_svc.delete_strategy(db, strategy_id, user_id)
     if not ok:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "strategy not found")
+
+
+@router.post("/{strategy_id}/start")
+async def start_strategy(
+    strategy_id: int,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """启动策略 Celery worker（长跑任务）。"""
+    result = await sim_svc.start_strategy(db, strategy_id, user_id)
+    if "error" in result:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, result["error"])
+    return result
+
+
+@router.post("/{strategy_id}/stop")
+async def stop_strategy(
+    strategy_id: int,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """设置 Redis stop 标志，通知策略 worker 退出。"""
+    result = await sim_svc.stop_strategy(db, strategy_id, user_id)
+    if "error" in result:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, result["error"])
+    return result
+
+
+@router.get("/{strategy_id}/running")
+async def strategy_running(strategy_id: int, _: int = CurrentUserId):
+    """查询策略是否在运行（检查 Redis running key）。"""
+    return {"strategy_id": strategy_id, "running": sim_svc.get_strategy_running_status(strategy_id)}

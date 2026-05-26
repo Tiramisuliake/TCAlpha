@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.api import ai, backtest, data, health, market, strategy, ws
+from app.api import ai, backtest, data, health, market, sim, strategy, ws
 from app.config import settings
 from app.db.postgres import dispose_engine, init_engine
 
@@ -43,6 +43,7 @@ app.include_router(strategy.router, prefix="/api/strategy", tags=["strategy"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
 app.include_router(data.router, prefix="/api/data", tags=["data"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(sim.router, prefix="/api/sim", tags=["sim"])
 app.include_router(ws.router, tags=["ws"])
 
 

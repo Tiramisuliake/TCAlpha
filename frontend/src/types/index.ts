@@ -100,6 +100,33 @@ export interface BacktestStatus {
   error: string | null;
 }
 
+// ── Sim Trading ───────────────────────────────────────────
+
+export interface SimOrder {
+  id: number;
+  strategy_id: number | null;
+  symbol: string;
+  direction: string;
+  offset: string;
+  price: number;
+  volume: number;
+  filled_volume: number;
+  status: "submitted" | "partial" | "filled" | "cancelled" | "rejected";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategySignal {
+  strategy_id: number;
+  symbol: string;
+  bar_dt: string;
+  direction: number;
+  strength: number;
+  tip: string;
+  pos: number;
+  ts: string;
+}
+
 export interface BacktestTrade {
   id: number;
   job_id: number;

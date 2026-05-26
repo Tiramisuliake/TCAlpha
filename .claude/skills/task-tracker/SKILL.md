@@ -12,11 +12,21 @@ description: 多步骤开发任务跟踪 / 进度管理 / 恢复上下文。触�
 - 用户说"我想做 X"，X 是 epic 级
 - 上下文中断后恢复工作
 
+## 任务状态定义
+
+| 状态 | 说明 | 触发条件 |
+|------|------|---------|
+| `pending` | 待处理 | 任务创建时 |
+| `in_progress` | 进行中 | 开始实现前立即标记 |
+| `testing` | 测试中 | 代码完成、开始验证 |
+| `completed` | 已完成 | 测试通过、功能上线 |
+| `cancelled` | 已取消 | 用户改变方向、任务废弃 |
+
 ## 工作流
 
 1. **拆分**：把目标拆成 N 个不超过 1 小时可完成的任务
 2. **TaskCreate**：每个任务一条
-3. **TaskUpdate(in_progress)**：开始前标记
+3. **TaskUpdate(in_progress)**：开始前立即标记
 4. **TaskUpdate(completed)**：完成后立即标记（不要批量）
 5. **结束**：TaskList 看是否还有 pending
 
@@ -51,8 +61,17 @@ description: 多步骤开发任务跟踪 / 进度管理 / 恢复上下文。触�
 - [ ] tasks/celery_app.py include 列表加入新模块
 - [ ] 若定时 → beat_schedule 加 cron
 
+## 上下文恢复流程
+
+当新会话开始或用户说"继续上一个任务"时：
+
+1. `TaskList` — 看所有 `in_progress` 任务
+2. `TaskOutput <id>` — 读上次的进度输出
+3. 从最后一个 `in_progress` 任务接着做
+4. 如果任务已实际完成但状态未更新，先 `TaskUpdate(completed)` 再继续
+
 ## 何时清理任务列表
 
 - 一个完整功能交付后归档（不删，标 completed）
-- 用户改方向时把废弃任务标 deleted
+- 用户改方向时把废弃任务标 cancelled
 - 上下文恢复时先 TaskList 看 in_progress 任务

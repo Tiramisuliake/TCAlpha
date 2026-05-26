@@ -2,6 +2,7 @@ import { useEffect, type CSSProperties, type MouseEvent, type ReactNode } from "
 import { useLocation, useNavigate } from "react-router";
 import {
   AppstoreOutlined,
+  BellOutlined,
   CloseOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
@@ -44,6 +45,7 @@ const ICONS: Record<WorkspaceRouteKey, ReactNode> = {
   backtest: <ExperimentOutlined />,
   data: <DatabaseOutlined />,
   ai: <RobotOutlined />,
+  notify: <BellOutlined />,
 };
 
 interface TabItemProps {

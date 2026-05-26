@@ -32,12 +32,32 @@ body {
   letter-spacing: 0.02em;
 }
 
-.ant-menu-light.ant-menu-inline .ant-menu-item {
+.ant-menu-inline .ant-menu-item {
   margin-block: 4px;
 }
 
-.ant-menu-light.ant-menu-inline .ant-menu-item-selected {
+.ant-menu-inline .ant-menu-item-selected {
   font-weight: 500;
+}
+
+.ant-menu-dark.ant-menu-inline .ant-menu-item-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: #60a5fa;
+}
+
+.ant-card {
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+}
+
+.ant-card .ant-card-head {
+  border-bottom-color: #e2e8f0;
 }
 
 .ant-card.flex-1 {

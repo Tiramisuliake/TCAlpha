@@ -26,7 +26,7 @@ const tcAlphaTheme = {
       headerBg: "transparent",
       headerHeight: 60,
       headerPadding: "0 24px",
-      siderBg: "#ffffff",
+      siderBg: "#0f172a",
       bodyBg: "#f6f8fb",
     },
     Menu: {
@@ -38,6 +38,14 @@ const tcAlphaTheme = {
       itemSelectedColor: "#1677ff",
       itemHoverBg: "#f1f5f9",
       iconSize: 16,
+      darkItemBg: "transparent",
+      darkSubMenuItemBg: "transparent",
+      darkItemColor: "#cbd5e1",
+      darkItemHoverBg: "#1e293b",
+      darkItemHoverColor: "#f8fafc",
+      darkItemSelectedBg: "rgba(59, 130, 246, 0.18)",
+      darkItemSelectedColor: "#60a5fa",
+      darkPopupBg: "#0f172a",
     },
     Card: {
       headerHeight: 52,

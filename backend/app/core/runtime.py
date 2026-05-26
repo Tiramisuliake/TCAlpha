@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from loguru import logger
 
 from app.core.backtest_engine import _load_bars, get_strategy_class
+from app.core.event_bus import publish_event
 from app.core.pubsub import publish_signal, running_key, stop_key
 from app.core.pubsub import get_sync_redis
 from app.core.sim_gateway import SimGateway
@@ -50,6 +51,11 @@ class StrategyRuntime:
 
         # 标记运行中
         r.set(running_key(self.strategy_id), celery_task_id, ex=86400)
+        publish_event(
+            "strategy.started",
+            {"strategy_id": self.strategy_id, "symbol": symbol, "class_name": class_name},
+            user_id=user_id,
+        )
 
         final_status = "stopped"
         tick_count = 0
@@ -132,12 +138,24 @@ class StrategyRuntime:
                 r.expire(running_key(self.strategy_id), 86400)
 
                 time.sleep(_POLL_INTERVAL)
-        except Exception:
+        except Exception as exc:
             # 任何异常都翻译成 status=error，并继续向上抛让 Celery 标记 FAILURE
             final_status = "error"
             logger.exception(
                 "StrategyRuntime crashed for strategy={}",
                 self.strategy_id,
+            )
+            publish_event(
+                "strategy.crashed",
+                {
+                    "strategy_id": self.strategy_id,
+                    "symbol": symbol,
+                    "exception": type(exc).__name__,
+                    "detail": str(exc)[:300],
+                    "ticks": tick_count,
+                },
+                user_id=user_id,
+                level="danger",
             )
             raise
         finally:
@@ -149,6 +167,16 @@ class StrategyRuntime:
                 if cfg:
                     cfg.status = final_status
                     db.commit()
+            if final_status == "stopped":
+                publish_event(
+                    "strategy.stopped",
+                    {
+                        "strategy_id": self.strategy_id,
+                        "symbol": symbol,
+                        "ticks": tick_count,
+                    },
+                    user_id=user_id,
+                )
             logger.info(
                 "StrategyRuntime cleanup done: strategy={} status={} ticks={}",
                 self.strategy_id, final_status, tick_count,

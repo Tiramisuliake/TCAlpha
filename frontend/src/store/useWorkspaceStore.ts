@@ -7,7 +7,8 @@ export type WorkspaceRouteKey =
   | "strategy"
   | "backtest"
   | "data"
-  | "ai";
+  | "ai"
+  | "notify";
 
 export interface WorkspaceRouteMeta {
   path: string;
@@ -26,6 +27,7 @@ export const WORKSPACE_ROUTES: Record<WorkspaceRouteKey, WorkspaceRouteMeta> = {
   backtest: { path: "/backtest", title: "回测", closable: true },
   data: { path: "/data", title: "数据管理", closable: true },
   ai: { path: "/ai", title: "AI 助手", closable: true },
+  notify: { path: "/notify", title: "通知中心", closable: true },
 };
 
 const DEFAULT_TABS: WorkspaceTab[] = [

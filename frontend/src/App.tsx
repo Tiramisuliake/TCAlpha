@@ -2,6 +2,7 @@ import { Layout, Menu } from "antd";
 import { Link, Outlet, Route, Routes } from "react-router";
 import {
   AppstoreOutlined,
+  BellOutlined,
   LineChartOutlined,
   RobotOutlined,
   DatabaseOutlined,
@@ -14,6 +15,7 @@ import Strategy from "./pages/Strategy";
 import Backtest from "./pages/Backtest";
 import DataMgr from "./pages/Data";
 import AI from "./pages/AI";
+import Notify from "./pages/Notify";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
 import {
   useWorkspaceStore,
@@ -30,6 +32,7 @@ const MENU_ITEMS: { key: WorkspaceRouteKey; icon: React.ReactNode; label: string
   { key: "backtest", icon: <ExperimentOutlined />, label: "回测" },
   { key: "data", icon: <DatabaseOutlined />, label: "数据管理" },
   { key: "ai", icon: <RobotOutlined />, label: "AI 助手" },
+  { key: "notify", icon: <BellOutlined />, label: "通知中心" },
 ];
 
 function Shell() {
@@ -51,13 +54,14 @@ function Shell() {
       <Layout>
         <Sider
           width={220}
-          theme="light"
-          className="!bg-white border-r border-slate-200"
+          theme="dark"
+          className="!bg-slate-900 border-r border-slate-800"
         >
           <Menu
             mode="inline"
+            theme="dark"
             selectedKeys={[activeKey]}
-            className="!border-r-0 !pt-3 px-2"
+            className="!bg-transparent !border-r-0 !pt-3 px-2"
             items={MENU_ITEMS.map((m) => ({
               key: m.key,
               icon: m.icon,
@@ -86,6 +90,7 @@ export default function App() {
         <Route path="/backtest" element={<Backtest />} />
         <Route path="/data" element={<DataMgr />} />
         <Route path="/ai" element={<AI />} />
+        <Route path="/notify" element={<Notify />} />
       </Route>
     </Routes>
   );

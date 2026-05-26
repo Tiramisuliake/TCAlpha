@@ -1,5 +1,5 @@
 # TCAlpha 开发命令集
-.PHONY: help up down logs back front worker beat migrate revision test fmt lint clean
+.PHONY: help up down logs back front worker beat notify migrate revision test fmt lint clean
 
 help:
 	@echo "TCAlpha dev commands:"
@@ -9,6 +9,7 @@ help:
 	@echo "  make back       起 FastAPI (开发热重载)"
 	@echo "  make worker     起 Celery worker"
 	@echo "  make beat       起 Celery beat"
+	@echo "  make notify     起通知分发 worker"
 	@echo "  make front      起前端 Vite"
 	@echo "  make migrate    运行 alembic upgrade head"
 	@echo "  make revision m=\"msg\"  生成新 alembic 迁移"
@@ -34,6 +35,9 @@ worker:
 
 beat:
 	cd backend && uv run celery -A app.tasks.celery_app beat -l info
+
+notify:
+	cd backend && uv run python -m app.workers.notify_dispatcher
 
 front:
 	cd frontend && pnpm dev

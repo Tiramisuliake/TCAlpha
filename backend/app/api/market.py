@@ -1,16 +1,49 @@
-"""行情查询路由（Phase 0 占位，Phase 1 接 AKShare + ArcticDB）。"""
-from fastapi import APIRouter
+"""行情路由（Phase 1）。"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.deps import get_db
+from app.schemas.market import (
+    DownloadTriggerResponse,
+    KlineResponse,
+    SymbolListResponse,
+)
+from app.services import market as market_svc
 
 router = APIRouter()
 
 
-@router.get("/symbols")
-async def list_symbols():
-    """股票列表（占位）。"""
-    return {"items": [], "total": 0, "todo": "Phase 1"}
+@router.get("/symbols", response_model=SymbolListResponse)
+async def list_symbols(
+    search: str | None = Query(default=None, description="按代码或名称模糊搜索"),
+    exchange: str | None = Query(default=None, description="交易所过滤：SH / SZ / BJ"),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取股票列表（分页 + 搜索）。"""
+    return await market_svc.get_symbols(db, search=search, exchange=exchange, limit=limit, offset=offset)
 
 
-@router.get("/kline")
-async def get_kline(symbol: str, period: str = "1d", limit: int = 200):
-    """K 线数据（占位）。"""
-    return {"symbol": symbol, "period": period, "limit": limit, "data": [], "todo": "Phase 1"}
+@router.get("/kline/{symbol}", response_model=KlineResponse)
+async def get_kline(
+    symbol: str,
+    period: str = Query(default="1d", description="K线周期：1d / 1m / 5m / 15m / 30m / 60m"),
+    limit: int = Query(default=200, ge=1, le=2000),
+):
+    """获取 K 线数据（从 ArcticDB 读取）。"""
+    if period not in {"1d", "1m", "5m", "15m", "30m", "60m"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unsupported period: {period}")
+    return market_svc.get_kline(symbol, period=period, limit=limit)
+
+
+@router.post("/kline/{symbol}/download", response_model=DownloadTriggerResponse)
+async def trigger_download(
+    symbol: str,
+    period: str = Query(default="1d"),
+):
+    """触发 Celery 下载该股票 K 线（异步，立即返回 task_id）。"""
+    task_id = market_svc.trigger_download(symbol, period=period)
+    return DownloadTriggerResponse(symbol=symbol, task_id=task_id)

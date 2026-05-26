@@ -33,14 +33,81 @@ export interface KlineResponse {
   total: number;
 }
 
+// ── Strategy ──────────────────────────────────────────────
+
 export interface StrategyConfig {
   id: number;
   name: string;
-  className: string;
+  class_name: string;
   symbol: string;
   params: Record<string, unknown>;
   state: Record<string, unknown>;
   status: "stopped" | "running" | "error";
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyCreate {
+  name: string;
+  class_name: string;
+  symbol: string;
+  params: Record<string, unknown>;
+}
+
+export interface StrategyClassInfo {
+  class_name: string;
+  author: string;
+  params_schema: Record<string, { title: string; default: unknown; type: string }>;
+}
+
+// ── Backtest ──────────────────────────────────────────────
+
+export interface BacktestSubmit {
+  name: string;
+  class_name: string;
+  symbol: string;
+  params: Record<string, unknown>;
+  start_date: string;
+  end_date: string;
+  init_capital: number;
+  commission_rate: number;
+  slippage: number;
+}
+
+export interface EquityPoint {
+  dt: string;
+  value: number;
+}
+
+export interface BacktestResult {
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  trade_count: number;
+  win_rate: number;
+  profit_factor: number;
+  init_capital: number;
+  final_equity: number;
+  equity_curve: EquityPoint[];
+}
+
+export interface BacktestStatus {
+  job_id: number;
+  status: "pending" | "running" | "done" | "failed";
+  result: BacktestResult | null;
+  error: string | null;
+}
+
+export interface BacktestTrade {
+  id: number;
+  job_id: number;
+  symbol: string;
+  direction: string;
+  offset: string;
+  price: number;
+  volume: number;
+  dt: string;
+  pnl: number | null;
 }

@@ -1,10 +1,360 @@
-"""回测引擎（Phase 3 实现）。
+"""回测引擎（Phase 3）。
 
-设计原则：复用 vnpy 的 BarData / ArrayManager / CtaTemplate，但不引入 EventEngine。
-单 worker 进程内同步循环 on_bar，结果落 PG。
+流程：
+  BacktestJob (PG) → 读 ArcticDB K 线 → strategy.on_bar(bar)
+  → 撮合（next bar 开盘价）→ 收集 trade → 算指标
+  → 写 PG (result + BacktestTrade)
 """
 from __future__ import annotations
 
+import importlib
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+from loguru import logger
+
+
+# ── 中间数据结构 ──────────────────────────────────────────────────────
+
+@dataclass
+class PendingOrder:
+    direction: str   # long / short
+    offset: str      # open / close
+    volume: int
+
+
+@dataclass
+class Trade:
+    dt: datetime
+    direction: str
+    offset: str
+    price: float
+    volume: int
+    commission: float
+    pnl: float | None = None
+
+
+# ── 策略类注册表 ──────────────────────────────────────────────────────
+
+STRATEGY_CLASSES: dict[str, type] = {}
+
+
+def _load_strategy_classes() -> None:
+    if STRATEGY_CLASSES:
+        return
+    from app.strategies.examples.ma_cross import MaCrossStrategy
+    STRATEGY_CLASSES["MaCrossStrategy"] = MaCrossStrategy
+
+
+def get_strategy_class(class_name: str) -> type:
+    _load_strategy_classes()
+    cls = STRATEGY_CLASSES.get(class_name)
+    if not cls:
+        raise ValueError(f"unknown strategy class: {class_name}")
+    return cls
+
+
+def list_strategy_classes() -> list[dict]:
+    _load_strategy_classes()
+    result = []
+    for name, cls in STRATEGY_CLASSES.items():
+        # 收集参数定义
+        instance = cls.__new__(cls)
+        # 初始化 params/state/vars 属性
+        for attr in ("params", "state", "vars"):
+            klass_attr = getattr(cls, attr, None)
+            if klass_attr is not None:
+                setattr(instance, attr, klass_attr.__class__())
+        params_schema = {}
+        if hasattr(instance, "params"):
+            for fname, finfo in instance.params.model_fields.items():
+                params_schema[fname] = {
+                    "title": finfo.title or fname,
+                    "default": finfo.default,
+                    "type": str(finfo.annotation),
+                }
+        result.append({
+            "class_name": name,
+            "author": getattr(cls, "author", ""),
+            "params_schema": params_schema,
+        })
+    return result
+
+
+# ── K 线加载 ──────────────────────────────────────────────────────────
+
+def _load_bars(symbol: str, start: str, end: str) -> list:
+    """从 ArcticDB 读取日 K，转换为 vnpy BarData 列表。"""
+    from vnpy.trader.constant import Exchange, Interval
+    from vnpy.trader.object import BarData
+
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    sym_key = normalize(symbol)
+    lib = get_library("bar_1d")
+    if sym_key not in lib.list_symbols():
+        return []
+
+    df = lib.read(sym_key).data
+    # 按日期过滤
+    df = df[(df.index >= pd.Timestamp(start)) & (df.index <= pd.Timestamp(end))]
+    if df.empty:
+        return []
+
+    exchange = Exchange.SSE if symbol.startswith("sh") else Exchange.SZSE
+    bars = []
+    for ts, row in df.iterrows():
+        bars.append(
+            BarData(
+                symbol=sym_key,
+                exchange=exchange,
+                datetime=ts.to_pydatetime().replace(tzinfo=timezone.utc),
+                interval=Interval.DAILY,
+                open_price=float(row["open"]),
+                high_price=float(row["high"]),
+                low_price=float(row["low"]),
+                close_price=float(row["close"]),
+                volume=float(row["volume"]),
+                turnover=float(row.get("amount", 0)),
+                gateway_name="BACKTEST",
+            )
+        )
+    return bars
+
+
+# ── 撮合 ──────────────────────────────────────────────────────────────
+
+def _match_orders(
+    pending: list[PendingOrder],
+    next_bar,
+    commission_rate: float,
+    slippage: float,
+    pos: int,
+) -> tuple[list[Trade], int]:
+    """用下一根 bar 的开盘价撮合，返回成交列表和新持仓。"""
+    trades: list[Trade] = []
+    for order in pending:
+        if order.offset == "open":
+            exec_price = next_bar.open_price + (slippage if order.direction == "long" else -slippage)
+            commission = exec_price * order.volume * commission_rate
+            trades.append(Trade(
+                dt=next_bar.datetime,
+                direction=order.direction,
+                offset="open",
+                price=exec_price,
+                volume=order.volume,
+                commission=commission,
+            ))
+            pos += order.volume if order.direction == "long" else -order.volume
+        else:  # close
+            vol = min(order.volume, abs(pos))
+            if vol <= 0:
+                continue
+            exec_price = next_bar.open_price - (slippage if order.direction == "long" else -slippage)
+            commission = exec_price * vol * commission_rate
+            # A 股卖出加印花税
+            stamp_duty = exec_price * vol * 0.001
+            trades.append(Trade(
+                dt=next_bar.datetime,
+                direction=order.direction,
+                offset="close",
+                price=exec_price,
+                volume=vol,
+                commission=commission + stamp_duty,
+            ))
+            pos -= vol if order.direction == "long" else -vol
+    return trades, pos
+
+
+# ── 资金曲线 & 指标 ───────────────────────────────────────────────────
+
+def _settle(trades: list[Trade], bars: list, init_capital: float) -> pd.Series:
+    """构造每日资金曲线。"""
+    if not bars:
+        return pd.Series([init_capital], index=[datetime.now(tz=timezone.utc)])
+
+    cash = init_capital
+    pos = 0
+    avg_price = 0.0
+    open_trades: list[Trade] = []
+    equity_values: list[float] = []
+    equity_dates: list[datetime] = []
+
+    # 标记每个 bar 对应的成交
+    trade_map: dict[datetime, list[Trade]] = {}
+    for t in trades:
+        trade_map.setdefault(t.dt, []).append(t)
+
+    for bar in bars:
+        for t in trade_map.get(bar.datetime, []):
+            if t.offset == "open":
+                cash -= t.price * t.volume + t.commission
+                total_cost = avg_price * pos + t.price * t.volume
+                pos += t.volume
+                avg_price = total_cost / pos if pos > 0 else 0.0
+            else:
+                pnl = (t.price - avg_price) * t.volume - t.commission
+                t.pnl = pnl
+                cash += t.price * t.volume - t.commission
+                pos -= t.volume
+                if pos == 0:
+                    avg_price = 0.0
+
+        market_value = pos * bar.close_price
+        equity_values.append(cash + market_value)
+        equity_dates.append(bar.datetime)
+
+    return pd.Series(equity_values, index=pd.DatetimeIndex(equity_dates))
+
+
+def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dict:
+    rets = equity.pct_change().dropna()
+    total_return = float(equity.iloc[-1] / init_capital - 1)
+    days = (equity.index[-1] - equity.index[0]).days
+    annual_return = float((1 + total_return) ** (252 / max(days, 1)) - 1) if days > 0 else 0.0
+
+    sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
+    downside = rets[rets < 0]
+    sortino = float(rets.mean() / downside.std() * np.sqrt(252)) if len(downside) and downside.std() > 0 else 0.0
+
+    cum_max = equity.cummax()
+    drawdown = (equity - cum_max) / cum_max
+    max_dd = float(drawdown.min())
+
+    closed = [t for t in trades if t.pnl is not None]
+    wins = [t for t in closed if t.pnl > 0]
+    win_rate = len(wins) / len(closed) if closed else 0.0
+    losing_pnl = sum(t.pnl for t in closed if t.pnl < 0)
+    profit_factor = (
+        sum(t.pnl for t in wins) / abs(losing_pnl)
+        if losing_pnl < 0 else float("inf")
+    )
+
+    # 资金曲线（按日期 → ISO 字符串，前端用）
+    equity_curve = [
+        {"dt": str(dt.date() if hasattr(dt, "date") else dt), "value": float(v)}
+        for dt, v in zip(equity.index, equity.values)
+    ]
+
+    return {
+        "total_return": round(total_return, 4),
+        "annual_return": round(annual_return, 4),
+        "sharpe": round(sharpe, 4),
+        "sortino": round(sortino, 4),
+        "max_drawdown": round(max_dd, 4),
+        "trade_count": len(closed),
+        "win_rate": round(win_rate, 4),
+        "profit_factor": round(profit_factor, 4) if profit_factor != float("inf") else 9999.0,
+        "init_capital": init_capital,
+        "final_equity": round(float(equity.iloc[-1]), 2),
+        "equity_curve": equity_curve,
+    }
+
+
+# ── 主入口 ────────────────────────────────────────────────────────────
 
 def run(job_id: int) -> dict:
-    raise NotImplementedError("Phase 3")
+    """主入口：从 PG 读 job → 执行回测 → 写结果到 PG。"""
+    from app.db.models.backtest import BacktestJob, BacktestTrade
+    from app.db.postgres import SyncSessionLocal
+
+    with SyncSessionLocal() as db:
+        job: BacktestJob | None = db.get(BacktestJob, job_id)
+        if not job:
+            raise ValueError(f"BacktestJob {job_id} not found")
+
+        job.status = "running"
+        db.commit()
+
+    try:
+        # 1. 加载 K 线
+        bars = _load_bars(
+            job.symbol,
+            str(job.start_date),
+            str(job.end_date),
+        )
+        if len(bars) < 2:
+            raise RuntimeError(f"insufficient bars for {job.symbol}: {len(bars)}")
+
+        logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), job.symbol)
+
+        # 2. 实例化策略
+        cls = get_strategy_class(job.class_name)
+        strategy = cls(job.symbol, job.params or {})
+
+        # 3. 逐 bar 跑策略 + 撮合
+        all_trades: list[Trade] = []
+        pos = 0
+        pending: list[PendingOrder] = []
+
+        for i, bar in enumerate(bars[:-1]):
+            next_bar = bars[i + 1]
+
+            # 撮合上一轮挂的单
+            if pending:
+                new_trades, pos = _match_orders(
+                    pending, bar,
+                    job.commission_rate, job.slippage, pos
+                )
+                all_trades.extend(new_trades)
+                strategy.state.pos = pos
+                pending = []
+
+            # 策略计算
+            strategy.on_bar(bar)
+
+            # 收集信号
+            sig = getattr(strategy, "_pending_signal", None)
+            if sig:
+                direction, offset, volume = sig
+                pending.append(PendingOrder(direction=direction, offset=offset, volume=volume))
+                strategy._pending_signal = None
+
+        # 最后一根 bar 后的挂单用收盘价撮合（无 next bar 时放弃）
+        if pending and len(bars) >= 2:
+            new_trades, pos = _match_orders(
+                pending, bars[-1],
+                job.commission_rate, job.slippage, pos
+            )
+            all_trades.extend(new_trades)
+
+        # 4. 算资金曲线 & 指标
+        equity = _settle(all_trades, bars, job.init_capital)
+        result = _metrics(equity, all_trades, job.init_capital)
+
+        # 5. 落库
+        with SyncSessionLocal() as db:
+            job = db.get(BacktestJob, job_id)
+            job.status = "done"
+            job.result = result
+            job.finished_at = datetime.now(tz=timezone.utc)
+
+            for t in all_trades:
+                db.add(BacktestTrade(
+                    job_id=job_id,
+                    symbol=job.symbol,
+                    direction=t.direction,
+                    offset=t.offset,
+                    price=t.price,
+                    volume=t.volume,
+                    dt=t.dt,
+                    pnl=t.pnl,
+                ))
+            db.commit()
+
+        logger.info("backtest job={} done: return={:.2%}", job_id, result["total_return"])
+        return result
+
+    except Exception as exc:
+        logger.exception("backtest job={} failed: {}", job_id, exc)
+        with SyncSessionLocal() as db:
+            job = db.get(BacktestJob, job_id)
+            if job:
+                job.status = "failed"
+                job.error = str(exc)[:1024]
+                job.finished_at = datetime.now(tz=timezone.utc)
+                db.commit()
+        raise

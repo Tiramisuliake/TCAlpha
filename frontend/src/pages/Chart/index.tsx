@@ -6,6 +6,7 @@ import { createChart } from "lightweight-charts";
 import type { IChartApi } from "lightweight-charts";
 import { getKline, getSymbols, triggerDownload } from "@/api/market";
 import type { KlineBar, Period } from "@/types";
+import { PageScaffold } from "@/components/PageScaffold";
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "日K", value: "1d" },
@@ -22,9 +23,10 @@ function KlineChart({ bars }: { bars: KlineBar[] }) {
 
   useEffect(() => {
     if (!ref.current) return;
-    const chart = createChart(ref.current, {
-      width: ref.current.clientWidth,
-      height: 420,
+    const el = ref.current;
+    const chart = createChart(el, {
+      width: el.clientWidth,
+      height: el.clientHeight || 420,
       layout: { background: { color: "#ffffff" }, textColor: "#333" },
       grid: { vertLines: { color: "#f0f0f0" }, horzLines: { color: "#f0f0f0" } },
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#ddd" },
@@ -66,17 +68,24 @@ function KlineChart({ bars }: { bars: KlineBar[] }) {
     chart.timeScale().fitContent();
 
     const onResize = () => {
-      if (ref.current) chart.applyOptions({ width: ref.current.clientWidth });
+      if (!ref.current) return;
+      chart.applyOptions({
+        width: ref.current.clientWidth,
+        height: ref.current.clientHeight,
+      });
     };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(el);
     window.addEventListener("resize", onResize);
     return () => {
+      ro.disconnect();
       chart.remove();
       chartRef.current = null;
       window.removeEventListener("resize", onResize);
     };
   }, [bars]);
 
-  return <div ref={ref} className="w-full" />;
+  return <div ref={ref} className="w-full h-full min-h-[320px]" />;
 }
 
 export default function ChartPage() {
@@ -112,8 +121,11 @@ export default function ChartPage() {
   const bars = klineData?.bars ?? [];
 
   return (
-    <div className="space-y-4">
-      <Card>
+    <PageScaffold>
+      <Card
+        className="flex-1"
+        classNames={{ body: "flex-1 flex flex-col min-h-0" }}
+      >
         <Space className="flex flex-wrap gap-2 mb-4">
           <Select
             showSearch
@@ -151,23 +163,26 @@ export default function ChartPage() {
           {isFetching && <Spin size="small" />}
         </Space>
 
-        {!symbol ? (
-          <Empty description="请选择股票" className="py-16" />
-        ) : isLoading ? (
-          <div className="flex justify-center py-16"><Spin /></div>
-        ) : bars.length === 0 ? (
-          <Empty
-            description={`暂无 ${symbol} ${period} K线数据`}
-            className="py-16"
-          >
-            <Button type="primary" loading={downloadMut.isPending} onClick={() => downloadMut.mutate()}>
-              立即下载
-            </Button>
-          </Empty>
-        ) : (
-          <KlineChart bars={bars} />
-        )}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {!symbol ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Empty description="请选择股票" />
+            </div>
+          ) : isLoading ? (
+            <div className="flex-1 flex items-center justify-center"><Spin /></div>
+          ) : bars.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Empty description={`暂无 ${symbol} ${period} K线数据`}>
+                <Button type="primary" loading={downloadMut.isPending} onClick={() => downloadMut.mutate()}>
+                  立即下载
+                </Button>
+              </Empty>
+            </div>
+          ) : (
+            <KlineChart bars={bars} />
+          )}
+        </div>
       </Card>
-    </div>
+    </PageScaffold>
   );
 }

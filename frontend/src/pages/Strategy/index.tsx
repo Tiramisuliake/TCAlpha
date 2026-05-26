@@ -24,6 +24,7 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
+import { PageScaffold } from "@/components/PageScaffold";
 import {
   createStrategy,
   deleteStrategy,
@@ -299,11 +300,13 @@ export default function StrategyPage() {
   const isSubmitting = createMut.isPending || updateMut.isPending;
 
   return (
-    <div className="space-y-4">
-      <Row gutter={16}>
-        <Col xs={24} lg={14}>
+    <PageScaffold>
+      <Row gutter={[16, 16]} className="flex-1 min-h-0">
+        <Col xs={24} lg={14} className="flex flex-col">
           <Card
             title="策略列表"
+            className="flex-1"
+            classNames={{ body: "flex-1 flex flex-col min-h-0" }}
             extra={
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                 新建
@@ -318,13 +321,14 @@ export default function StrategyPage() {
               pagination={{ pageSize: 8 }}
               rowClassName={(r) => r.id === activeStrategyId ? "!bg-blue-50" : ""}
               size="small"
+              className="flex-1"
             />
           </Card>
         </Col>
 
-        <Col xs={24} lg={10}>
+        <Col xs={24} lg={10} className="flex flex-col">
           {activeStrategyId ? (
-            <div className="space-y-4">
+            <div className="flex-1 flex flex-col gap-4 min-h-0">
               {/* 启停控制 */}
               <Card
                 title={`策略控制 #${activeStrategyId}`}
@@ -395,6 +399,8 @@ export default function StrategyPage() {
                   </span>
                 }
                 size="small"
+                className="flex-1"
+                classNames={{ body: "flex-1 flex flex-col min-h-0" }}
               >
                 <Table<SimOrder>
                   dataSource={displayOrders}
@@ -402,15 +408,19 @@ export default function StrategyPage() {
                   rowKey="id"
                   size="small"
                   pagination={{ pageSize: 6 }}
+                  className="flex-1"
                 />
               </Card>
             </div>
           ) : (
-            <Card>
-              <div className="text-slate-400 py-12 text-center">
-                <p className="text-base mb-1">选中一个策略</p>
-                <p className="text-sm">可启停运行、查看实时信号和订单</p>
-              </div>
+            <Card
+              className="flex-1"
+              classNames={{
+                body: "flex-1 flex flex-col items-center justify-center text-center text-slate-400",
+              }}
+            >
+              <p className="text-base mb-1">选中一个策略</p>
+              <p className="text-sm">可启停运行、查看实时信号和订单</p>
             </Card>
           )}
         </Col>
@@ -453,6 +463,6 @@ export default function StrategyPage() {
           </Form.Item>
         </Form>
       </Drawer>
-    </div>
+    </PageScaffold>
   );
 }

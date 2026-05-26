@@ -9,6 +9,8 @@ uv sync                                       # 装依赖
 cp ../.env.example ../.env                    # 配置
 uv run alembic revision --autogenerate -m "init"   # 首次迁移
 uv run alembic upgrade head
+```
+```bash
 uv run uvicorn app.main:app --reload          # http://localhost:8000
 ```
 

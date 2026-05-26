@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'G:\\py\\tcalpha\\.codex\\hooks\\pre-tool-use.cjs'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node 'G:\\py\\tcalpha\\.codex\\hooks\\skill-forced-eval.cjs'"
+          }
+        ]
+      }
+    ]
+  }
+}

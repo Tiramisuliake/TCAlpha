@@ -20,6 +20,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
+import { PageScaffold } from "@/components/PageScaffold";
 import type { BacktestResult, BacktestStatus, BacktestTrade } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -197,10 +198,10 @@ export default function Backtest() {
   const result = selectedJob?.result as BacktestResult | null;
 
   return (
-    <div className="space-y-4">
-      <Row gutter={16}>
+    <PageScaffold>
+      <Row gutter={[16, 16]} className="flex-1 min-h-0">
         {/* 左：提交表单 */}
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={8} className="flex flex-col gap-4">
           <Card title="提交回测" size="small">
             <Form form={form} layout="vertical" onFinish={onFinish} size="small">
               <Form.Item label="策略类" name="class_name" rules={[{ required: true }]}>
@@ -264,7 +265,13 @@ export default function Backtest() {
             </Form>
           </Card>
 
-          <Card title="历史回测" size="small" className="mt-4" loading={jobsLoading}>
+          <Card
+            title="历史回测"
+            size="small"
+            loading={jobsLoading}
+            className="flex-1"
+            classNames={{ body: "flex-1 flex flex-col min-h-0" }}
+          >
             <Table<BacktestStatus>
               dataSource={jobs}
               columns={jobColumns}
@@ -272,28 +279,35 @@ export default function Backtest() {
               size="small"
               pagination={{ pageSize: 5 }}
               rowClassName={(r) => r.job_id === selectedJobId ? "!bg-blue-50" : ""}
+              className="flex-1"
             />
           </Card>
         </Col>
 
         {/* 右：结果展示 */}
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={16} className="flex flex-col">
           {selectedJob?.status === "running" || selectedJob?.status === "pending" ? (
-            <Card>
-              <div className="flex items-center gap-3 text-blue-500 py-8 justify-center">
-                <span className="animate-spin text-2xl">⏳</span>
-                <span>回测计算中，请稍候…（自动刷新）</span>
-              </div>
+            <Card
+              className="flex-1"
+              classNames={{
+                body: "flex-1 flex items-center justify-center gap-3 text-blue-500",
+              }}
+            >
+              <span className="animate-spin text-2xl">⏳</span>
+              <span>回测计算中，请稍候…（自动刷新）</span>
             </Card>
           ) : selectedJob?.status === "failed" ? (
-            <Card>
-              <div className="text-red-500 py-8 text-center">
-                <p className="font-bold text-lg mb-2">回测失败</p>
-                <p className="text-sm">{selectedJob.error}</p>
-              </div>
+            <Card
+              className="flex-1"
+              classNames={{
+                body: "flex-1 flex flex-col items-center justify-center text-red-500 text-center",
+              }}
+            >
+              <p className="font-bold text-lg mb-2">回测失败</p>
+              <p className="text-sm">{selectedJob.error}</p>
             </Card>
           ) : result ? (
-            <div className="space-y-4">
+            <div className="flex-1 flex flex-col gap-4 min-h-0">
               <Row gutter={[8, 8]}>
                 <Col span={8}>
                   <MetricCard
@@ -346,15 +360,18 @@ export default function Backtest() {
               </Card>
             </div>
           ) : (
-            <Card>
-              <div className="text-slate-400 py-16 text-center">
-                <ExperimentOutlined className="text-4xl mb-3 block" />
-                <p>提交回测后，结果将在此显示</p>
-              </div>
+            <Card
+              className="flex-1"
+              classNames={{
+                body: "flex-1 flex flex-col items-center justify-center text-slate-400 text-center",
+              }}
+            >
+              <ExperimentOutlined className="text-4xl mb-3" />
+              <p>提交回测后，结果将在此显示</p>
             </Card>
           )}
         </Col>
       </Row>
-    </div>
+    </PageScaffold>
   );
 }

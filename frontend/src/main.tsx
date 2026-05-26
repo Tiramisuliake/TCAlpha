@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
@@ -11,9 +11,68 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
 
+const tcAlphaTheme = {
+  algorithm: theme.defaultAlgorithm,
+  token: {
+    colorPrimary: "#1677ff",
+    borderRadius: 8,
+    controlHeight: 36,
+    colorBgLayout: "#f6f8fb",
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  },
+  components: {
+    Layout: {
+      headerBg: "transparent",
+      headerHeight: 60,
+      headerPadding: "0 24px",
+      siderBg: "#ffffff",
+      bodyBg: "#f6f8fb",
+    },
+    Menu: {
+      itemHeight: 44,
+      itemBorderRadius: 8,
+      itemMarginInline: 8,
+      itemPaddingInline: 14,
+      itemSelectedBg: "#e6f4ff",
+      itemSelectedColor: "#1677ff",
+      itemHoverBg: "#f1f5f9",
+      iconSize: 16,
+    },
+    Card: {
+      headerHeight: 52,
+      headerFontSize: 15,
+      headerBg: "transparent",
+      borderRadiusLG: 10,
+      boxShadowTertiary: "0 1px 2px 0 rgba(15, 23, 42, 0.04)",
+    },
+    Table: {
+      headerBg: "#f8fafc",
+      headerColor: "#64748b",
+      headerSplitColor: "#e2e8f0",
+      borderColor: "#e2e8f0",
+      rowHoverBg: "#f8fafc",
+      cellPaddingBlock: 12,
+    },
+    Button: {
+      controlHeight: 36,
+      borderRadius: 8,
+    },
+    Input: {
+      controlHeight: 36,
+    },
+    Select: {
+      controlHeight: 36,
+    },
+    InputNumber: {
+      controlHeight: 36,
+    },
+  },
+};
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider locale={zhCN} theme={tcAlphaTheme}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <App />

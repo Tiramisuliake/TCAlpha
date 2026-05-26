@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import { getSymbols, refreshSymbols, triggerDownload } from "@/api/market";
 import type { Symbol } from "@/types";
+import { PageScaffold } from "@/components/PageScaffold";
 
 const EXCHANGES = [
   { value: "", label: "全部" },
@@ -71,9 +72,11 @@ export default function DataMgr() {
   ];
 
   return (
-    <div className="space-y-4">
+    <PageScaffold>
       <Card
         title="股票列表"
+        className="flex-1"
+        classNames={{ body: "flex-1 flex flex-col min-h-0" }}
         extra={
           <Button
             type="primary"
@@ -115,8 +118,9 @@ export default function DataMgr() {
             showTotal: (t) => `共 ${t} 条`,
           }}
           locale={{ emptyText: "暂无数据，请点击「刷新股票列表」拉取" }}
+          className="flex-1"
         />
       </Card>
-    </div>
+    </PageScaffold>
   );
 }

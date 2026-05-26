@@ -2,7 +2,7 @@
 
 > 基于 AKShare 的 A 股量化分析、回测与模拟交易 Web 平台。
 
-**状态**: Phase 2 — 前端布局 + K 线图 + 数据管理页
+**状态**: Phase 4 — 实时策略 worker + 模拟撮合
 
 ## 技术栈
 
@@ -55,8 +55,8 @@ pnpm dev  # http://localhost:5173
 - [x] Phase 0：项目骨架 + Docker + Hello World
 - [x] Phase 1：AKShare 数据下载 + ArcticDB + `/api/market`
 - [x] Phase 2：前端布局 + K 线图 + WebSocket 实时行情
-- [ ] Phase 3：策略管理 + 回测（Celery 异步）
-- [ ] Phase 4：实时策略 worker + 模拟撮合
+- [x] Phase 3：策略管理 + 回测（Celery 异步）
+- [x] Phase 4：实时策略 worker + 模拟撮合
 - [ ] Phase 5：AI 助手 + 图表 AI 分析
 - [ ] Phase 6：公网部署 + Nginx + HTTPS
 

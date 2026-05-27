@@ -29,6 +29,11 @@ def signal_channel(strategy_id: int) -> str:
     return f"signal:strategy:{strategy_id}"
 
 
+def quote_channel(symbol: str) -> str:
+    """单 symbol 实时报价 channel。"""
+    return f"quote:{symbol.lower()}"
+
+
 def stop_key(strategy_id: int) -> str:
     """Redis key：若存在表示该策略应停止。"""
     return f"strategy:stop:{strategy_id}"
@@ -47,3 +52,8 @@ def publish_order(user_id: int, order_dict: dict) -> None:
 
 def publish_signal(strategy_id: int, signal_dict: dict) -> None:
     get_sync_redis().publish(signal_channel(strategy_id), json.dumps(signal_dict))
+
+
+def publish_quote(symbol: str, quote_dict: dict) -> None:
+    """实时报价发布（Celery 拉 AKShare 后调用）。"""
+    get_sync_redis().publish(quote_channel(symbol), json.dumps(quote_dict))

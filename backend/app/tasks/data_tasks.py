@@ -8,6 +8,7 @@ from loguru import logger
 from app.tasks.celery_app import celery_app
 
 _DEFAULT_HISTORY_DAYS = 365 * 3  # 默认拉 3 年历史
+_MINUTE_PERIOD_MAP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
 
 
 @celery_app.task(
@@ -66,6 +67,15 @@ def download_one_symbol(
         if period == "1d":
             from app.services.data import download_and_save_daily
             result = download_and_save_daily(symbol, start, end)
+        elif period in _MINUTE_PERIOD_MAP:
+            from app.services.data import download_and_save_minute
+            # 分钟接口接受 YYYY-MM-DD HH:MM:SS；不传则用 AKShare 默认窗口
+            result = download_and_save_minute(
+                symbol,
+                _MINUTE_PERIOD_MAP[period],
+                start if start and " " in start else None,
+                end if end and " " in end else None,
+            )
         else:
             logger.warning("period {} not yet implemented, skip {}", period, symbol)
             return {"symbol": symbol, "period": period, "status": "skipped"}
@@ -111,4 +121,89 @@ def download_daily_kline_all(self) -> dict:
 
     except Exception as exc:
         logger.exception("download_daily_kline_all failed: {}", exc)
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.data_tasks.push_quote_snapshot",
+    bind=True,
+    max_retries=2,
+)
+def push_quote_snapshot(self, symbols: list[str] | None = None) -> dict:
+    """拉一次全市场快照，按 symbol publish 到 quote:<symbol> channel。
+
+    - symbols: 仅推这些（节省 Redis 流量）；不传则全推。
+    - 非交易时段直接 skip。
+    """
+    try:
+        from app.utils.trading_period import is_trading_time
+
+        if not is_trading_time():
+            return {"status": "skipped", "reason": "not_trading_time"}
+
+        from app.services.quote import build_quote_dict, fetch_spot_snapshot
+        from app.core.pubsub import publish_quote
+
+        df = fetch_spot_snapshot()
+        if symbols:
+            wanted = {s for s in symbols}
+            df = df[df["symbol"].isin(wanted)]
+
+        count = 0
+        for _, row in df.iterrows():
+            publish_quote(row["symbol"], build_quote_dict(row))
+            count += 1
+
+        logger.info("push_quote_snapshot: pushed {} quotes", count)
+        return {"status": "ok", "pushed": count}
+
+    except Exception as exc:
+        logger.exception("push_quote_snapshot failed: {}", exc)
+        raise self.retry(exc=exc, countdown=10)
+
+
+@celery_app.task(
+    name="app.tasks.data_tasks.download_minute_kline_all",
+    bind=True,
+)
+def download_minute_kline_all(self, period: str = "1m", limit: int | None = None) -> dict:
+    """交易时段 beat 触发：为活跃股票队列分钟 K 增量下载。
+
+    - period: 1m/5m/15m/30m/60m
+    - limit: 测试用，仅入队前 N 个
+    交易时段判断由 ``app.utils.trading_period`` 提供；非交易时段直接 skip。
+    """
+    try:
+        from app.utils.trading_period import is_trading_time
+
+        if not is_trading_time():
+            logger.info("download_minute_kline_all: not trading time, skip")
+            return {"status": "skipped", "reason": "not_trading_time"}
+
+        if period not in _MINUTE_PERIOD_MAP:
+            raise ValueError(f"invalid period: {period}")
+
+        from app.db.postgres import SyncSessionLocal
+        from app.db.models.symbol import Symbol
+        from sqlalchemy import select
+
+        with SyncSessionLocal() as db:
+            stmt = select(Symbol.symbol).where(Symbol.is_active.is_(True))
+            if limit:
+                stmt = stmt.limit(limit)
+            symbols = db.execute(stmt).scalars().all()
+
+        count = 0
+        for sym in symbols:
+            download_one_symbol.apply_async(
+                args=[sym, period],
+                countdown=count * 0.6,
+            )
+            count += 1
+
+        logger.info("download_minute_kline_all[{}]: queued {} tasks", period, count)
+        return {"status": "ok", "period": period, "queued": count}
+
+    except Exception as exc:
+        logger.exception("download_minute_kline_all failed: {}", exc)
         raise

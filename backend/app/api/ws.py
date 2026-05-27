@@ -11,8 +11,9 @@ import asyncio
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from app.core.pubsub import order_channel, signal_channel
+from app.core.pubsub import order_channel, quote_channel, signal_channel
 from app.db.redis_client import get_redis
+from app.utils.symbol import normalize
 
 router = APIRouter()
 
@@ -73,7 +74,16 @@ async def signals_ws(
 
 
 @router.websocket("/ws/quote")
-async def quote_ws(ws: WebSocket):
-    """行情推送（发布端由 AKShare 拉取任务写 Redis quote 频道）。"""
+async def quote_ws(
+    ws: WebSocket,
+    symbol: str = Query(..., description="股票代码，如 sh600000 或 600000"),
+):
+    """单 symbol 实时报价 WS（按需订阅 Redis quote:<symbol>）。"""
     await ws.accept()
-    await _redis_to_ws(ws, "quote")
+    try:
+        sym = normalize(symbol)
+    except ValueError as exc:
+        await ws.send_json({"type": "error", "message": str(exc)})
+        await ws.close(code=1003)
+        return
+    await _redis_to_ws(ws, quote_channel(sym))

@@ -47,4 +47,21 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.ai_tasks.ai_watch_all",
         "schedule": crontab(minute="*/15", hour="9-14"),
     },
+    # 分钟 K 增量：交易时段每 5 分钟（仅 9-11 / 13-14 时段，任务内还会再次校验 is_trading_time）
+    "minute-kline-5m-trading": {
+        "task": "app.tasks.data_tasks.download_minute_kline_all",
+        "schedule": crontab(minute="*/5", hour="9-11,13-14"),
+        "kwargs": {"period": "5m"},
+    },
+    # 1m 节奏更紧：每 2 分钟一次
+    "minute-kline-1m-trading": {
+        "task": "app.tasks.data_tasks.download_minute_kline_all",
+        "schedule": crontab(minute="*/2", hour="9-11,13-14"),
+        "kwargs": {"period": "1m"},
+    },
+    # 实时报价：交易时段每分钟全市场快照推一次
+    "push-quote-snapshot-1min": {
+        "task": "app.tasks.data_tasks.push_quote_snapshot",
+        "schedule": crontab(minute="*", hour="9-11,13-14"),
+    },
 }

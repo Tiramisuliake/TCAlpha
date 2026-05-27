@@ -83,10 +83,17 @@ def trigger_refresh_symbols() -> str:
 
 
 def trigger_download(symbol: str, period: str = "1d") -> str:
-    """触发 Celery 下载任务，返回 task_id。"""
+    """触发 Celery 下载任务，返回 task_id。
+
+    分钟级周期使用 AKShare 默认时间窗口（不显式传 start/end），日线传 3 年窗口。
+    """
     from app.tasks.data_tasks import download_one_symbol
 
-    end = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-    start = (datetime.now(tz=timezone.utc) - timedelta(days=_FALLBACK_DAYS)).strftime("%Y-%m-%d")
-    result = download_one_symbol.delay(symbol, period, start, end)
+    if period.endswith("m"):
+        result = download_one_symbol.delay(symbol, period)
+    else:
+        now = datetime.now(tz=timezone.utc)
+        end = now.strftime("%Y-%m-%d")
+        start = (now - timedelta(days=_FALLBACK_DAYS)).strftime("%Y-%m-%d")
+        result = download_one_symbol.delay(symbol, period, start, end)
     return result.id

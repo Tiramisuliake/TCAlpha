@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -7,6 +7,7 @@ import {
   Select,
   Space,
   Spin,
+  Statistic,
   Tag,
   message,
 } from "antd";
@@ -21,8 +22,9 @@ import { createChart } from "lightweight-charts";
 import type { IChartApi } from "lightweight-charts";
 import { getKline, getSymbols, triggerDownload } from "@/api/market";
 import { streamChartAnalysis } from "@/api/ai_chart";
-import type { KlineBar, Period } from "@/types";
+import type { KlineBar, Period, QuoteUpdate } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "日K", value: "1d" },
@@ -113,6 +115,33 @@ export default function ChartPage() {
   const [aiText, setAiText] = useState("");
   const [aiStreaming, setAiStreaming] = useState(false);
   const aiAbortRef = useRef<AbortController | null>(null);
+
+  const [quote, setQuote] = useState<QuoteUpdate | null>(null);
+  // 切换 symbol 时重置
+  useEffect(() => {
+    setQuote(null);
+  }, [symbol]);
+
+  const wsUrl = useMemo(() => {
+    if (!symbol) return "";
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/ws/quote?symbol=${encodeURIComponent(symbol)}`;
+  }, [symbol]);
+
+  useWebSocket(
+    wsUrl,
+    (raw) => {
+      try {
+        const msg = JSON.parse(raw);
+        if (msg && typeof msg === "object" && "price" in msg) {
+          setQuote(msg as QuoteUpdate);
+        }
+      } catch {
+        // ignore
+      }
+    },
+    { enabled: !!symbol }
+  );
 
   const { data: symbolsData } = useQuery({
     queryKey: ["symbols", { search: symbolSearch, limit: 50 }],
@@ -224,6 +253,37 @@ export default function ChartPage() {
             AI 解读
           </Button>
           {isFetching && <Spin size="small" />}
+          {quote && (
+            <Space className="ml-2" size={16}>
+              <Statistic
+                title="最新价"
+                value={quote.price}
+                precision={2}
+                valueStyle={{
+                  fontSize: 16,
+                  color:
+                    (quote.pct_chg ?? 0) > 0
+                      ? "#ef4444"
+                      : (quote.pct_chg ?? 0) < 0
+                        ? "#10b981"
+                        : undefined,
+                }}
+              />
+              {quote.pct_chg != null && (
+                <Statistic
+                  title="涨跌幅"
+                  value={quote.pct_chg}
+                  precision={2}
+                  suffix="%"
+                  valueStyle={{
+                    fontSize: 14,
+                    color: quote.pct_chg > 0 ? "#ef4444" : quote.pct_chg < 0 ? "#10b981" : undefined,
+                  }}
+                />
+              )}
+              <Tag color="processing">实时</Tag>
+            </Space>
+          )}
         </Space>
 
         <div className="flex-1 min-h-0 flex flex-col">

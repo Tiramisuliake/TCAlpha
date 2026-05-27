@@ -33,6 +33,24 @@ export interface KlineResponse {
   total: number;
 }
 
+// ── Real-time Quote (Phase 5 C) ──────────────────────────────
+
+export interface QuoteUpdate {
+  symbol: string;
+  code: string;
+  name?: string;
+  price: number;
+  change?: number;
+  pct_chg?: number;
+  volume?: number;
+  amount?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  pre_close?: number;
+  ts: string;
+}
+
 // ── Strategy ──────────────────────────────────────────────
 
 export interface StrategyConfig {

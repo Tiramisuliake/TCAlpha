@@ -78,14 +78,25 @@ def _macd(close: np.ndarray) -> tuple[float, float, float]:
 # ── 快照 ──────────────────────────────────────────────────────────────
 
 
-def build_snapshot(symbol: str) -> dict[str, Any] | None:
-    """从 ArcticDB 读最近 60 根日 K，算指标，返回喂给 AI 的字典。"""
+_VALID_PERIODS = {"1d", "1m", "5m", "15m", "30m", "60m"}
+
+
+def build_snapshot(symbol: str, period: str = "1d") -> dict[str, Any] | None:
+    """从 ArcticDB 读最近 60 根 K，算指标，返回喂给 AI 的字典。
+
+    period: 1d / 1m / 5m / 15m / 30m / 60m，对应 ``bar_{period}`` library。
+    """
+    if period not in _VALID_PERIODS:
+        logger.warning("ai_watcher: invalid period {}", period)
+        return None
+
     from app.db.arctic import get_library
 
     sym = normalize(symbol)
-    lib = get_library("bar_1d")
+    lib_name = f"bar_{period}"
+    lib = get_library(lib_name)
     if sym not in lib.list_symbols():
-        logger.warning("ai_watcher: no bar_1d data for {}", sym)
+        logger.warning("ai_watcher: no {} data for {}", lib_name, sym)
         return None
 
     df: pd.DataFrame = lib.read(sym).data
@@ -108,9 +119,12 @@ def build_snapshot(symbol: str) -> dict[str, Any] | None:
     ret_5d = float(close[-1] / close[-6] - 1) if len(close) >= 6 else 0.0
     ret_20d = float(close[-1] / close[-21] - 1) if len(close) >= 21 else 0.0
 
+    last_idx = df.index[-1]
+    as_of = str(last_idx.date()) if period == "1d" else last_idx.isoformat()
     snapshot = {
         "symbol": sym,
-        "as_of": str(df.index[-1].date()),
+        "period": period,
+        "as_of": as_of,
         "close": round(float(close[-1]), 2),
         "recent_close_5d": recent_close,
         "ma5": round(ma5, 2),
@@ -177,9 +191,9 @@ def _call_ai_json(snapshot: dict[str, Any]) -> WatchResult | None:
 # ── 单个 / 全部 ────────────────────────────────────────────────────────
 
 
-def watch_symbol(user_id: int, symbol: str) -> AiAlert | None:
+def watch_symbol(user_id: int, symbol: str, period: str = "1d") -> AiAlert | None:
     """对单个标的跑一次盯盘。返回落库的 AiAlert，失败返回 None。"""
-    snapshot = build_snapshot(symbol)
+    snapshot = build_snapshot(symbol, period=period)
     if snapshot is None:
         return None
 

@@ -1,35 +1,23 @@
 """AKShare 数据下载 + ArcticDB 落库（Phase 1）。"""
 from __future__ import annotations
 
-import time
 from datetime import datetime
 
 import pandas as pd
-import redis as _redis
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.config import settings
 from app.db.arctic import get_library
+from app.utils.rate_limit import acquire, wait_for_akshare
 from app.utils.symbol import code, normalize
 
-_r = _redis.from_url(settings.redis_url, decode_responses=True)
-
-# ──────────────────────────────────────────────
-# 限流（Redis 令牌，跨 worker 共享）
-# ──────────────────────────────────────────────
 
 def wait_for_rate_limit(max_per_sec: int | None = None) -> None:
-    limit = max_per_sec or settings.akshare_rate_limit
-    while True:
-        slot = int(time.time())
-        key = f"ak:slot:{slot}"
-        cnt = int(_r.incr(key))
-        if cnt == 1:
-            _r.expire(key, 2)
-        if cnt <= limit:
-            return
-        time.sleep(0.3)
+    """向后兼容封装：转发到 utils.rate_limit。"""
+    if max_per_sec is not None:
+        acquire("ak", max_per_sec)
+    else:
+        wait_for_akshare()
 
 
 # ──────────────────────────────────────────────
@@ -140,3 +128,117 @@ def download_and_save_daily(symbol: str, start: str, end: str) -> dict:
     df = fetch_daily(symbol, start, end)
     rows = save_daily(symbol, df)
     return {"symbol": normalize(symbol), "rows": rows, "start": start, "end": end}
+
+
+# ──────────────────────────────────────────────
+# 分钟 K 线（Phase 5 C 阶段）
+# ──────────────────────────────────────────────
+
+_MINUTE_PERIODS = (1, 5, 15, 30, 60)
+_MINUTE_COLS = ["open", "high", "low", "close", "volume", "amount"]
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+def fetch_minute_kline(
+    symbol: str,
+    period: int,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
+    """从 AKShare 下载分钟 K，period ∈ {1,5,15,30,60}。
+
+    AKShare ``stock_zh_a_hist_min_em`` 要求 symbol 用 ``sh600000`` 格式，period 传字符串。
+    start/end 格式 ``YYYY-MM-DD HH:MM:SS``；不传则取近一段（AKShare 默认窗口）。
+    """
+    if period not in _MINUTE_PERIODS:
+        raise ValueError(f"unsupported minute period: {period}, allowed {_MINUTE_PERIODS}")
+
+    import akshare as ak
+
+    wait_for_rate_limit()
+    sym_key = normalize(symbol)
+    kwargs: dict = {
+        "symbol": sym_key,
+        "period": str(period),
+        "adjust": "qfq",
+    }
+    if start:
+        kwargs["start_date"] = start
+    if end:
+        kwargs["end_date"] = end
+
+    df = ak.stock_zh_a_hist_min_em(**kwargs)
+    if df is None or df.empty:
+        raise ValueError(f"empty minute data for {symbol} period={period}")
+
+    df.columns = [c.strip() for c in df.columns]
+    rename_map = {
+        "时间": "dt", "开盘": "open", "收盘": "close",
+        "最高": "high", "最低": "low",
+        "成交量": "volume", "成交额": "amount",
+    }
+    df = df.rename(columns=rename_map)
+
+    df["dt"] = pd.to_datetime(df["dt"]).dt.tz_localize("Asia/Shanghai")
+    df = df.set_index("dt").sort_index()
+
+    for col in _MINUTE_COLS:
+        if col not in df.columns:
+            df[col] = 0.0
+    df = df[_MINUTE_COLS].astype(float)
+
+    if df["close"].isna().any():
+        raise ValueError(f"NaN in close price for {symbol} period={period}")
+    if not df.index.is_monotonic_increasing:
+        raise ValueError(f"index not monotonic for {symbol} period={period}")
+    if df.index.duplicated().any():
+        df = df[~df.index.duplicated(keep="last")]
+
+    return df
+
+
+def save_minute(symbol: str, period: int, df: pd.DataFrame) -> int:
+    """增量写入 ArcticDB ``bar_{period}m`` library，返回总行数。"""
+    if period not in _MINUTE_PERIODS:
+        raise ValueError(f"unsupported minute period: {period}")
+
+    lib = get_library(f"bar_{period}m")
+    sym_key = normalize(symbol)
+
+    if sym_key in lib.list_symbols():
+        existing: pd.DataFrame = lib.read(sym_key).data
+        combined = pd.concat([existing, df])
+        combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+    else:
+        combined = df
+
+    lib.write(
+        sym_key,
+        combined,
+        metadata={
+            "source": "akshare",
+            "period": f"{period}m",
+            "fetched_at": datetime.now().isoformat(),
+        },
+    )
+    rows = len(combined)
+    logger.info("save_minute: {} [{}m] → {} rows total", sym_key, period, rows)
+    return rows
+
+
+def download_and_save_minute(
+    symbol: str,
+    period: int,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict:
+    """下载并落库分钟 K，返回摘要 dict（供 Celery 任务直接调用）。"""
+    df = fetch_minute_kline(symbol, period, start, end)
+    rows = save_minute(symbol, period, df)
+    return {
+        "symbol": normalize(symbol),
+        "period": f"{period}m",
+        "rows": rows,
+        "start": start,
+        "end": end,
+    }

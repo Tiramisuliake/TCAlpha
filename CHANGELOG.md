@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-27
+
+### Added — Phase 7 RBAC 后端基础（v0.7.0a，后端独立交付）
+
+参考 fastapi-vue-admin，落地"角色 / 权限 / 数据权限 + JWT"四件套的后端部分；
+前端 JWT 接入与 Basic Auth 平滑下线放到 v0.7.0b 单独验证。
+
+数据库：
+- 迁移 `7aaf2f5c947e_add_rbac_roles_permissions_and_user_fields`
+  - 4 张新表：`roles` / `permissions` / `role_permissions` / `user_roles`，全部加唯一约束 + 索引 + `ON DELETE CASCADE`
+  - `users` 新增 `display_name` / `is_super` / `last_login_at` 三列（`server_default` 兼容 v0.6.0 已有 admin 行）
+  - 种子：3 个角色（admin / trader / viewer）+ 18 个权限点（system / strategy / sim / backtest / data / ai / notify 六大类）+ 角色-权限映射
+  - 现有 `id=1` admin 用户：`is_super=true` + 绑 admin 角色（保留 Phase 6 历史数据）
+- ORM：`db/models/permission.py` + `db/models/role.py`（Role / UserRole / RolePermission），在 `db/models/__init__.py` 集中导出供 alembic autogenerate
+
+JWT 核心（`backend/app/core/`）：
+- `security.py`
+  - `hash_password` / `verify_password`：bcrypt 直调，72 字节截断（沿用 Phase 6 与 passlib 5.x 的兼容补丁）
+  - `create_access_token(user_id)`：HS256，15min，payload 含 `sub` / `jti` / `type=access`
+  - `create_refresh_token(user_id)`：HS256，30 天，jti 用于黑名单
+  - `decode_token(token, expected_type=...)`：严格校验 access / refresh 类型，防止互用
+  - `blacklist_jti` / `is_jti_blacklisted`：Redis `auth:bl:<jti>`，TTL = token 剩余有效期
+- `auth_deps.py`
+  - `AuthUser` 数据类：扁平的 `role_codes` / `permission_codes` / `data_scope`（取所有角色最宽 self < dept < all）
+  - `get_current_user(request, db)`：Bearer access → 黑名单校验 → 一次查 users + roles + permissions（拒绝 N+1）
+  - `require_permission(*codes)` / `require_any_permission(*codes)`：路由级权限闸门，super 用户绕过
+  - `CurrentUser = Annotated[AuthUser, Depends(get_current_user)]`：路由签名直接用
+
+业务层 / 路由（`backend/app/services/auth.py` + `backend/app/api/auth.py` + `backend/app/schemas/auth.py`）：
+- `POST /api/auth/login`：用户名 + 密码 → 200 返回 `access_token` (JSON) + 写 refresh httponly cookie；更新 `last_login_at`；统一错误消息防用户名枚举
+- `POST /api/auth/refresh`：从 cookie 读 refresh → 旋转新 refresh + 发新 access；旧 jti 拉黑（防重放）
+- `POST /api/auth/logout`：拉黑 refresh + 拉黑 access（如果带了）+ 清 cookie，幂等
+- `GET /api/auth/me`：返回 `id / username / display_name / is_super / roles[] / permissions[] / data_scope / last_login_at`
+- Refresh cookie：`HttpOnly` + `SameSite=Strict` + `Path=/api/auth`（业务接口不带 refresh，进一步降 CSRF 面）+ 生产 `Secure` 开关
+
+deps 软升级（`backend/app/deps.py`）：
+- `get_current_user_id`：优先解析 `Authorization: Bearer <access>` 的 `sub`；缺失 / 失效则 fallback `settings.default_user_id`（向后兼容 v0.6.0 Basic Auth 时期的前端，老接口零改动）
+- v0.7.0b 前端切完 JWT 后再硬切：拿不到 token 直接 401
+
+配置（`backend/app/config.py`）：
+- 新增 `jwt_access_expire_minutes` (15) / `jwt_refresh_expire_days` (30) / `refresh_cookie_name` / `refresh_cookie_path` / `refresh_cookie_secure` / `refresh_cookie_samesite`
+- 保留 `jwt_expire_minutes` 兼容旧字段
+
+工具：
+- `backend/scripts/create_admin.py`：交互式创建 / 重置超级管理员（更新密码 + `is_super=true` + 绑 admin 角色），幂等
+
+### Notes — v0.7.0a 边界
+
+- 仍兼容 v0.6.0 Basic Auth：`AUTH_ENABLED=true` 时 ASGI 中间件继续生效，新 `/api/auth/*` 端点已挂载但需用户手动加白名单（或 v0.7.0b 一并切换）
+- 前端 v0.7.0a 不做改动，仍走 Basic Auth；JWT 端到端验证用 curl / `/docs` / TestClient
+- 权限闸门 `require_permission` 已就位但未挂任何路由（业务路由的 RBAC 改造留给后续小版本，按"先 read，再 write，再 delete"渐进）
+
 ## [0.6.0] — 2026-05-27
 
 ### Added — Phase 6 Step 1：Basic Auth 鉴权

@@ -15,6 +15,7 @@ from app.api import (
     ai,
     ai_alerts,
     ai_chart,
+    auth,
     backtest,
     data,
     health,
@@ -78,6 +79,7 @@ if settings.auth_enabled:
 
 # 路由挂载
 app.include_router(health.router)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(market.router, prefix="/api/market", tags=["market"])
 app.include_router(strategy.router, prefix="/api/strategy", tags=["strategy"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])

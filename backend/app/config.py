@@ -39,10 +39,23 @@ class Settings(BaseSettings):
     # ArcticDB
     arctic_uri: str = "lmdb://./data/arctic"
 
-    # JWT（预留）
+    # JWT（Phase 7 RBAC）
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
+    # access token：内存，15min
+    jwt_access_expire_minutes: int = 15
+    # refresh token：HttpOnly cookie，30 天
+    jwt_refresh_expire_days: int = 30
+    # 兼容旧字段（早期 Basic Auth 阶段）
     jwt_expire_minutes: int = 60 * 24 * 30
+
+    # Refresh Cookie
+    refresh_cookie_name: str = "tcalpha_refresh"
+    refresh_cookie_path: str = "/api/auth"
+    # 生产置 true（https + secure）；dev 留 false
+    refresh_cookie_secure: bool = False
+    # 防 CSRF：strict / lax / none
+    refresh_cookie_samesite: str = "strict"
 
     # 默认用户（个人版临时占位）
     default_user_id: int = 1

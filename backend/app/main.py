@@ -11,7 +11,19 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import ai, backtest, data, health, market, notify, sim, strategy, ws
+from app.api import (
+    ai,
+    ai_alerts,
+    backtest,
+    data,
+    health,
+    market,
+    notify,
+    sim,
+    strategy,
+    watchlist,
+    ws,
+)
 from app.config import settings
 from app.core.event_bus import publish_event
 from app.db.postgres import dispose_engine, init_engine
@@ -50,6 +62,8 @@ app.include_router(data.router, prefix="/api/data", tags=["data"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(sim.router, prefix="/api/sim", tags=["sim"])
 app.include_router(notify.router, prefix="/api/notify", tags=["notify"])
+app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
+app.include_router(ai_alerts.router, prefix="/api/ai-alerts", tags=["ai-alerts"])
 app.include_router(ws.router, tags=["ws"])
 
 

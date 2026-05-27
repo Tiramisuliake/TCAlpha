@@ -2,7 +2,6 @@ import { Card, Statistic, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { root } from "@/api/client";
 import { getSymbols } from "@/api/market";
-import { PageScaffold } from "@/components/PageScaffold";
 
 export default function Dashboard() {
   const { data: health } = useQuery({
@@ -17,8 +16,8 @@ export default function Dashboard() {
   });
 
   return (
-    <PageScaffold>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div className="flex-1 min-h-0 grid grid-rows-[auto_1fr] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
           <Statistic
             title="后端状态"
@@ -34,18 +33,18 @@ export default function Dashboard() {
           <div className="text-xs text-slate-400 mt-1">已入库股票总数</div>
         </Card>
         <Card>
-          <Statistic title="当前阶段" value="Phase 4" />
-          <div className="text-xs text-slate-400 mt-1">实时策略 + 模拟撮合</div>
+          <Statistic title="当前阶段" value="Phase 5" />
+          <div className="text-xs text-slate-400 mt-1">AI 助手 + 通知中心</div>
         </Card>
       </div>
 
       <Card
         title="今日行情"
-        className="flex-1"
-        classNames={{ body: "flex items-center justify-center text-slate-400 text-sm" }}
+        className="flex-1 min-h-0"
+        classNames={{ body: "items-center justify-center text-slate-400 text-sm" }}
       >
         Phase 5 接入实时行情推送
       </Card>
-    </PageScaffold>
+    </div>
   );
 }

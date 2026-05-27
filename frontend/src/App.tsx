@@ -39,8 +39,8 @@ function Shell() {
   const activeKey = useWorkspaceStore((s) => s.activeKey);
 
   return (
-    <Layout className="min-h-screen">
-      <Header className="!bg-slate-900 !h-15 flex items-center !px-6 border-b border-slate-800">
+    <Layout className="h-screen overflow-hidden">
+      <Header className="!bg-slate-900 !h-15 flex-shrink-0 flex items-center !px-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-500 text-white font-bold flex items-center justify-center text-sm tracking-wide shadow-sm">
             TC
@@ -51,11 +51,11 @@ function Shell() {
           </div>
         </div>
       </Header>
-      <Layout>
+      <Layout className="flex-1 min-h-0">
         <Sider
           width={220}
           theme="dark"
-          className="!bg-slate-900 border-r border-slate-800"
+          className="!bg-slate-900 border-r border-slate-800 overflow-y-auto"
         >
           <Menu
             mode="inline"
@@ -69,9 +69,9 @@ function Shell() {
             }))}
           />
         </Sider>
-        <Layout className="!bg-slate-50">
+        <Layout className="!bg-slate-100 flex-1 min-w-0 flex flex-col">
           <WorkspaceTabs />
-          <Content className="flex flex-col p-6 overflow-auto">
+          <Content className="flex-1 min-h-0 p-4 overflow-hidden flex flex-col">
             <Outlet />
           </Content>
         </Layout>

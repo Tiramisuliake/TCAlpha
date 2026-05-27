@@ -7,7 +7,7 @@ interface PageScaffoldProps {
 
 export function PageScaffold({ children, className }: PageScaffoldProps) {
   return (
-    <div className={`flex-1 flex flex-col gap-4 min-h-0 ${className ?? ""}`}>
+    <div className={`flex-1 flex flex-col gap-3 min-h-0 ${className ?? ""}`}>
       {children}
     </div>
   );

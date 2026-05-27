@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-05-27
+
+### Added — Phase 5 Step 3 AI 盯盘
+
+后端：
+- `db/models/watchlist.py` + `ai_alert.py`：用户关注列表（user_id+symbol 唯一约束）+ AI 盯盘告警结果（含指标快照）
+- 迁移 `3b597a00cb62_add_watchlists_and_ai_alerts`，server_default 兼容空表
+- `services/ai_watcher.py`：核心盯盘函数
+  - `build_snapshot(symbol)`：读 ArcticDB `bar_1d` 最近 60 根，算 MA5/10/20 / RSI14 / MACD（DIF/DEA/HIST 自实现 EMA）/ 5d & 20d 涨跌幅 / 量能比
+  - `watch_symbol(user_id, symbol)`：拼 prompt → DeepSeek `response_format={"type":"json_object"}` 单次调用 → Pydantic `WatchResult` 严格校验 → 落 `ai_alerts` → `publish_event("ai.alert.{level}")`
+  - 系统 prompt 严格要求 level/signal/reason 三字段 JSON，禁止"建议买入"等投资建议措辞
+- `tasks/ai_tasks.py`：
+  - `ai_watch_all`（beat 触发，遍历所有 watchlist，可 `force=True` 跳过交易时段判断）
+  - `ai_watch_one`（手动单标的）
+  - `celery_app.py` beat 加 `crontab(minute='*/15', hour='9-14')`
+- `api/watchlist.py` + `api/ai_alerts.py`：watchlist CRUD + alert 列表（level/symbol/only_unacked 过滤）+ ack + 手动触发 `POST /api/ai-alerts/watch/{symbol}`
+- 集成：盯盘结果走 `ai.alert.warn` / `ai.alert.danger` 事件，用户在「通知中心」勾 `ai.alert.*` 即可推送到飞书
+
+前端：
+- `api/watchlist.ts` + `api/ai_alerts.ts`：API 封装
+- `pages/AI/index.tsx` 改造为 Tabs：
+  - **助手聊天**：保留原 chat（拆为 `Chat.tsx`）
+  - **AI 盯盘**：告警卡片列表（level 段选 / 未读切换 / ack 按钮 / 折叠指标快照）
+  - **关注列表**：股票增删 + 行内"盯一次"手动触发 + "查告警"跳转
+
+工具：
+- 无新外部依赖
+
 ## [0.5.1] — 2026-05-27
 
 ### Added — Phase 5 Step 2 通知中心 + 飞书推送

@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.data_tasks",
         "app.tasks.backtest_tasks",
         "app.tasks.strategy_tasks",
+        "app.tasks.ai_tasks",
     ],
 )
 
@@ -40,5 +41,10 @@ celery_app.conf.beat_schedule = {
     "refresh-symbol-list": {
         "task": "app.tasks.data_tasks.refresh_symbol_list",
         "schedule": crontab(hour=8, minute=30),
+    },
+    # AI 盯盘：交易时段每 15 分钟（9:30 / 9:45 ... / 14:45）
+    "ai-watch-all-15min": {
+        "task": "app.tasks.ai_tasks.ai_watch_all",
+        "schedule": crontab(minute="*/15", hour="9-14"),
     },
 }

@@ -40,6 +40,7 @@ import {
 } from "@/api/sim";
 import { getSymbols } from "@/api/market";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { wsUrl } from "@/store/useAuthStore";
 import type { SimOrder, StrategyClassInfo, StrategyConfig, StrategyCreate, StrategySignal } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -84,7 +85,7 @@ export default function StrategyPage() {
     }
   }, [qc]);
 
-  useWebSocket("ws://localhost:8000/ws/orders?user_id=1", onOrderMsg);
+  useWebSocket(wsUrl("/ws/orders?user_id=1"), onOrderMsg);
 
   // 信号 WS（随选中策略变化）
   const onSignalMsg = useCallback((raw: string) => {
@@ -96,7 +97,7 @@ export default function StrategyPage() {
   }, []);
 
   useWebSocket(
-    activeStrategyId ? `ws://localhost:8000/ws/signals?strategy_id=${activeStrategyId}` : "",
+    activeStrategyId ? wsUrl(`/ws/signals?strategy_id=${activeStrategyId}`) : "",
     onSignalMsg,
     { enabled: !!activeStrategyId }
   );

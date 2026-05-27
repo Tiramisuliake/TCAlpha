@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # Basic Auth（Phase 6 上线必备）
+    auth_enabled: bool = False
+    auth_username: str = "admin"
+    # bcrypt hash；用 scripts/gen_password_hash.py 生成
+    auth_password_hash: str = ""
+    # 即使开启鉴权，也保留这些路径无需认证：
+    auth_public_paths: str = "/health,/"
+    # /docs /redoc /openapi.json 是否随鉴权一并保护（防扫描）
+    auth_protect_docs: bool = True
+
     # AI
     ai_api_base: str = "https://api.deepseek.com/v1"
     ai_api_key: str = ""
@@ -61,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def auth_public_paths_list(self) -> list[str]:
+        return [p.strip() for p in self.auth_public_paths.split(",") if p.strip()]
 
 
 @lru_cache

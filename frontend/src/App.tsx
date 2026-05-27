@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { Layout, Menu } from "antd";
-import { Link, Outlet, Route, Routes } from "react-router";
+import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   AppstoreOutlined,
   BellOutlined,
@@ -16,6 +18,7 @@ import Backtest from "./pages/Backtest";
 import DataMgr from "./pages/Data";
 import AI from "./pages/AI";
 import Notify from "./pages/Notify";
+import Login from "./pages/Login";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
 import {
   useWorkspaceStore,
@@ -34,6 +37,21 @@ const MENU_ITEMS: { key: WorkspaceRouteKey; icon: React.ReactNode; label: string
   { key: "ai", icon: <RobotOutlined />, label: "AI 助手" },
   { key: "notify", icon: <BellOutlined />, label: "通知中心" },
 ];
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore((s) => s.token);
+  const hydrate = useAuthStore((s) => s.hydrate);
+  const location = useLocation();
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  if (!token) {
+    return <Navigate to={`/login?from=${encodeURIComponent(location.pathname)}`} replace />;
+  }
+  return <>{children}</>;
+}
 
 function Shell() {
   const activeKey = useWorkspaceStore((s) => s.activeKey);
@@ -83,7 +101,14 @@ function Shell() {
 export default function App() {
   return (
     <Routes>
-      <Route element={<Shell />}>
+      <Route path="/login" element={<Login />} />
+      <Route
+        element={
+          <RequireAuth>
+            <Shell />
+          </RequireAuth>
+        }
+      >
         <Route path="/" element={<Dashboard />} />
         <Route path="/chart" element={<Chart />} />
         <Route path="/strategy" element={<Strategy />} />

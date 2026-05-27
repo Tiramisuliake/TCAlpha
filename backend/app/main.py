@@ -14,6 +14,7 @@ from app import __version__
 from app.api import (
     ai,
     ai_alerts,
+    ai_chart,
     backtest,
     data,
     health,
@@ -27,6 +28,7 @@ from app.api import (
 from app.config import settings
 from app.core.event_bus import publish_event
 from app.db.postgres import dispose_engine, init_engine
+from app.middleware.basic_auth import BasicAuthMiddleware
 
 
 @asynccontextmanager
@@ -53,6 +55,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Basic Auth（按 settings.auth_enabled 开关；放在 CORS 之后让预检 OPTIONS 不被拦）
+if settings.auth_enabled:
+    if not settings.auth_password_hash:
+        logger.warning(
+            "AUTH_ENABLED=true 但 AUTH_PASSWORD_HASH 为空，所有请求将被拒绝。"
+            " 请用 scripts/gen_password_hash.py 生成密码哈希。"
+        )
+    app.add_middleware(
+        BasicAuthMiddleware,
+        username=settings.auth_username,
+        password_hash=settings.auth_password_hash,
+        public_paths=settings.auth_public_paths_list,
+        protect_docs=settings.auth_protect_docs,
+    )
+    logger.info(
+        "BasicAuth enabled: user={} public_paths={} protect_docs={}",
+        settings.auth_username,
+        settings.auth_public_paths_list,
+        settings.auth_protect_docs,
+    )
+
 # 路由挂载
 app.include_router(health.router)
 app.include_router(market.router, prefix="/api/market", tags=["market"])
@@ -60,6 +83,7 @@ app.include_router(strategy.router, prefix="/api/strategy", tags=["strategy"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
 app.include_router(data.router, prefix="/api/data", tags=["data"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_chart.router, prefix="/api/ai/chart", tags=["ai-chart"])
 app.include_router(sim.router, prefix="/api/sim", tags=["sim"])
 app.include_router(notify.router, prefix="/api/notify", tags=["notify"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])

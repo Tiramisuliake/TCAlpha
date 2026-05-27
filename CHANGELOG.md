@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-27
+
+### Added — Phase 6 Step 1：Basic Auth 鉴权
+
+公网部署的前置必备：让 TCAlpha 不再 "0 鉴权裸奔"。
+
+后端：
+- `config.py` 新增 `auth_enabled` / `auth_username` / `auth_password_hash` / `auth_public_paths` / `auth_protect_docs`
+- `middleware/basic_auth.py`：ASGI 中间件，同时覆盖 HTTP + WebSocket
+  - HTTP 路径走标准 `Authorization: Basic <base64>` header
+  - WebSocket 不能传 header，回退到 `?token=base64(user:pass)` 查询参数
+  - 公共白名单走 `auth_public_paths`（默认 `/health` `/`），`/docs` 等元数据由 `auth_protect_docs` 控制
+  - bcrypt 5.x 直接对接（绕过 passlib 4.x 自检兼容 bug，安全截断到 72 字节）
+- `main.py`：按 `settings.auth_enabled` 开关挂载 `BasicAuthMiddleware`
+- `scripts/gen_password_hash.py`：bcrypt 密码哈希生成工具
+
+前端：
+- `store/useAuthStore.ts`：Zustand store + sessionStorage 凭证（关 tab 即失效），导出 `authHeader()` / `wsUrl()` 工具
+- `api/client.ts`：axios 请求拦截器自动注入 `Authorization`；响应拦截器收到 401 时清状态并跳 `/login`
+- `api/ai.ts::streamChat`：SSE-over-fetch 同样带 Auth header
+- `pages/Strategy/index.tsx`：WS 改走 `wsUrl()`，移除硬编码 `ws://localhost:8000`
+- `pages/Login/index.tsx`：新增登录页（用户名 + 密码，自带探活校验）
+- `App.tsx`：`RequireAuth` 路由守卫，未登录访问任意页面跳 `/login?from=<path>`
+
+### Added — Phase 5 Step 4：图表 AI 分析
+
+- `services/ai_chart.py` + `api/ai_chart.py`：`GET /api/ai/chart/analyze?symbol=&period=` SSE 流式
+- `frontend/src/api/ai_chart.ts::streamChartAnalysis`：GET fetch + SSE 解析，复用 `authHeader()`
+- `pages/Chart/index.tsx`：右上"AI 分析"按钮 → 抽屉打开 → 喂当前 symbol/period 给 AI 流式解读
+
+### 工具 / 文档
+
+- `.env.prod.example`：生产环境完整 `.env` 模板
+- `docs/deploy.md`：从 0 到 v0.6.0 的部署 runbook + 安全自检
+
 ## [0.5.2] — 2026-05-27
 
 ### Added — Phase 5 Step 3 AI 盯盘

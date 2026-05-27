@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, Empty, Select, Space, Spin, message } from "antd";
-import { DownloadOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Card,
+  Drawer,
+  Empty,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  message,
+} from "antd";
+import {
+  DownloadOutlined,
+  RobotOutlined,
+  StopOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { createChart } from "lightweight-charts";
 import type { IChartApi } from "lightweight-charts";
 import { getKline, getSymbols, triggerDownload } from "@/api/market";
+import { streamChartAnalysis } from "@/api/ai_chart";
 import type { KlineBar, Period } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 
@@ -93,6 +109,11 @@ export default function ChartPage() {
   const [period, setPeriod] = useState<Period>("1d");
   const [symbolSearch, setSymbolSearch] = useState("");
 
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiStreaming, setAiStreaming] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
+
   const { data: symbolsData } = useQuery({
     queryKey: ["symbols", { search: symbolSearch, limit: 50 }],
     queryFn: () => getSymbols({ search: symbolSearch || undefined, limit: 50 }),
@@ -119,6 +140,38 @@ export default function ChartPage() {
   })) ?? [];
 
   const bars = klineData?.bars ?? [];
+
+  const runAi = async () => {
+    if (!symbol) return;
+    aiAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+
+    setAiOpen(true);
+    setAiText("");
+    setAiStreaming(true);
+
+    await streamChartAnalysis(symbol, period, {
+      signal: ctrl.signal,
+      onChunk: (text) => setAiText((prev) => prev + text),
+      onDone: () => setAiStreaming(false),
+      onError: (msg) => {
+        message.error(`AI 解读失败：${msg}`);
+        setAiStreaming(false);
+      },
+    });
+  };
+
+  const stopAi = () => {
+    aiAbortRef.current?.abort();
+    setAiStreaming(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      aiAbortRef.current?.abort();
+    };
+  }, []);
 
   return (
     <PageScaffold>
@@ -160,6 +213,16 @@ export default function ChartPage() {
               下载K线
             </Button>
           )}
+          <Button
+            type="primary"
+            ghost
+            icon={<RobotOutlined />}
+            size="small"
+            disabled={!symbol || bars.length === 0}
+            onClick={runAi}
+          >
+            AI 解读
+          </Button>
           {isFetching && <Spin size="small" />}
         </Space>
 
@@ -183,6 +246,58 @@ export default function ChartPage() {
           )}
         </div>
       </Card>
+
+      <Drawer
+        title={
+          <Space>
+            <RobotOutlined />
+            <span>AI 技术面解读</span>
+            {symbol && <Tag color="blue">{symbol}</Tag>}
+            {symbol && <Tag>{period}</Tag>}
+          </Space>
+        }
+        placement="right"
+        width={480}
+        open={aiOpen}
+        onClose={() => {
+          stopAi();
+          setAiOpen(false);
+        }}
+        extra={
+          <Space>
+            {aiStreaming ? (
+              <Button size="small" icon={<StopOutlined />} onClick={stopAi}>
+                停止
+              </Button>
+            ) : (
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={runAi}
+                disabled={!symbol}
+              >
+                重新分析
+              </Button>
+            )}
+          </Space>
+        }
+      >
+        {aiStreaming && !aiText ? (
+          <div className="flex items-center gap-2 text-slate-400 text-sm">
+            <Spin size="small" />
+            <span>正在分析…</span>
+          </div>
+        ) : aiText ? (
+          <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800">
+            {aiText}
+            {aiStreaming && (
+              <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-current animate-pulse" />
+            )}
+          </div>
+        ) : (
+          <div className="text-slate-400 text-sm">点击"重新分析"开始</div>
+        )}
+      </Drawer>
     </PageScaffold>
   );
 }

@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-27
+
+### Added — Phase 7 RBAC 闸门生效
+
+把 v0.7.0 种下的 18 个权限点真正挂到业务路由上，让 trader / viewer 在 API 层就受限。
+
+后端路由
+- `api/strategy.py`：list/classes → `strategy.read`；POST/PUT → `strategy.write`；DELETE → `strategy.delete`；start/stop → `strategy.run`
+- `api/backtest.py`：list/get/trades → `backtest.read`；submit → `backtest.run`
+- `api/sim.py`：orders / position → `sim.order.read`
+- `api/data.py`：download → `data.download`
+- `api/market.py`：symbols / kline → `data.read`；refresh / download → `data.download`
+- `api/notify.py`：rules/logs/event-types → `notify.rule.read`；POST/PUT/DELETE/test → `notify.rule.write`
+- `api/watchlist.py` + `api/ai_alerts.py`：全部 `ai.watch`
+- `api/ai.py::chat` + `api/ai_chart.py::analyze`：`ai.chat`
+- `/api/auth/*` / `/health` / `/` 不挂闸门（登录入口 + 健康检查）
+
+权限语义沿用 v0.7.0 种子：
+- admin：18/18（super=true 直接绕过，不需要 perm 列表）
+- trader：14/18 操作类（strategy / sim / backtest / data / ai / notify 各自读+写+运行）
+- viewer：6/18 只读（strategy.read / sim.order.read / backtest.read / data.read / ai.chat / notify.rule.read）
+
+测试
+- 新增 `tests/test_rbac.py`：12 个用例覆盖
+  - 无 token → 401（require_permission 直接拒）
+  - admin / super → 任意端点 200
+  - viewer 调写端点（notify/strategy delete/backtest submit/data download）→ 403，detail 含缺失的权限码
+  - trader 调写端点 → 闸门通过（!= 403）
+- 用 `app.dependency_overrides[get_current_user] = ...` 注入 AuthUser，避免依赖真 JWT 签发；用 `init_engine()` autouse fixture 让 TestClient 也能拿到 async session
+
+### Notes — v0.7.1 行为变化
+
+- **无 JWT 访问业务接口直接 401**（v0.7.0b 已硬切，v0.7.1 进一步坐实）；`deps.get_current_user_id` 的 fallback 仍保留兼容期，但 `require_permission` 不再走 fallback
+- `/api/auth/login` 仍不需要 token；`/health` / `/` 仍开放
+- `BasicAuthMiddleware` 默认未挂载（v0.6.0 起 `AUTH_ENABLED=false`）；如启用，会与 JWT 闸门叠加（两层都过才行），建议生产关 Basic Auth 单走 JWT
+
 ## [0.7.0] — 2026-05-27
 
 ### Added — Phase 7 RBAC 后端基础（v0.7.0a，后端独立交付）

@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.strategy import StrategyCreate, StrategyOut
 from app.services import sim as sim_svc
@@ -12,13 +13,17 @@ from app.services import strategy as strategy_svc
 router = APIRouter()
 
 
-@router.get("/classes")
+@router.get("/classes", dependencies=[Depends(require_permission("strategy.read"))])
 async def list_strategy_classes():
     """已注册的策略类（如 MaCrossStrategy）。"""
     return {"classes": strategy_svc.get_strategy_classes()}
 
 
-@router.get("/list", response_model=list[StrategyOut])
+@router.get(
+    "/list",
+    response_model=list[StrategyOut],
+    dependencies=[Depends(require_permission("strategy.read"))],
+)
 async def list_strategies(
     user_id: int = CurrentUserId,
     db: AsyncSession = DB,
@@ -26,7 +31,12 @@ async def list_strategies(
     return await strategy_svc.list_strategies(db, user_id)
 
 
-@router.post("", response_model=StrategyOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=StrategyOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("strategy.write"))],
+)
 async def create_strategy(
     payload: StrategyCreate,
     user_id: int = CurrentUserId,
@@ -35,7 +45,11 @@ async def create_strategy(
     return await strategy_svc.create_strategy(db, user_id, payload)
 
 
-@router.put("/{strategy_id}", response_model=StrategyOut)
+@router.put(
+    "/{strategy_id}",
+    response_model=StrategyOut,
+    dependencies=[Depends(require_permission("strategy.write"))],
+)
 async def update_strategy(
     strategy_id: int,
     payload: StrategyCreate,
@@ -48,7 +62,11 @@ async def update_strategy(
     return obj
 
 
-@router.delete("/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{strategy_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("strategy.delete"))],
+)
 async def delete_strategy(
     strategy_id: int,
     user_id: int = CurrentUserId,
@@ -59,7 +77,10 @@ async def delete_strategy(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "strategy not found")
 
 
-@router.post("/{strategy_id}/start")
+@router.post(
+    "/{strategy_id}/start",
+    dependencies=[Depends(require_permission("strategy.run"))],
+)
 async def start_strategy(
     strategy_id: int,
     user_id: int = CurrentUserId,
@@ -72,7 +93,10 @@ async def start_strategy(
     return result
 
 
-@router.post("/{strategy_id}/stop")
+@router.post(
+    "/{strategy_id}/stop",
+    dependencies=[Depends(require_permission("strategy.run"))],
+)
 async def stop_strategy(
     strategy_id: int,
     user_id: int = CurrentUserId,
@@ -85,7 +109,10 @@ async def stop_strategy(
     return result
 
 
-@router.get("/{strategy_id}/running")
+@router.get(
+    "/{strategy_id}/running",
+    dependencies=[Depends(require_permission("strategy.read"))],
+)
 async def strategy_running(strategy_id: int, _: int = CurrentUserId):
     """查询策略是否在运行（检查 Redis running key）。"""
     return {"strategy_id": strategy_id, "running": sim_svc.get_strategy_running_status(strategy_id)}

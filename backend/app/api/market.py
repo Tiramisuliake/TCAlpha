@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import require_permission
 from app.deps import get_db
 from app.schemas.market import (
     DownloadTriggerResponse,
@@ -16,14 +17,22 @@ from app.services import market as market_svc
 router = APIRouter()
 
 
-@router.post("/symbols/refresh", response_model=RefreshTriggerResponse)
+@router.post(
+    "/symbols/refresh",
+    response_model=RefreshTriggerResponse,
+    dependencies=[Depends(require_permission("data.download"))],
+)
 async def refresh_symbols():
     """触发 Celery 刷新全市场股票列表（异步，立即返回 task_id）。"""
     task_id = market_svc.trigger_refresh_symbols()
     return RefreshTriggerResponse(task_id=task_id)
 
 
-@router.get("/symbols", response_model=SymbolListResponse)
+@router.get(
+    "/symbols",
+    response_model=SymbolListResponse,
+    dependencies=[Depends(require_permission("data.read"))],
+)
 async def list_symbols(
     search: str | None = Query(default=None, description="按代码或名称模糊搜索"),
     exchange: str | None = Query(default=None, description="交易所过滤：SH / SZ / BJ"),
@@ -35,7 +44,11 @@ async def list_symbols(
     return await market_svc.get_symbols(db, search=search, exchange=exchange, limit=limit, offset=offset)
 
 
-@router.get("/kline/{symbol}", response_model=KlineResponse)
+@router.get(
+    "/kline/{symbol}",
+    response_model=KlineResponse,
+    dependencies=[Depends(require_permission("data.read"))],
+)
 async def get_kline(
     symbol: str,
     period: str = Query(default="1d", description="K线周期：1d / 1m / 5m / 15m / 30m / 60m"),
@@ -47,7 +60,11 @@ async def get_kline(
     return market_svc.get_kline(symbol, period=period, limit=limit)
 
 
-@router.post("/kline/{symbol}/download", response_model=DownloadTriggerResponse)
+@router.post(
+    "/kline/{symbol}/download",
+    response_model=DownloadTriggerResponse,
+    dependencies=[Depends(require_permission("data.download"))],
+)
 async def trigger_download(
     symbol: str,
     period: str = Query(default="1d"),

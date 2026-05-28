@@ -1,9 +1,10 @@
 """AI 盯盘告警 API + 手动触发（Phase 5 Step 3）。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.ai_alert import AiAlertOut
 from app.services import ai_alerts as alerts_svc
@@ -11,7 +12,11 @@ from app.services import ai_alerts as alerts_svc
 router = APIRouter()
 
 
-@router.get("", response_model=list[AiAlertOut])
+@router.get(
+    "",
+    response_model=list[AiAlertOut],
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def list_alerts(
     level: str | None = None,
     symbol: str | None = None,
@@ -26,7 +31,11 @@ async def list_alerts(
     )
 
 
-@router.post("/{alert_id}/ack", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/{alert_id}/ack",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def ack_alert(
     alert_id: int,
     user_id: int = CurrentUserId,
@@ -37,7 +46,10 @@ async def ack_alert(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "alert not found")
 
 
-@router.post("/watch/{symbol}")
+@router.post(
+    "/watch/{symbol}",
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def trigger_watch(
     symbol: str,
     user_id: int = CurrentUserId,

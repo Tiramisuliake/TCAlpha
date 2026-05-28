@@ -1,6 +1,6 @@
 [project]
 name = "tcalpha-backend"
-version = "0.7.0"
+version = "0.7.1"
 description = "TCAlpha backend — FastAPI + Celery + ArcticDB + AKShare"
 requires-python = ">=3.13"
 readme = "../README.md"

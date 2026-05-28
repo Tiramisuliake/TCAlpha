@@ -4,16 +4,20 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.core.auth_deps import require_permission
 from app.services import ai_chart as ai_chart_svc
 
 router = APIRouter()
 
 
-@router.get("/analyze")
+@router.get(
+    "/analyze",
+    dependencies=[Depends(require_permission("ai.chat"))],
+)
 async def analyze(
     symbol: str = Query(..., min_length=2, max_length=20),
     period: Literal["1d"] = Query("1d"),

@@ -1,9 +1,10 @@
 """关注列表 API（Phase 5 Step 3）。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.watchlist import WatchlistCreate, WatchlistOut
 from app.services import watchlist as watchlist_svc
@@ -11,12 +12,21 @@ from app.services import watchlist as watchlist_svc
 router = APIRouter()
 
 
-@router.get("", response_model=list[WatchlistOut])
+@router.get(
+    "",
+    response_model=list[WatchlistOut],
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def list_items(user_id: int = CurrentUserId, db: AsyncSession = DB):
     return await watchlist_svc.list_items(db, user_id)
 
 
-@router.post("", response_model=WatchlistOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=WatchlistOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def add_item(
     payload: WatchlistCreate,
     user_id: int = CurrentUserId,
@@ -30,7 +40,11 @@ async def add_item(
     return obj
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
 async def remove_item(
     item_id: int,
     user_id: int = CurrentUserId,

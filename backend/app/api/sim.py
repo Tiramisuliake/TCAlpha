@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.sim import PositionOut, SimOrderOut
 from app.services import sim as sim_svc
@@ -11,7 +12,11 @@ from app.services import sim as sim_svc
 router = APIRouter()
 
 
-@router.get("/orders", response_model=list[SimOrderOut])
+@router.get(
+    "/orders",
+    response_model=list[SimOrderOut],
+    dependencies=[Depends(require_permission("sim.order.read"))],
+)
 async def list_orders(
     strategy_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
@@ -21,7 +26,11 @@ async def list_orders(
     return await sim_svc.list_orders(db, user_id, strategy_id=strategy_id, limit=limit)
 
 
-@router.get("/position/{symbol}", response_model=PositionOut)
+@router.get(
+    "/position/{symbol}",
+    response_model=PositionOut,
+    dependencies=[Depends(require_permission("sim.order.read"))],
+)
 async def get_position(
     symbol: str,
     user_id: int = CurrentUserId,

@@ -3,17 +3,21 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.core.auth_deps import require_permission
 from app.schemas.ai import ChatRequest
 from app.services import ai as ai_svc
 
 router = APIRouter()
 
 
-@router.post("/chat")
+@router.post(
+    "/chat",
+    dependencies=[Depends(require_permission("ai.chat"))],
+)
 async def chat(payload: ChatRequest):
     """流式 chat：SSE 把 LLM 输出分块推送到前端。
 

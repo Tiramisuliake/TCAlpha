@@ -1,15 +1,17 @@
 import { useEffect } from "react";
-import { Layout, Menu } from "antd";
-import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { Dropdown, Layout, Menu, Spin } from "antd";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   AppstoreOutlined,
   BellOutlined,
   LineChartOutlined,
+  LogoutOutlined,
   RobotOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
   ThunderboltOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import Dashboard from "./pages/Dashboard";
 import Chart from "./pages/Chart";
@@ -39,18 +41,65 @@ const MENU_ITEMS: { key: WorkspaceRouteKey; icon: React.ReactNode; label: string
 ];
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token);
-  const hydrate = useAuthStore((s) => s.hydrate);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const bootstrapping = useAuthStore((s) => s.bootstrapping);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
   const location = useLocation();
 
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    // 启动时尝试用 refresh cookie 静默恢复登录态
+    bootstrap();
+  }, [bootstrap]);
 
-  if (!token) {
+  if (bootstrapping) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-900">
+        <Spin tip="正在恢复登录态…" />
+      </div>
+    );
+  }
+  if (!accessToken) {
     return <Navigate to={`/login?from=${encodeURIComponent(location.pathname)}`} replace />;
   }
   return <>{children}</>;
+}
+
+function UserMenu() {
+  const me = useAuthStore((s) => s.me);
+  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+
+  const onLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
+  const displayName = me?.display_name || me?.username || "用户";
+  const tag = me?.is_super ? "超级管理员" : me?.roles?.[0] ?? "";
+
+  return (
+    <Dropdown
+      menu={{
+        items: [
+          {
+            key: "logout",
+            icon: <LogoutOutlined />,
+            label: "退出登录",
+            onClick: onLogout,
+          },
+        ],
+      }}
+      placement="bottomRight"
+    >
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-slate-800">
+        <UserOutlined className="text-slate-300" />
+        <div className="flex flex-col leading-tight">
+          <span className="text-slate-100 text-sm">{displayName}</span>
+          {tag && <span className="text-slate-400 text-xs">{tag}</span>}
+        </div>
+      </div>
+    </Dropdown>
+  );
 }
 
 function Shell() {
@@ -58,7 +107,7 @@ function Shell() {
 
   return (
     <Layout className="h-screen overflow-hidden">
-      <Header className="!bg-slate-900 !h-15 flex-shrink-0 flex items-center !px-6 border-b border-slate-800">
+      <Header className="!bg-slate-900 !h-15 flex-shrink-0 flex items-center justify-between !px-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-500 text-white font-bold flex items-center justify-center text-sm tracking-wide shadow-sm">
             TC
@@ -68,6 +117,7 @@ function Shell() {
             <span className="text-blue-200/80 text-xs">A 股量化工作台</span>
           </div>
         </div>
+        <UserMenu />
       </Header>
       <Layout className="flex-1 min-h-0">
         <Sider

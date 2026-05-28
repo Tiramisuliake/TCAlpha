@@ -156,3 +156,25 @@ export interface BacktestTrade {
   dt: string;
   pnl: number | null;
 }
+
+// ── Auth (Phase 7 v0.7.0b) ────────────────────────────────
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user_id: number;
+}
+
+export type DataScope = "self" | "dept" | "all";
+
+export interface MeResponse {
+  id: number;
+  username: string;
+  display_name: string;
+  is_super: boolean;
+  roles: string[];
+  permissions: string[];
+  data_scope: DataScope;
+  last_login_at: string | null;
+}

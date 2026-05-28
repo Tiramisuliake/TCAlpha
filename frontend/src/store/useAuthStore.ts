@@ -1,70 +1,121 @@
 /**
- * Basic Auth 凭证存储（Phase 6 v0.6.0）。
+ * JWT 登录态（Phase 7 v0.7.0b）。
  *
- * 用 sessionStorage 而非 localStorage：关浏览器即失效，降低凭证泄漏面。
- * 多 tab 通过 storage 事件也不广播，符合"单设备会话"语义。
+ * 安全模型：
+ * - access token 仅存内存（关 tab 即丢，xss 拿不到）
+ * - refresh token 由后端写 HttpOnly cookie（js 读不到），SameSite=Strict 防 CSRF
+ * - 启动 / 401 → 尝试 refresh：用 cookie 静默恢复登录态
+ *
+ * 为兼容 v0.6.0 / Phase 6 中间件期的 WebSocket 端点，仍提供 wsUrl(path)：
+ * 把 access token 拼到 query，让 WS 路由可以解析（如果后端 BasicAuthMiddleware
+ * 关闭，则 token query 不会被中间件拦，业务路由按需自取）。
  */
 import { create } from "zustand";
-
-const KEY = "tcalpha.auth";
+import { apiLogin, apiLogout, apiMe, apiRefresh } from "@/api/auth";
+import type { DataScope, MeResponse } from "@/types";
 
 interface AuthState {
-  token: string | null; // base64(user:pass)
-  username: string | null;
-  login: (username: string, password: string) => void;
-  logout: () => void;
-  hydrate: () => void;
+  accessToken: string | null;
+  userId: number | null;
+  me: MeResponse | null;
+  // 启动 / silent refresh 期间标记：用于 RequireAuth 等待 cookie 验证完成再决定跳转
+  bootstrapping: boolean;
+
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<boolean>;
+  loadMe: () => Promise<void>;
+  bootstrap: () => Promise<void>;
+  setAccessToken: (t: string | null, userId?: number | null) => void;
+
+  has: (perm: string) => boolean;
+  hasAny: (...perms: string[]) => boolean;
+  scope: () => DataScope;
 }
 
-function readSession(): { token: string; username: string } | null {
-  try {
-    const raw = sessionStorage.getItem(KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
+export const useAuthStore = create<AuthState>((set, get) => ({
+  accessToken: null,
+  userId: null,
+  me: null,
+  bootstrapping: true,
 
-function writeSession(token: string, username: string) {
-  sessionStorage.setItem(KEY, JSON.stringify({ token, username }));
-}
+  setAccessToken: (accessToken, userId = null) =>
+    set({ accessToken, userId }),
 
-function clearSession() {
-  sessionStorage.removeItem(KEY);
-}
-
-export const useAuthStore = create<AuthState>((set) => ({
-  token: null,
-  username: null,
-  hydrate: () => {
-    const s = readSession();
-    if (s) set({ token: s.token, username: s.username });
+  login: async (username, password) => {
+    const r = await apiLogin(username, password);
+    set({ accessToken: r.access_token, userId: r.user_id });
+    await get().loadMe();
   },
-  login: (username, password) => {
-    const token = btoa(`${username}:${password}`);
-    writeSession(token, username);
-    set({ token, username });
+
+  logout: async () => {
+    const t = get().accessToken;
+    try {
+      await apiLogout(t);
+    } catch {
+      // 服务端可能已下线 / 网络故障；本地状态仍要清
+    }
+    set({ accessToken: null, userId: null, me: null });
   },
-  logout: () => {
-    clearSession();
-    set({ token: null, username: null });
+
+  refresh: async () => {
+    try {
+      const r = await apiRefresh();
+      set({ accessToken: r.access_token, userId: r.user_id });
+      return true;
+    } catch {
+      set({ accessToken: null, userId: null, me: null });
+      return false;
+    }
   },
+
+  loadMe: async () => {
+    const t = get().accessToken;
+    if (!t) return;
+    try {
+      const me = await apiMe(t);
+      set({ me });
+    } catch {
+      // 401 会在 client 拦截器里触发刷新；这里静默
+    }
+  },
+
+  bootstrap: async () => {
+    set({ bootstrapping: true });
+    const ok = await get().refresh();
+    if (ok) {
+      await get().loadMe();
+    }
+    set({ bootstrapping: false });
+  },
+
+  has: (perm) => {
+    const me = get().me;
+    if (!me) return false;
+    return me.is_super || me.permissions.includes(perm);
+  },
+  hasAny: (...perms) => {
+    const me = get().me;
+    if (!me) return false;
+    if (me.is_super) return true;
+    return perms.some((p) => me.permissions.includes(p));
+  },
+  scope: () => get().me?.data_scope ?? "self",
 }));
 
-/** 同步读取（非 hook）：axios / fetch / WS 内部用。 */
-export function getAuthToken(): string | null {
-  return readSession()?.token ?? null;
+// ── 非 Hook 读取（axios / fetch / WS 内部用）────────────────────────
+export function getAccessToken(): string | null {
+  return useAuthStore.getState().accessToken;
 }
 
 export function authHeader(): Record<string, string> {
-  const t = getAuthToken();
-  return t ? { Authorization: `Basic ${t}` } : {};
+  const t = getAccessToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-/** 构造 WS URL：把 token 拼到 query。 */
+/** 构造 WS URL：把 access token 拼到 query。 */
 export function wsUrl(path: string): string {
-  const token = getAuthToken();
+  const token = getAccessToken();
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const base = `${proto}//${location.host}${path}`;
   if (!token) return base;

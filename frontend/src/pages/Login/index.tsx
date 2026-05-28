@@ -18,33 +18,28 @@ export default function Login() {
   const [params] = useSearchParams();
   const fromPath = params.get("from") || "/";
   const login = useAuthStore((s) => s.login);
-  const tokenInStore = useAuthStore((s) => s.token);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
-  // 已登录跳走
   useEffect(() => {
-    if (tokenInStore) navigate(fromPath, { replace: true });
-  }, [tokenInStore, fromPath, navigate]);
+    if (accessToken) navigate(fromPath, { replace: true });
+  }, [accessToken, fromPath, navigate]);
 
   const submit = async ({ username, password }: LoginForm) => {
     setLoading(true);
     try {
-      const token = btoa(`${username}:${password}`);
-      // 用 /health 探活 + 凭证校验（这条会过中间件验证）
-      const probe = await axios.get("/api/notify/event-types", {
-        headers: { Authorization: `Basic ${token}` },
-        validateStatus: () => true,
-      });
-      if (probe.status === 401) {
-        message.error("用户名或密码错误");
-        return;
-      }
-      if (probe.status >= 400) {
-        message.error(`登录探活失败：HTTP ${probe.status}`);
-        return;
-      }
-      login(username, password);
+      await login(username, password);
       message.success("登录成功");
       navigate(fromPath, { replace: true });
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        message.error("用户名或密码错误");
+      } else {
+        const detail =
+          (axios.isAxiosError(err) && err.response?.data?.detail) ||
+          (err as Error)?.message ||
+          "登录失败";
+        message.error(String(detail));
+      }
     } finally {
       setLoading(false);
     }
@@ -61,7 +56,7 @@ export default function Login() {
             TCAlpha 登录
           </Title>
           <Paragraph type="secondary" className="!text-xs !mb-0">
-            A 股量化工作台 · 使用 .env 中配置的账号
+            A 股量化工作台
           </Paragraph>
         </div>
 

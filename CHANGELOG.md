@@ -54,6 +54,29 @@ deps 软升级（`backend/app/deps.py`）：
 - 前端 v0.7.0a 不做改动，仍走 Basic Auth；JWT 端到端验证用 curl / `/docs` / TestClient
 - 权限闸门 `require_permission` 已就位但未挂任何路由（业务路由的 RBAC 改造留给后续小版本，按"先 read，再 write，再 delete"渐进）
 
+### Added — Phase 7 RBAC 前端接入（v0.7.0b）
+
+把 Phase 6 的 Basic Auth 平滑切换到 JWT，access 在内存、refresh 在 HttpOnly cookie。
+
+前端：
+- `types/index.ts`：新增 `TokenResponse` / `MeResponse` / `DataScope`
+- `api/auth.ts`：裸 axios（不走 client 拦截器）封装 `apiLogin` / `apiRefresh` / `apiLogout` / `apiMe`，全部 `withCredentials`，避免 401-on-401 死循环
+- `store/useAuthStore.ts`：彻底重写
+  - 状态：`accessToken`（内存） + `userId` + `me` + `bootstrapping`
+  - actions：`login` / `logout` / `refresh` / `loadMe` / `bootstrap`
+  - 权限查询助手：`has(perm)` / `hasAny(...)` / `scope()` —— super 用户自动绕过
+  - 非 hook 工具：`getAccessToken()` / `authHeader()` / `wsUrl(path)` —— `wsUrl` 把 access token 拼到 query 兼容 WS 端点
+- `api/client.ts`：响应拦截器重写
+  - 401 自动 `sharedRefresh()`（in-flight Promise 复用，并发请求只触发一次刷新）
+  - 刷新成功 → 用新 token 重试原请求（仅一次，防死循环）
+  - 刷新失败 → 跳 `/login?from=<path>`
+  - 自带 `_retry` 标志位，`/auth/refresh` / `/auth/login` 自身 401 不再递归
+- `pages/Login/index.tsx`：移除 btoa 拼 Basic Auth，直接调 `store.login(username, password)` → 走 `/api/auth/login`
+- `App.tsx`：
+  - `RequireAuth` 启动调 `bootstrap()` 用 cookie 静默刷新恢复登录态；刷新期间显示 Spin，避免闪回 Login
+  - 顶栏新增 `UserMenu` 显示 `display_name` + 角色/超管标识 + 退出登录下拉
+- Basic Auth 平滑下线：`AUTH_ENABLED` 默认 false，旧 `BasicAuthMiddleware` 代码保留但不再挂载
+
 ## [0.6.0] — 2026-05-27
 
 ### Added — Phase 6 Step 1：Basic Auth 鉴权

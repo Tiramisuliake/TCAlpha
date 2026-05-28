@@ -12,6 +12,8 @@ AKShare 1.18.x 内部 ``requests.get`` 不带 headers，会被部分 eastmoney �
 from __future__ import annotations
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 _DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -22,7 +24,11 @@ _eastmoney_session: requests.Session | None = None
 
 
 def _get_eastmoney_session() -> requests.Session:
-    """长寿命 Session：复用 TCP keep-alive，避免冷连接被服务器 reset。"""
+    """长寿命 Session：复用 TCP keep-alive + 自动重试连接/5xx 错误。
+
+    分页快照（stock_zh_a_spot_em 58 页）在 eastmoney 子域名上易触发
+    RemoteDisconnected，Retry 会在 backoff 后自动重试。
+    """
     global _eastmoney_session
     if _eastmoney_session is None:
         s = requests.Session()
@@ -32,6 +38,20 @@ def _get_eastmoney_session() -> requests.Session:
             "Referer": "https://quote.eastmoney.com/",
             "Accept": "*/*",
         })
+        retry = Retry(
+            total=4,
+            connect=4,
+            read=4,
+            backoff_factor=0.5,            # 0.5, 1, 2, 4 s
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(["GET", "HEAD"]),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(
+            pool_connections=20, pool_maxsize=20, max_retries=retry,
+        )
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
         _eastmoney_session = s
     return _eastmoney_session
 

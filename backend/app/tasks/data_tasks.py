@@ -130,10 +130,11 @@ def download_daily_kline_all(self) -> dict:
     max_retries=2,
 )
 def push_quote_snapshot(self, symbols: list[str] | None = None) -> dict:
-    """拉一次全市场快照，按 symbol publish 到 quote:<symbol> channel。
+    """按 symbol publish 实时报价到 ``quote:<symbol>`` channel。
 
-    - symbols: 仅推这些（节省 Redis 流量）；不传则全推。
-    - 非交易时段直接 skip。
+    - symbols 必传：走 fetch_single_quote 逐个拉（推荐，避开 AKShare 58 页分页）
+    - symbols 为空：fallback 走 fetch_spot_snapshot 全市场（best-effort）
+    - 非交易时段直接 skip
     """
     try:
         from app.utils.trading_period import is_trading_time
@@ -141,18 +142,22 @@ def push_quote_snapshot(self, symbols: list[str] | None = None) -> dict:
         if not is_trading_time():
             return {"status": "skipped", "reason": "not_trading_time"}
 
-        from app.services.quote import build_quote_dict, fetch_spot_snapshot
         from app.core.pubsub import publish_quote
 
-        df = fetch_spot_snapshot()
-        if symbols:
-            wanted = {s for s in symbols}
-            df = df[df["symbol"].isin(wanted)]
-
         count = 0
-        for _, row in df.iterrows():
-            publish_quote(row["symbol"], build_quote_dict(row))
-            count += 1
+        if symbols:
+            from app.services.quote import fetch_quotes
+
+            for q in fetch_quotes(symbols):
+                publish_quote(q["symbol"], q)
+                count += 1
+        else:
+            from app.services.quote import build_quote_dict, fetch_spot_snapshot
+
+            df = fetch_spot_snapshot()
+            for _, row in df.iterrows():
+                publish_quote(row["symbol"], build_quote_dict(row))
+                count += 1
 
         logger.info("push_quote_snapshot: pushed {} quotes", count)
         return {"status": "ok", "pushed": count}

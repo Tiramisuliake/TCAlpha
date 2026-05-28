@@ -14,6 +14,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.services.data import wait_for_rate_limit
+from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.symbol import normalize
 
 _QUOTE_COLS = {

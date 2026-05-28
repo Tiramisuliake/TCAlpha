@@ -8,6 +8,7 @@ from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.db.arctic import get_library
+from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.rate_limit import acquire, wait_for_akshare
 from app.utils.symbol import code, normalize
 
@@ -157,8 +158,9 @@ def fetch_minute_kline(
 
     wait_for_rate_limit()
     sym_key = normalize(symbol)
+    raw_code = code(sym_key)
     kwargs: dict = {
-        "symbol": sym_key,
+        "symbol": raw_code,
         "period": str(period),
         "adjust": "qfq",
     }

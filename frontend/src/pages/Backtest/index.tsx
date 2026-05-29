@@ -21,7 +21,7 @@ import dayjs from "dayjs";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
 import { PageScaffold } from "@/components/PageScaffold";
-import type { BacktestResult, BacktestStatus, BacktestTrade } from "@/types";
+import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "default",
@@ -38,33 +38,136 @@ function MetricCard({ label, value, suffix = "" }: { label: string; value: strin
   );
 }
 
-function EquityChart({ result }: { result: BacktestResult }) {
-  const dates = result.equity_curve.map((p) => p.dt);
+function computeDrawdown(curve: EquityPoint[]): number[] {
+  const dd: number[] = [];
+  let peak = -Infinity;
+  for (const p of curve) {
+    if (p.value > peak) peak = p.value;
+    dd.push(peak > 0 ? (p.value / peak - 1) * 100 : 0); // 百分比，负数
+  }
+  return dd;
+}
+
+function buildTradeMarkers(
+  trades: BacktestTrade[],
+  curve: EquityPoint[]
+): Array<{ name: string; coord: [string, number]; itemStyle: { color: string }; symbol: string; symbolSize: number }> {
+  if (!trades.length || !curve.length) return [];
+  // 把 dt 截到日期粒度（YYYY-MM-DD）方便对齐
+  const dayOf = (s: string) => s.slice(0, 10);
+  const equityByDay = new Map<string, number>();
+  for (const p of curve) equityByDay.set(dayOf(p.dt), p.value);
+
+  return trades
+    .map((t) => {
+      const day = dayOf(t.dt);
+      const v = equityByDay.get(day);
+      if (v == null) return null;
+      const isBuy = t.offset === "open" ? t.direction === "long" : t.direction === "short";
+      return {
+        name: isBuy ? "买" : "卖",
+        coord: [day, v] as [string, number],
+        itemStyle: { color: isBuy ? "#ef4444" : "#10b981" },
+        symbol: isBuy ? "triangle" : "pin",
+        symbolSize: 10,
+      };
+    })
+    .filter((m): m is NonNullable<typeof m> => m !== null);
+}
+
+function EquityChart({
+  result,
+  trades,
+}: {
+  result: BacktestResult;
+  trades: BacktestTrade[];
+}) {
+  const dates = result.equity_curve.map((p) => p.dt.slice(0, 10));
   const values = result.equity_curve.map((p) => p.value);
+  const drawdown = computeDrawdown(result.equity_curve);
+  const markers = buildTradeMarkers(trades, result.equity_curve);
 
   const option = {
-    tooltip: { trigger: "axis", formatter: (params: unknown[]) => {
-      const p = (params as { name: string; value: number }[])[0];
-      return `${p.name}<br/>净值：${p.value.toFixed(2)}`;
-    }},
-    grid: { left: 60, right: 20, top: 20, bottom: 40 },
-    xAxis: { type: "category", data: dates, axisLabel: { rotate: 30, fontSize: 11 } },
-    yAxis: { type: "value", name: "资金", scale: true },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "cross" },
+    },
+    legend: { data: ["资金曲线", "回撤"], top: 0, textStyle: { fontSize: 11 } },
+    axisPointer: { link: [{ xAxisIndex: "all" }] },
+    grid: [
+      { left: 60, right: 20, top: 30, height: "55%" },
+      { left: 60, right: 20, top: "72%", height: "20%" },
+    ],
+    xAxis: [
+      {
+        type: "category",
+        data: dates,
+        gridIndex: 0,
+        axisLabel: { show: false },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      },
+      {
+        type: "category",
+        data: dates,
+        gridIndex: 1,
+        axisLabel: { rotate: 30, fontSize: 10 },
+      },
+    ],
+    yAxis: [
+      { type: "value", name: "资金", scale: true, gridIndex: 0 },
+      {
+        type: "value",
+        name: "回撤%",
+        max: 0,
+        axisLabel: { formatter: "{value}%", fontSize: 10 },
+        gridIndex: 1,
+      },
+    ],
     series: [
       {
         name: "资金曲线",
         type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
         data: values,
         smooth: true,
         lineStyle: { color: "#3b82f6", width: 2 },
-        areaStyle: { color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [{ offset: 0, color: "rgba(59,130,246,0.3)" }, { offset: 1, color: "rgba(59,130,246,0)" }] } },
+        areaStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "rgba(59,130,246,0.3)" },
+              { offset: 1, color: "rgba(59,130,246,0)" },
+            ],
+          },
+        },
         symbol: "none",
+        markPoint: {
+          data: markers,
+          label: { show: false },
+          symbolKeepAspect: true,
+        },
+      },
+      {
+        name: "回撤",
+        type: "line",
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: drawdown,
+        lineStyle: { color: "#ef4444", width: 1 },
+        areaStyle: { color: "rgba(239,68,68,0.25)" },
+        symbol: "none",
+        smooth: true,
       },
     ],
   };
 
-  return <ReactECharts option={option} style={{ height: 280 }} />;
+  return <ReactECharts option={option} style={{ height: 340 }} notMerge />;
 }
 
 export default function Backtest() {
@@ -345,8 +448,21 @@ export default function Backtest() {
                 </Col>
               </Row>
 
-              <Card title="资金曲线" size="small">
-                <EquityChart result={result} />
+              <Card
+                title={
+                  <span>
+                    资金曲线 + 回撤
+                    <span className="ml-3 text-xs text-slate-400">
+                      <span className="inline-block w-2 h-2 bg-red-500 rounded mr-1" />
+                      买入
+                      <span className="inline-block w-2 h-2 bg-green-500 rounded ml-3 mr-1" />
+                      卖出
+                    </span>
+                  </span>
+                }
+                size="small"
+              >
+                <EquityChart result={result} trades={trades} />
               </Card>
 
               <Card title="成交明细" size="small">

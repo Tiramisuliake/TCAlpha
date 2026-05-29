@@ -31,6 +31,7 @@ import type {
 } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const STATUS_COLOR: Record<SimOrder["status"], string> = {
   submitted: "processing",
@@ -133,6 +134,7 @@ function OrderForm({
 
 export default function TradePage() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.userId);
   const [symbolSearch, setSymbolSearch] = useState("");
 
   const { data: symbolsData } = useQuery({
@@ -183,17 +185,21 @@ export default function TradePage() {
     },
   });
 
-  // 实时刷新：监听 /ws/orders（多 worker 通过 Redis 广播）
+  // 实时刷新：监听 /ws/orders（多 worker 通过 Redis 广播；按当前用户订阅）
   const wsUrl = useMemo(() => {
+    if (!userId) return "";
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${location.host}/ws/orders`;
-  }, []);
+    return `${proto}//${location.host}/ws/orders?user_id=${userId}`;
+  }, [userId]);
 
-  useWebSocket(wsUrl, () => {
-    // 收到任何订单事件 → invalidate
-    qc.invalidateQueries({ queryKey: ["sim", "orders"] });
-    qc.invalidateQueries({ queryKey: ["sim", "positions"] });
-  });
+  useWebSocket(
+    wsUrl,
+    () => {
+      qc.invalidateQueries({ queryKey: ["sim", "orders"] });
+      qc.invalidateQueries({ queryKey: ["sim", "positions"] });
+    },
+    { enabled: !!userId }
+  );
 
   // 切换标签页回来时强制刷新
   useEffect(() => {

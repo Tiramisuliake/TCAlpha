@@ -40,7 +40,7 @@ import {
 } from "@/api/sim";
 import { getSymbols } from "@/api/market";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { wsUrl } from "@/store/useAuthStore";
+import { useAuthStore, wsUrl } from "@/store/useAuthStore";
 import type { SimOrder, StrategyClassInfo, StrategyConfig, StrategyCreate, StrategySignal } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -59,6 +59,7 @@ const ORDER_STATUS_COLOR: Record<string, string> = {
 
 export default function StrategyPage() {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.userId);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editItem, setEditItem] = useState<StrategyConfig | null>(null);
   const [activeStrategyId, setActiveStrategyId] = useState<number | null>(null);
@@ -85,7 +86,11 @@ export default function StrategyPage() {
     }
   }, [qc]);
 
-  useWebSocket(wsUrl("/ws/orders?user_id=1"), onOrderMsg);
+  useWebSocket(
+    userId ? wsUrl(`/ws/orders?user_id=${userId}`) : "",
+    onOrderMsg,
+    { enabled: !!userId }
+  );
 
   // 信号 WS（随选中策略变化）
   const onSignalMsg = useCallback((raw: string) => {

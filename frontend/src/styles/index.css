@@ -1,5 +1,72 @@
 @import "tailwindcss";
 
+/* ──────────────────────────────────────────────────────────────
+ * TCAlpha Industrial Design Tokens
+ *
+ * 美学：Industrial / Utilitarian（Bloomberg 日间 / IB TWS 风）
+ * 锚点：Mono Numeric — 数字 / 代码 / ID 走 IBM Plex Mono + tabular-nums
+ *
+ * 三大原则：
+ *   1. Hairline border 替代 box-shadow
+ *   2. 圆角 ≤ 2px（卡片可放宽到 4px）
+ *   3. 所有 numeric cell 等宽对齐（tabular-nums）
+ * ─────────────────────────────────────────────────────────── */
+
+:root {
+  /* surface */
+  --tc-bg-base: #eef0f5;       /* 主工作区 */
+  --tc-bg-surface: #ffffff;    /* 卡片 */
+  --tc-bg-elevated: #fafbfc;   /* 表头 / hover */
+  --tc-bg-dark: #0e1116;       /* Sider / Header */
+  --tc-bg-dark-hi: #1c2229;    /* dark hover */
+
+  /* text */
+  --tc-text: #0f172a;
+  --tc-text-muted: #5a6472;
+  --tc-text-dim: #94a3b8;
+  --tc-text-on-dark: #e6e9ef;
+  --tc-text-on-dark-dim: #9ca8b8;
+
+  /* border (hairline) */
+  --tc-border: #d8dce4;
+  --tc-border-strong: #b8c0cc;
+  --tc-border-dark: #2a313c;
+
+  /* accent */
+  --tc-primary: #1a4fff;
+  --tc-accent: #FFB800;        /* 警示 / 选中点缀 */
+  --tc-accent-cool: #00C896;   /* 正向辅助 */
+
+  /* market semantics（A 股惯例 红涨绿跌） */
+  --tc-up: #ef4444;
+  --tc-down: #00a778;
+
+  /* font */
+  --tc-font-sans: 'IBM Plex Sans', system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --tc-font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'Cascadia Code',
+    Consolas, 'Courier New', monospace;
+
+  /* spacing */
+  --tc-space-1: 4px;
+  --tc-space-2: 8px;
+  --tc-space-3: 12px;
+  --tc-space-4: 16px;
+  --tc-space-5: 24px;
+  --tc-space-6: 32px;
+
+  /* radius */
+  --tc-r-0: 0;
+  --tc-r-1: 2px;
+  --tc-r-2: 4px;
+
+  /* transition */
+  --tc-t-fast: 100ms ease;
+}
+
+/* ── 基础布局 ───────────────────────────────────────────────── */
+
 html,
 body,
 #root {
@@ -9,67 +76,142 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  font-family: var(--tc-font-sans);
+  font-feature-settings: 'cv11', 'ss01'; /* Plex Sans 单层 a / 优化字形 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f5f7fb;
-  color: #0f172a;
+  background: var(--tc-bg-base);
+  color: var(--tc-text);
+  font-size: 13px;
 }
 
 .ant-layout-header,
 .ant-layout-header a,
 .ant-layout-header .anticon {
-  color: #f8fafc;
+  color: var(--tc-text-on-dark);
 }
 
+/* ── Mono Numeric — 差异化锚点 ──────────────────────────────
+ *
+ * 所有数字 cell 强制 tabular-nums + IBM Plex Mono，让多行对齐如表格。
+ * 业务页 right-align 的数字列 / Statistic / Tag 内数字自动走此规则。
+ */
+
+/* 全局 numeric-friendly */
+.ant-statistic-content,
+.ant-table-cell[align="right"],
+.ant-input-number-input,
+.tabular,
+.num {
+  font-family: var(--tc-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Statistic 数字略偏粗 + 紧凑 */
+.ant-statistic-content {
+  font-weight: 500;
+}
+
+.ant-statistic-title {
+  color: var(--tc-text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 表头采用窄字间距 uppercase（仪表盘标签风格） */
+.ant-table-thead > tr > th {
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--tc-bg-elevated) !important;
+  color: var(--tc-text-muted) !important;
+  border-bottom: 1px solid var(--tc-border) !important;
+}
+
+/* ── Card / 面板 — hairline border, 零 shadow ─────────────── */
+
 .ant-card {
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
-  background: #ffffff;
+  border: 1px solid var(--tc-border);
+  box-shadow: none !important;
+  background: var(--tc-bg-surface);
+  border-radius: var(--tc-r-1);
 }
 
 .ant-card .ant-card-head {
-  border-bottom-color: #eef0f4;
-  min-height: 48px;
-  padding-inline: 16px;
+  border-bottom: 1px solid var(--tc-border);
+  min-height: 40px;
+  padding-inline: 14px;
+  background: var(--tc-bg-elevated);
 }
 
 .ant-card-head-title {
-  color: #0f172a;
+  color: var(--tc-text);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
 }
 
 .ant-card .ant-card-body {
-  padding: 16px;
+  padding: 14px;
 }
 
-.ant-table-thead > tr > th {
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  background: #f8fafc !important;
-  color: #64748b !important;
+.ant-card-small .ant-card-head {
+  min-height: 32px;
+  padding-inline: 12px;
 }
+
+.ant-card-small .ant-card-body {
+  padding: 10px 12px;
+}
+
+/* ── Menu / Sider ─────────────────────────────────────────── */
 
 .ant-menu-inline .ant-menu-item {
-  margin-block: 4px;
+  margin-block: 2px;
 }
 
 .ant-menu-inline .ant-menu-item-selected {
   font-weight: 500;
 }
 
+/* 选中态：左竖条改为纯黄 accent（仪表盘视觉重点） */
 .ant-menu-dark.ant-menu-inline .ant-menu-item-selected::before {
   content: "";
   position: absolute;
   left: 0;
   top: 8px;
   bottom: 8px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: #60a5fa;
+  width: 2px;
+  border-radius: 0;
+  background: var(--tc-accent);
 }
+
+/* ── Button / Tag / Input 锐边 ─────────────────────────────── */
+
+.ant-btn,
+.ant-tag,
+.ant-input,
+.ant-input-number,
+.ant-select-selector,
+.ant-picker {
+  box-shadow: none !important;
+}
+
+.ant-tag {
+  font-family: var(--tc-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  padding: 0 6px;
+  line-height: 18px;
+  height: 20px;
+}
+
+/* ── flex-1 Card → 内部 Table 撑满（保留旧规则） ──────────── */
 
 .ant-card.flex-1 {
   display: flex;
@@ -115,8 +257,8 @@ body {
 .ant-card.flex-1 .ant-table-wrapper .ant-pagination {
   flex-shrink: 0;
   margin: 12px 0 0;
-  padding-top: 12px;
-  border-top: 1px solid #eef0f4;
+  padding-top: 10px;
+  border-top: 1px solid var(--tc-border);
 }
 
 .ant-card.flex-1 .ant-tabs {
@@ -149,18 +291,38 @@ body {
   overflow: hidden;
 }
 
+/* ── Utility classes ──────────────────────────────────────── */
+
+/* 数字单元强制等宽（业务代码 className="num" 启用） */
+.num {
+  font-family: var(--tc-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 涨跌 utility（沿用 A 股惯例 红涨绿跌） */
+.up {
+  color: var(--tc-up);
+}
+
+.down {
+  color: var(--tc-down);
+}
+
+/* ── Scrollbar 工业风纤细 ─────────────────────────────────── */
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+  background: var(--tc-border-strong);
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--tc-text-muted);
 }
 
 ::-webkit-scrollbar-track {

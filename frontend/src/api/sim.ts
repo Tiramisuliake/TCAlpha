@@ -1,10 +1,19 @@
 import { api } from "./client";
-import type { SimOrder } from "@/types";
+import type { PlaceOrderRequest, PositionSummary, SimOrder } from "@/types";
 
 export const listOrders = (strategyId?: number, limit = 50) =>
   api
     .get<SimOrder[]>("/sim/orders", { params: { strategy_id: strategyId, limit } })
     .then((r) => r.data);
+
+export const placeOrder = (payload: PlaceOrderRequest) =>
+  api.post<SimOrder>("/sim/orders", payload).then((r) => r.data);
+
+export const cancelOrder = (orderId: number) =>
+  api.post<SimOrder>(`/sim/orders/${orderId}/cancel`).then((r) => r.data);
+
+export const listPositions = () =>
+  api.get<PositionSummary[]>("/sim/positions").then((r) => r.data);
 
 export const getPosition = (symbol: string) =>
   api

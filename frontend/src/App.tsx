@@ -5,6 +5,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import {
   AppstoreOutlined,
   BellOutlined,
+  DollarOutlined,
   LineChartOutlined,
   LogoutOutlined,
   RobotOutlined,
@@ -17,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import Chart from "./pages/Chart";
 import Strategy from "./pages/Strategy";
 import Backtest from "./pages/Backtest";
+import Trade from "./pages/Trade";
 import DataMgr from "./pages/Data";
 import AI from "./pages/AI";
 import Notify from "./pages/Notify";
@@ -35,6 +37,7 @@ const MENU_ITEMS: { key: WorkspaceRouteKey; icon: React.ReactNode; label: string
   { key: "chart", icon: <LineChartOutlined />, label: "K 线分析" },
   { key: "strategy", icon: <ThunderboltOutlined />, label: "策略管理" },
   { key: "backtest", icon: <ExperimentOutlined />, label: "回测" },
+  { key: "trade", icon: <DollarOutlined />, label: "模拟交易" },
   { key: "data", icon: <DatabaseOutlined />, label: "数据管理" },
   { key: "ai", icon: <RobotOutlined />, label: "AI 助手" },
   { key: "notify", icon: <BellOutlined />, label: "通知中心" },
@@ -163,6 +166,7 @@ export default function App() {
         <Route path="/chart" element={<Chart />} />
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/backtest" element={<Backtest />} />
+        <Route path="/trade" element={<Trade />} />
         <Route path="/data" element={<DataMgr />} />
         <Route path="/ai" element={<AI />} />
         <Route path="/notify" element={<Notify />} />

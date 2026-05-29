@@ -6,6 +6,7 @@ export type WorkspaceRouteKey =
   | "chart"
   | "strategy"
   | "backtest"
+  | "trade"
   | "data"
   | "ai"
   | "notify";
@@ -25,6 +26,7 @@ export const WORKSPACE_ROUTES: Record<WorkspaceRouteKey, WorkspaceRouteMeta> = {
   chart: { path: "/chart", title: "K 线分析", closable: true },
   strategy: { path: "/strategy", title: "策略管理", closable: true },
   backtest: { path: "/backtest", title: "回测", closable: true },
+  trade: { path: "/trade", title: "模拟交易", closable: true },
   data: { path: "/data", title: "数据管理", closable: true },
   ai: { path: "/ai", title: "AI 助手", closable: true },
   notify: { path: "/notify", title: "通知中心", closable: true },

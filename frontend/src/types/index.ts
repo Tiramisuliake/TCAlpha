@@ -134,6 +134,18 @@ export interface SimOrder {
   updated_at: string;
 }
 
+export interface PositionSummary {
+  symbol: string;
+  net_position: number;
+}
+
+export interface PlaceOrderRequest {
+  symbol: string;
+  direction: "long" | "short";
+  offset: "open" | "close";
+  volume: number;
+}
+
 export interface StrategySignal {
   strategy_id: number;
   symbol: string;

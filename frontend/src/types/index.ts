@@ -190,3 +190,68 @@ export interface MeResponse {
   data_scope: DataScope;
   last_login_at: string | null;
 }
+
+// ── System Management (Phase 7 v0.7.2) ────────────────────
+
+export interface PermissionOut {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface RoleOut {
+  id: number;
+  code: string;
+  name: string;
+  data_scope: DataScope;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoleDetailOut extends RoleOut {
+  permission_codes: string[];
+}
+
+export interface RoleCreate {
+  code: string;
+  name: string;
+  data_scope?: DataScope;
+  description?: string;
+}
+
+export interface RoleUpdate {
+  name?: string;
+  data_scope?: DataScope;
+  description?: string;
+}
+
+export interface UserListItem {
+  id: number;
+  username: string;
+  display_name: string;
+  email: string | null;
+  is_active: boolean;
+  is_super: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  role_codes: string[];
+}
+
+export interface UserCreate {
+  username: string;
+  password: string;
+  display_name?: string;
+  email?: string | null;
+  is_active?: boolean;
+  is_super?: boolean;
+  role_codes: string[];
+}
+
+export interface UserUpdate {
+  display_name?: string;
+  email?: string | null;
+  is_active?: boolean;
+}

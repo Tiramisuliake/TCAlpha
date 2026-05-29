@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-05-30
+
+### Added — Phase 7 v0.7.2：用户 / 角色管理 UI
+
+让超管不再需要 SQL，直接在 UI 上增删用户、配角色、分权限。
+
+后端
+- `schemas/system.py`：UserListItem / UserCreate / UserUpdate / UserRolesAssign / PasswordReset / RoleOut / RoleDetailOut / RoleCreate / RoleUpdate / RolePermissionAssign / PermissionOut
+- `services/system.py`：用户 CRUD（list/get/create/update/delete/set_roles/reset_password）+ 角色 CRUD（list/get/create/update/delete/set_permissions）+ 权限只读列表
+  - 防自残：admin 不能删自己 / 停用自己 / 把自己从 admin 角色摘掉
+  - 内置：admin 角色不允许删除
+- `api/system.py`：8 个端点，全部挂 `system.user.read/write` 或 `system.role.read/write` 闸门
+- `main.py`：挂载到 `/api/system`
+- `tests/test_system_api.py`：12 用例覆盖 401 / viewer 403 / admin 200 / 防自残 400
+
+前端
+- `types/index.ts`：补 RoleOut / RoleDetailOut / UserListItem / UserCreate / UserUpdate / PermissionOut
+- `api/system.ts`：11 个函数封装
+- `pages/System/Users/index.tsx`：用户表 + 新建/编辑/角色多选/重置密码/删除（不能删自己）；React Query useQuery + useMutation；删除 / 停用自己按钮禁用
+- `pages/System/Roles/index.tsx`：角色表 + 新建/编辑/删除（admin 禁删）+ **按 category 折叠分组的权限多选**（含全选/清空/三态 Checkbox）
+- `App.tsx`：侧栏菜单按 `useAuthStore.has(perm)` 过滤；新增「用户管理」「角色管理」入口；super 全可见
+- `store/useWorkspaceStore.ts`：加 `system-users` / `system-roles` 路由项
+- `components/WorkspaceTabs`：补图标映射
+
+### Added — DX 启动体验改善（hotfix from v0.7.1 cycle）
+
+后端启动脚本
+- `scripts/start_backend.ps1`：清残留 + 启 uvicorn + 后台 health 探活打 ✅ banner
+  - UTF-8 with BOM + chcp 65001：PS 5.1 中文不乱码
+  - `taskkill /F /T` 多轮清理：根治 uvicorn --reload 父子进程僵尸
+  - 注入 `NO_PROXY=localhost,127.0.0.1`：避开 Clash/V2Ray 劫持本地请求
+  - watcher 子进程显式 `DefaultWebProxy=$null`，绕代理探活
+  - 默认端口 8001（避开 8000 在 Windows 上常见的 TCP socket 泄漏；`-Port 8000` 可覆盖）
+- 根目录 `start-backend.bat` / `start-frontend.bat`：纯 ASCII 注释（cmd GBK 解码不乱码），双击即启
+- `.run/Backend.run.xml` / `Frontend.run.xml` / `Celery Worker.run.xml` / `Celery Beat.run.xml`：PyCharm Run 配置，顶栏 ▶ 直接跑
+- `Makefile`：加 `back-safe` target；默认端口同步 8001
+
+前端登录反馈修复
+- `utils/feedback.ts`：全局 feedback holder（message + notification）
+- `components/FeedbackBridge.tsx`：`App.useApp()` 注入 holder
+- `main.tsx`：`<AntApp>` 包裹，根治 AntD v5 静态 `message.error()` 在 React 19 严格模式下被静默吞掉
+- `api/client.ts`：用 `feedback` 替代 static `message`
+- `pages/Login/index.tsx`：按 401 / 422 / 5xx / `ERR_NETWORK` / `ECONNABORTED` 给不同的错误反馈
+- `vite.config.ts`：代理目标 `localhost:8000` → `127.0.0.1:8001`，避免 DNS / 代理双重干扰
+
+文档
+- `backend/README.md` 重写：一键启动 4 种方式 + 首次准备 + JWT 说明 + 常见坑速查（端口僵尸 / 代理劫持 / lifespan 卡）
+
 ## [0.7.1] — 2026-05-27
 
 ### Added — Phase 7 RBAC 闸门生效

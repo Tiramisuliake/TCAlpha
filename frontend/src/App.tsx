@@ -11,6 +11,8 @@ import {
   RobotOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
   ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -23,6 +25,8 @@ import DataMgr from "./pages/Data";
 import AI from "./pages/AI";
 import Notify from "./pages/Notify";
 import Login from "./pages/Login";
+import SystemUsers from "./pages/System/Users";
+import SystemRoles from "./pages/System/Roles";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
 import {
   useWorkspaceStore,
@@ -32,15 +36,24 @@ import {
 
 const { Header, Content, Sider } = Layout;
 
-const MENU_ITEMS: { key: WorkspaceRouteKey; icon: React.ReactNode; label: string }[] = [
+interface MenuItem {
+  key: WorkspaceRouteKey;
+  icon: React.ReactNode;
+  label: string;
+  perm?: string; // 需要的权限码；缺则任意登录用户可见
+}
+
+const MENU_ITEMS: MenuItem[] = [
   { key: "dashboard", icon: <AppstoreOutlined />, label: "仪表盘" },
   { key: "chart", icon: <LineChartOutlined />, label: "K 线分析" },
-  { key: "strategy", icon: <ThunderboltOutlined />, label: "策略管理" },
-  { key: "backtest", icon: <ExperimentOutlined />, label: "回测" },
-  { key: "trade", icon: <DollarOutlined />, label: "模拟交易" },
-  { key: "data", icon: <DatabaseOutlined />, label: "数据管理" },
-  { key: "ai", icon: <RobotOutlined />, label: "AI 助手" },
-  { key: "notify", icon: <BellOutlined />, label: "通知中心" },
+  { key: "strategy", icon: <ThunderboltOutlined />, label: "策略管理", perm: "strategy.read" },
+  { key: "backtest", icon: <ExperimentOutlined />, label: "回测", perm: "backtest.read" },
+  { key: "trade", icon: <DollarOutlined />, label: "模拟交易", perm: "sim.order.read" },
+  { key: "data", icon: <DatabaseOutlined />, label: "数据管理", perm: "data.read" },
+  { key: "ai", icon: <RobotOutlined />, label: "AI 助手", perm: "ai.chat" },
+  { key: "notify", icon: <BellOutlined />, label: "通知中心", perm: "notify.rule.read" },
+  { key: "system-users", icon: <TeamOutlined />, label: "用户管理", perm: "system.user.read" },
+  { key: "system-roles", icon: <SafetyCertificateOutlined />, label: "角色管理", perm: "system.role.read" },
 ];
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -107,6 +120,13 @@ function UserMenu() {
 
 function Shell() {
   const activeKey = useWorkspaceStore((s) => s.activeKey);
+  const has = useAuthStore((s) => s.has);
+  const me = useAuthStore((s) => s.me);
+
+  // 按权限过滤侧栏：super 全可见，其他按 perm 字段
+  const visibleMenu = MENU_ITEMS.filter(
+    (m) => !m.perm || me?.is_super || has(m.perm),
+  );
 
   return (
     <Layout className="h-screen overflow-hidden">
@@ -133,7 +153,7 @@ function Shell() {
             theme="dark"
             selectedKeys={[activeKey]}
             className="!bg-transparent !border-r-0 !pt-3 px-2"
-            items={MENU_ITEMS.map((m) => ({
+            items={visibleMenu.map((m) => ({
               key: m.key,
               icon: m.icon,
               label: <Link to={WORKSPACE_ROUTES[m.key].path}>{m.label}</Link>,
@@ -170,6 +190,8 @@ export default function App() {
         <Route path="/data" element={<DataMgr />} />
         <Route path="/ai" element={<AI />} />
         <Route path="/notify" element={<Notify />} />
+        <Route path="/system/users" element={<SystemUsers />} />
+        <Route path="/system/roles" element={<SystemRoles />} />
       </Route>
     </Routes>
   );

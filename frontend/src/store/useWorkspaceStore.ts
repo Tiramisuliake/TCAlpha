@@ -9,7 +9,9 @@ export type WorkspaceRouteKey =
   | "trade"
   | "data"
   | "ai"
-  | "notify";
+  | "notify"
+  | "system-users"
+  | "system-roles";
 
 export interface WorkspaceRouteMeta {
   path: string;
@@ -30,6 +32,8 @@ export const WORKSPACE_ROUTES: Record<WorkspaceRouteKey, WorkspaceRouteMeta> = {
   data: { path: "/data", title: "数据管理", closable: true },
   ai: { path: "/ai", title: "AI 助手", closable: true },
   notify: { path: "/notify", title: "通知中心", closable: true },
+  "system-users": { path: "/system/users", title: "用户管理", closable: true },
+  "system-roles": { path: "/system/roles", title: "角色管理", closable: true },
 };
 
 const DEFAULT_TABS: WorkspaceTab[] = [

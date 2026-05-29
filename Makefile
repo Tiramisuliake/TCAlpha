@@ -1,12 +1,13 @@
 # TCAlpha 开发命令集
-.PHONY: help up down logs back front worker beat notify migrate revision test fmt lint clean
+.PHONY: help up down logs back back-safe front worker beat notify migrate revision test fmt lint clean
 
 help:
 	@echo "TCAlpha dev commands:"
 	@echo "  make up         起 PG + Redis (docker)"
 	@echo "  make down       停 PG + Redis"
 	@echo "  make logs       看依赖服务日志"
-	@echo "  make back       起 FastAPI (开发热重载)"
+	@echo "  make back       起 FastAPI (开发热重载，端口 8001)"
+	@echo "  make back-safe  起 FastAPI 前先清残留进程并起 8001 (Windows)"
 	@echo "  make worker     起 Celery worker"
 	@echo "  make beat       起 Celery beat"
 	@echo "  make notify     起通知分发 worker"
@@ -28,7 +29,11 @@ logs:
 	docker compose logs -f --tail=100
 
 back:
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+
+# 启动前先清端口残留（Windows 专用，需要 PowerShell）；默认 8001
+back-safe:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_backend.ps1
 
 worker:
 	cd backend && uv run celery -A app.tasks.celery_app worker -l info

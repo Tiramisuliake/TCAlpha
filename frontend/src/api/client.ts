@@ -11,8 +11,8 @@ import axios, {
   type AxiosRequestConfig,
   type InternalAxiosRequestConfig,
 } from "axios";
-import { message } from "antd";
 import { authHeader, useAuthStore } from "@/store/useAuthStore";
+import { feedback } from "@/utils/feedback";
 
 // 扩展 InternalAxiosRequestConfig，加一个内部标志位
 interface RetryConfig extends InternalAxiosRequestConfig {
@@ -77,7 +77,7 @@ api.interceptors.response.use(
         return api.request(cfg as AxiosRequestConfig);
       }
       // refresh 失败 → 走未授权流程
-      message.error("登录已失效，请重新登录");
+      feedback.error("登录已失效，请重新登录");
       if (!location.pathname.startsWith("/login")) {
         location.assign(`/login?from=${encodeURIComponent(location.pathname)}`);
       }
@@ -85,7 +85,7 @@ api.interceptors.response.use(
     }
 
     const msg = err?.response?.data?.detail ?? err?.message ?? "请求失败";
-    message.error(String(msg));
+    feedback.error(String(msg));
     return Promise.reject(err);
   },
 );

@@ -9,6 +9,8 @@ import {
   ExperimentOutlined,
   LineChartOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
@@ -48,6 +50,8 @@ const ICONS: Record<WorkspaceRouteKey, ReactNode> = {
   data: <DatabaseOutlined />,
   ai: <RobotOutlined />,
   notify: <BellOutlined />,
+  "system-users": <TeamOutlined />,
+  "system-roles": <SafetyCertificateOutlined />,
 };
 
 interface TabItemProps {

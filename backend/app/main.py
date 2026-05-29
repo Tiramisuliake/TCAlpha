@@ -23,6 +23,7 @@ from app.api import (
     notify,
     sim,
     strategy,
+    system,
     watchlist,
     ws,
 )
@@ -90,6 +91,7 @@ app.include_router(sim.router, prefix="/api/sim", tags=["sim"])
 app.include_router(notify.router, prefix="/api/notify", tags=["notify"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 app.include_router(ai_alerts.router, prefix="/api/ai-alerts", tags=["ai-alerts"])
+app.include_router(system.router, prefix="/api/system", tags=["system"])
 app.include_router(ws.router, tags=["ws"])
 
 

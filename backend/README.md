@@ -4,18 +4,37 @@ FastAPI + Celery + SQLAlchemy 2.0 + ArcticDB + JWT/RBAC
 
 ---
 
-## 一键启动（v0.7.1+）
+## 一键启动（v0.7.2+）
 
-提供 4 种方式，按你的环境选最顺手的。**所有方式都会先清 8000 端口的残留 uvicorn 进程**，避免 `--reload` 父子僵尸导致的"前端登录网络超时"。
-
-| 方式 | 命令 / 操作 | 适合场景 |
+| 方式 | 操作 | 适合场景 |
 |---|---|---|
-| **资源管理器双击** | 双击根目录 `start-backend.bat` | 不想开终端，最直觉 |
-| **PyCharm Run** | 顶栏下拉「Backend (uvicorn + 清端口)」→ ▶ | 日常 IDE 开发 |
+| **PyCharm Run（推荐）** | 顶栏下拉「Backend (run.py)」→ ▶ | 日常 IDE 开发，支持断点 |
+| **资源管理器双击** | 双击仓库根 `start-backend.bat` | 不想开终端，最直觉 |
 | **make** | `make back-safe` | Git Bash / WSL / 终端流 |
-| **直接跑脚本** | `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/start_backend.ps1` | CI / 别的 IDE |
+| **裸 Python** | `python backend/run.py` | CI / 别的 IDE |
 
-启动成功标志：终端打印 `Application startup complete.`，浏览器打开 <http://localhost:8000/docs> 能看到 Swagger UI。
+所有方式都基于 `backend/run.py`：自动从 8001..8050 找一个**真正可 bind 的**干净端口（绕开 Windows tcpip.sys socket 泄漏的幽灵 LISTENING），把选定端口写到 `frontend/.dev-port`。Vite 启动时读这个文件，前后端永远自动对齐。
+
+启动成功标志：控制台打印 `Application startup complete.`，浏览器打开 <http://localhost:5173> 能登录。
+后端 API 端口由 `frontend/.dev-port` 决定（每次启动可能不同），不是固定 8000。
+
+### PyCharm 一次性配置
+
+1. **Settings → Project: tcalpha → Python Interpreter** → 添加 → 已存在 → 选 `backend/.venv/Scripts/python.exe`（uv 装的虚拟环境）
+2. 项目根有 `.run/Backend.run.xml`，PyCharm 顶栏会自动出现「Backend (run.py)」
+3. 点 ▶ 启动；想停就点 ⏹
+
+如果 PyCharm 没自动发现，File → Reload All from Disk。
+
+### 想锁定端口
+
+```bash
+# 命令行 / .bat 都可以
+BACKEND_PORT=8000 python backend/run.py
+```
+
+PyCharm 里：编辑 Run Config → Environment variables 加 `BACKEND_PORT=8000`。
+锁定端口时如果踩到 socket 泄漏会回退到自动扫描。
 
 ---
 

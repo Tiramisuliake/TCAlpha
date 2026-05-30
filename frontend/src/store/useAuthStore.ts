@@ -81,6 +81,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   bootstrap: async () => {
+    // 已经有 accessToken（刚登录成功 / 之前已恢复）就别再去 refresh，
+    // 否则会把刚 set 的 token 用 refresh cookie 旋转，refresh 失败时会清空。
+    // 这是登录后跳转又被弹回 /login 的常见原因。
+    if (get().accessToken) {
+      // 仍然异步拉一次 me，但失败不清状态
+      if (!get().me) {
+        get().loadMe();
+      }
+      set({ bootstrapping: false });
+      return;
+    }
     set({ bootstrapping: true });
     const ok = await get().refresh();
     if (ok) {

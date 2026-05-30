@@ -3,3 +3,5 @@ dist
 .vite
 *.tsbuildinfo
 .pnpm-store
+# 后端动态端口（启动脚本写入，每机不同）
+.dev-port

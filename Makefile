@@ -29,11 +29,11 @@ logs:
 	docker compose logs -f --tail=100
 
 back:
-	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+	cd backend && uv run python run.py
 
-# 启动前先清端口残留（Windows 专用，需要 PowerShell）；默认 8001
+# 同 back（保留别名，兼容旧文档）
 back-safe:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_backend.ps1
+	cd backend && uv run python run.py
 
 worker:
 	cd backend && uv run celery -A app.tasks.celery_app worker -l info

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-05-30
+
+### Fixed — DX 启动稳定性 + 登录跳转
+
+启动器（动态端口）
+- `backend/run.py`：扫 8001..8050 找真正可 `socket.bind()` 的端口（绕开 Windows tcpip.sys 幽灵 LISTENING），写入 `frontend/.dev-port`
+- `frontend/vite.config.ts`：启动读 `.dev-port` 决定代理目标，前后端永远自动对齐；`BACKEND_PORT` 环境变量可强锁
+- `scripts/start_backend.ps1` / `start-backend.bat` / `Makefile`：全部改走 `python run.py`，移除原先靠 taskkill 杀 socket 的不可靠路径
+- `.run/Backend.run.xml`：PyCharm Run 配置走 PowerShell + `uv --directory backend run python run.py` + 注入 `NO_PROXY`
+- `frontend/.gitignore`：忽略动态端口文件 `.dev-port`
+- `backend/README.md`：刷新启动 4 种方式 + PyCharm 一次性配置说明
+
+测试体系（B 阶段稳定性补强）
+- `backend/app/utils/rate_limit.py`：Redis 固定窗口共享限流（跨 worker）
+- `backend/tests/conftest.py`：新增 `fake_arctic` / `sample_bars_df` / `sample_bars_arctic` / `sync_db` / `make_bar` fixtures
+- `backend/tests/test_rate_limit.py` / `test_backtest_engine.py` / `test_sim_gateway.py`：核心 core 模块单测
+- `backend/scripts/check_pubsub.py`：多 worker Redis pub/sub 广播验证脚本
+
+前端登录流程
+- `store/useAuthStore.ts::bootstrap`：已持有 accessToken 时跳过 refresh，避免登录后被 `RequireAuth` 弹回 `/login`（v0.7.2 残留的回流 bug）
+
 ## [0.7.2] — 2026-05-30
 
 ### Added — Phase 7 v0.7.2：用户 / 角色管理 UI

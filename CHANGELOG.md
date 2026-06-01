@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-06-02
+
+### Fixed — 时区统一（Asia/Shanghai）
+- 全栈日期 / 时段计算与时间戳改用 `now_cn()`：notify `quiet_hours` 静音判断、AKShare 下载日期窗口（`data_tasks` / `market`）、策略运行时循环窗口、事件总线与实时报价时间戳 —— 修复 UTC/naive 导致的跨日偏差与飞书卡片显示晚 8h
+
+### Changed — 重构
+- `notify_dispatcher._load_active_rules` 改用 `RuleView` dataclass 快照，不再重建 `NotifyRule` ORM 实体（消除带主键游离实体被误写的隐患）
+
 ## [0.7.4] — 2026-06-01
 
 ### Fixed — 代码审查修复（安全 / 正确性 / 性能 / 健壮性）

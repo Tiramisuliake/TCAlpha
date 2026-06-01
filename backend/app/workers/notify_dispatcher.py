@@ -16,6 +16,7 @@ import fnmatch
 import hashlib
 import json
 import signal
+from dataclasses import dataclass
 from datetime import time as dtime
 from typing import Any
 
@@ -117,15 +118,31 @@ async def _log_notify(
     await asyncio.to_thread(_write)
 
 
-def _load_active_rules() -> list[NotifyRule]:
-    """同步加载所有启用规则（dispatcher 自己缓存 5s 也行，这里每事件查一次足够）。"""
+@dataclass
+class RuleView:
+    """NotifyRule 的只读快照：脱离 session 携带，不带 ORM 身份，避免被误 add 回写。"""
+
+    id: int
+    user_id: int
+    name: str
+    match_types: list[str]
+    match_filters: dict
+    channels: list[str]
+    feishu_webhook: str
+    feishu_secret: str
+    quiet_hours: str
+    enabled: bool
+
+
+def _load_active_rules() -> list[RuleView]:
+    """同步加载所有启用规则，转成 RuleView 纯数据快照（每事件查一次足够）。"""
     with SyncSessionLocal() as db:
         rows = db.execute(
             select(NotifyRule).where(NotifyRule.enabled.is_(True))
         ).scalars().all()
-        # detach 出 session 后还要用属性，提前抓取
+        # 在 session 内提取为纯数据快照，出 session 后安全使用（不再重建 ORM 实体）
         return [
-            NotifyRule(
+            RuleView(
                 id=r.id,
                 user_id=r.user_id,
                 name=r.name,

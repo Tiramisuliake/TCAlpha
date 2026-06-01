@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import require_permission
-from app.deps import get_db
+from app.deps import DB
 from app.schemas.market import (
     DownloadTriggerResponse,
     KlineResponse,
@@ -38,7 +38,7 @@ async def list_symbols(
     exchange: str | None = Query(default=None, description="交易所过滤：SH / SZ / BJ"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = DB,
 ):
     """获取股票列表（分页 + 搜索）。"""
     return await market_svc.get_symbols(db, search=search, exchange=exchange, limit=limit, offset=offset)

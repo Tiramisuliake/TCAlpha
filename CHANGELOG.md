@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-06-01
+
+### Fixed — 代码审查修复（安全 / 正确性 / 性能 / 健壮性）
+
+回测与策略引擎
+- `strategies/base.py`：实例化时为每个实例深拷贝 params/state/vars，修复类属性单例导致的跨回测 / 多策略状态污染
+- `core/backtest_engine.py`：`run()` 在 session 内提取 job 字段为局部变量，修复 commit 后跨 session 访问 detached ORM 对象（`DetachedInstanceError`）
+- `db/postgres.py`：`SyncSessionLocal` 加 `expire_on_commit=False`，与异步 session 行为一致
+- `core/runtime.py`：策略主循环窗口滚动到当天 + 从最后一根 bar 增量读取，修复跨交易日拉不到新 K + 每轮重读整年
+
+鉴权 / 安全
+- `deps.py`：`get_current_user_id` 缺失 / 失效 token 一律 401，移除 fallback 到 `default_user_id` 的死代码（fail-closed）
+- `services/auth.py`：登录失败分支也跑一次 bcrypt 校验，抹平响应时延差异，防用户名枚举
+- `api/ws.py`：WebSocket 转发改三协程竞争（转发 / 断开探测 / 心跳），修复客户端静默断开导致的 Redis 订阅与 task 泄漏
+
+性能
+- `services/market.py`：`get_symbols` 用 `COUNT(*)` 子查询替代全量拉 id 计数
+- `core/sim_gateway.py`：`get_position` 改 DB 端 `group_by` 聚合，避免拉全部成交订单到内存
+
+测试
+- `tests/test_backtest_engine.py`：新增 `run()` 端到端 + 策略状态隔离集成测试
+- `tests/test_rbac.py`：`as_user` fixture 同步 override `get_current_user_id`
+
+### Changed — 工程化（前端工具链 + 全栈整理）
+- 前端接入 ESLint 扁平配置（`frontend/eslint.config.js` + `typescript-eslint` / `eslint-plugin-react-hooks` / `eslint-plugin-react-refresh` / `globals`）
+- 新增 `frontend/src/api/streamClient.ts`：带鉴权刷新的 fetch / SSE 客户端
+- 后端多模块整理：`timezone.utc` → `UTC`、import 规整、类型标注完善等
+- `docs/project-bugfix-plan.md`：本轮问题修复计划记录
+
 ## [0.7.3] — 2026-05-30
 
 ### Fixed — DX 启动稳定性 + 登录跳转

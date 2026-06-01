@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import cast
 
 from loguru import logger
-from openai import APIError, AsyncOpenAI
+from openai import APIError, AsyncOpenAI, AsyncStream
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam
 
 from app.config import settings
 from app.schemas.ai import ChatMessage
@@ -38,15 +40,20 @@ async def stream_chat(
     temperature: float = 0.7,
 ) -> AsyncIterator[str]:
     """流式生成 chat 回复，逐 chunk yield 文本片段。"""
-    payload = [{"role": "system", "content": system or _DEFAULT_SYSTEM}]
-    payload.extend(m.model_dump() for m in messages)
+    payload: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": system or _DEFAULT_SYSTEM}
+    ]
+    payload.extend(cast(ChatCompletionMessageParam, m.model_dump()) for m in messages)
 
     try:
-        resp = await get_client().chat.completions.create(
-            model=settings.ai_model,
-            messages=payload,
-            stream=True,
-            temperature=temperature,
+        resp = cast(
+            AsyncStream[ChatCompletionChunk],
+            await get_client().chat.completions.create(
+                model=settings.ai_model,
+                messages=payload,
+                stream=True,
+                temperature=temperature,
+            ),
         )
         async for chunk in resp:
             if not chunk.choices:

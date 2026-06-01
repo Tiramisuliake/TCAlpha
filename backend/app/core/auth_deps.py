@@ -18,7 +18,6 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.security import (
     TOKEN_TYPE_ACCESS,
@@ -29,7 +28,7 @@ from app.core.security import (
 from app.db.models.permission import Permission
 from app.db.models.role import Role, RolePermission, UserRole
 from app.db.models.user import User
-from app.deps import get_db
+from app.deps import DB
 
 
 @dataclass
@@ -72,7 +71,7 @@ def _bearer_token(request: Request) -> str:
     return auth[7:].strip()
 
 
-async def _load_auth_user(db: AsyncSession, user_id: int) -> AuthUser:
+async def load_auth_user(db: AsyncSession, user_id: int) -> AuthUser:
     """一次 SELECT 加载 user + roles + permissions。"""
     user = (
         await db.execute(
@@ -122,7 +121,7 @@ async def _load_auth_user(db: AsyncSession, user_id: int) -> AuthUser:
 
 async def get_current_user(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = DB,
 ) -> AuthUser:
     """解析 Bearer access token → AuthUser。失败抛 401。"""
     token = _bearer_token(request)
@@ -151,7 +150,7 @@ async def get_current_user(
             detail="invalid token subject",
         ) from e
 
-    return await _load_auth_user(db, user_id)
+    return await load_auth_user(db, user_id)
 
 
 CurrentUser = Annotated[AuthUser, Depends(get_current_user)]

@@ -87,7 +87,7 @@ export default function StrategyPage() {
   }, [qc]);
 
   useWebSocket(
-    userId ? wsUrl(`/ws/orders?user_id=${userId}`) : "",
+    userId ? wsUrl("/ws/orders") : "",
     onOrderMsg,
     { enabled: !!userId }
   );

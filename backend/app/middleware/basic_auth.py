@@ -72,9 +72,7 @@ class BasicAuthMiddleware:
     def _is_public(self, path: str) -> bool:
         if path in self.public_paths:
             return True
-        if not self.protect_docs and path in {"/docs", "/redoc", "/openapi.json"}:
-            return True
-        return False
+        return not self.protect_docs and path in {"/docs", "/redoc", "/openapi.json"}
 
     def _check(self, user: str, pwd: str) -> bool:
         return user == self.username and verify_password(pwd, self.password_hash)

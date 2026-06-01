@@ -8,7 +8,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,11 +20,16 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     is_jti_blacklisted,
     ttl_from_payload,
     verify_password,
 )
 from app.db.models.user import User
+
+# 一个合法但永不匹配的 bcrypt hash：用户不存在时也拿它跑一次校验，
+# 抹平“用户不存在”与“密码错误”的响应时延，防止靠耗时差异枚举用户名。
+_DUMMY_PASSWORD_HASH = hash_password("tcalpha-timing-guard")
 
 
 class AuthError(Exception):
@@ -37,6 +42,8 @@ async def authenticate(db: AsyncSession, username: str, password: str) -> User:
         await db.execute(select(User).where(User.username == username))
     ).scalar_one_or_none()
     if user is None or not user.is_active:
+        # 即便用户不存在 / 被禁用，也跑一次 bcrypt 校验，抹平时序差异防枚举
+        verify_password(password, _DUMMY_PASSWORD_HASH)
         raise AuthError("invalid credentials")
     if not verify_password(password, user.password_hash):
         raise AuthError("invalid credentials")
@@ -47,7 +54,7 @@ async def mark_login(db: AsyncSession, user_id: int) -> None:
     await db.execute(
         update(User)
         .where(User.id == user_id)
-        .values(last_login_at=datetime.now(timezone.utc))
+        .values(last_login_at=datetime.now(UTC))
     )
     await db.commit()
 
@@ -58,7 +65,7 @@ async def issue_token_pair(user_id: int) -> tuple[str, str, str, datetime, int]:
     refresh_token, refresh_jti, refresh_exp = create_refresh_token(user_id)
 
     access_ttl = int(
-        (access_exp - datetime.now(timezone.utc)).total_seconds()
+        (access_exp - datetime.now(UTC)).total_seconds()
     )
     return access_token, refresh_token, refresh_jti, refresh_exp, access_ttl
 

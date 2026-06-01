@@ -14,7 +14,7 @@ notify_dispatcher worker 订阅 'events:*' 通配，按 NotifyRule 路由到具�
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
@@ -47,7 +47,7 @@ def publish_event(
         "type": event_type,
         "level": level,
         "user_id": user_id,
-        "ts": datetime.now(tz=timezone.utc).isoformat(),
+        "ts": datetime.now(tz=UTC).isoformat(),
         "payload": payload or {},
     }
     try:

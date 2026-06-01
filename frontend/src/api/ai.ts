@@ -6,7 +6,7 @@
  *   data: [DONE]
  *   data: [ERROR]<msg>
  */
-import { authHeader } from "@/store/useAuthStore";
+import { fetchWithAuthRefresh, streamHeaders } from "@/api/streamClient";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -30,16 +30,15 @@ const DONE = "[DONE]";
 const ERROR_PREFIX = "[ERROR]";
 
 export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise<void> {
-  const resp = await fetch("/api/ai/chat", {
+  const resp = await fetchWithAuthRefresh("/api/ai/chat", () => ({
     method: "POST",
-    headers: {
+    headers: streamHeaders({
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      ...authHeader(),
-    },
+    }),
     body: JSON.stringify(req),
     signal: cb.signal,
-  });
+  }));
 
   if (!resp.ok || !resp.body) {
     const text = await resp.text().catch(() => resp.statusText);

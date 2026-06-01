@@ -16,7 +16,8 @@ import fnmatch
 import hashlib
 import json
 import signal
-from datetime import datetime, time as dtime, timezone
+from datetime import datetime
+from datetime import time as dtime
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -37,10 +38,7 @@ DEDUPE_TTL_S = 30
 
 def _match_event_type(rule_types: list[str], event_type: str) -> bool:
     """支持通配符 'strategy.*' 'ai.alert.*'。"""
-    for pattern in rule_types:
-        if fnmatch.fnmatch(event_type, pattern):
-            return True
-    return False
+    return any(fnmatch.fnmatch(event_type, pattern) for pattern in rule_types)
 
 
 def _is_quiet_now(quiet_hours: str) -> bool:
@@ -239,8 +237,8 @@ async def run() -> None:
                 logger.exception("handle_event failed for: {}", data[:200])
     finally:
         await pubsub.punsubscribe(pattern)
-        await pubsub.aclose()
-        await redis_async.aclose()
+        await pubsub.close()
+        await redis_async.close()
         logger.info("notify_dispatcher exited")
 
 

@@ -45,6 +45,12 @@ class StrategyBase:
 
     def __init__(self, symbol: str, params: dict[str, Any] | None = None) -> None:
         self.symbol = symbol
+        # 类上的 params/state/vars 仅作“默认模板”，这里为每个实例深拷贝一份，
+        # 否则所有实例共享同一个类属性单例，会导致跨回测 / 多策略状态污染。
+        cls = type(self)
+        self.params = cls.params.model_copy(deep=True)
+        self.state = cls.state.model_copy(deep=True)
+        self.vars = cls.vars.model_copy(deep=True)
         if params:
             for k, v in params.items():
                 setattr(self.params, k, v)

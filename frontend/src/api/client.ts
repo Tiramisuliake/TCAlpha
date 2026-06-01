@@ -28,10 +28,11 @@ export const api = axios.create({
 api.interceptors.request.use((cfg) => {
   const h = authHeader();
   if (h.Authorization && cfg.headers) {
-    cfg.headers.set
-      ? cfg.headers.set("Authorization", h.Authorization)
-      : ((cfg.headers as Record<string, string>).Authorization =
-          h.Authorization);
+    if (cfg.headers.set) {
+      cfg.headers.set("Authorization", h.Authorization);
+    } else {
+      (cfg.headers as Record<string, string>).Authorization = h.Authorization;
+    }
   }
   return cfg;
 });
@@ -69,10 +70,11 @@ api.interceptors.response.use(
         // 用新 token 重试一次
         const h = authHeader();
         if (h.Authorization && cfg.headers) {
-          cfg.headers.set
-            ? cfg.headers.set("Authorization", h.Authorization)
-            : ((cfg.headers as Record<string, string>).Authorization =
-                h.Authorization);
+          if (cfg.headers.set) {
+            cfg.headers.set("Authorization", h.Authorization);
+          } else {
+            (cfg.headers as Record<string, string>).Authorization = h.Authorization;
+          }
         }
         return api.request(cfg as AxiosRequestConfig);
       }

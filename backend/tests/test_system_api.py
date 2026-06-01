@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -53,8 +55,9 @@ def as_user():
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client() -> Iterator[TestClient]:
+    with TestClient(app) as c:
+        yield c
 
 
 # ── 401 ────────────────────────────────────────────────────────────

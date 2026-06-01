@@ -7,14 +7,13 @@
 """
 from __future__ import annotations
 
-import importlib
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from loguru import logger
-
 
 # ── 中间数据结构 ──────────────────────────────────────────────────────
 
@@ -61,15 +60,10 @@ def list_strategy_classes() -> list[dict]:
     result = []
     for name, cls in STRATEGY_CLASSES.items():
         # 收集参数定义
-        instance = cls.__new__(cls)
-        # 初始化 params/state/vars 属性
-        for attr in ("params", "state", "vars"):
-            klass_attr = getattr(cls, attr, None)
-            if klass_attr is not None:
-                setattr(instance, attr, klass_attr.__class__())
         params_schema = {}
-        if hasattr(instance, "params"):
-            for fname, finfo in instance.params.model_fields.items():
+        params = getattr(cls, "params", None)
+        if params is not None and hasattr(params, "model_fields"):
+            for fname, finfo in cast_model_fields(params).items():
                 params_schema[fname] = {
                     "title": finfo.title or fname,
                     "default": finfo.default,
@@ -81,6 +75,10 @@ def list_strategy_classes() -> list[dict]:
             "params_schema": params_schema,
         })
     return result
+
+
+def cast_model_fields(model: Any) -> dict[str, Any]:
+    return model.model_fields
 
 
 # ── K 线加载 ──────────────────────────────────────────────────────────
@@ -114,7 +112,7 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
             BarData(
                 symbol=sym_key,
                 exchange=exchange,
-                datetime=ts.to_pydatetime().replace(tzinfo=timezone.utc),
+                datetime=ts.to_pydatetime().replace(tzinfo=UTC),
                 interval=Interval.DAILY,
                 open_price=float(row["open"]),
                 high_price=float(row["high"]),
@@ -177,12 +175,11 @@ def _match_orders(
 def _settle(trades: list[Trade], bars: list, init_capital: float) -> pd.Series:
     """构造每日资金曲线。"""
     if not bars:
-        return pd.Series([init_capital], index=[datetime.now(tz=timezone.utc)])
+        return pd.Series([init_capital], index=[datetime.now(tz=UTC)])
 
     cash = init_capital
     pos = 0
     avg_price = 0.0
-    open_trades: list[Trade] = []
     equity_values: list[float] = []
     equity_dates: list[datetime] = []
 
@@ -227,19 +224,19 @@ def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dic
     drawdown = (equity - cum_max) / cum_max
     max_dd = float(drawdown.min())
 
-    closed = [t for t in trades if t.pnl is not None]
-    wins = [t for t in closed if t.pnl > 0]
-    win_rate = len(wins) / len(closed) if closed else 0.0
-    losing_pnl = sum(t.pnl for t in closed if t.pnl < 0)
+    closed_pnls = [float(t.pnl) for t in trades if t.pnl is not None]
+    wins = [pnl for pnl in closed_pnls if pnl > 0]
+    win_rate = len(wins) / len(closed_pnls) if closed_pnls else 0.0
+    losing_pnl = sum(pnl for pnl in closed_pnls if pnl < 0)
     profit_factor = (
-        sum(t.pnl for t in wins) / abs(losing_pnl)
+        sum(wins) / abs(losing_pnl)
         if losing_pnl < 0 else float("inf")
     )
 
     # 资金曲线（按日期 → ISO 字符串，前端用）
     equity_curve = [
         {"dt": str(dt.date() if hasattr(dt, "date") else dt), "value": float(v)}
-        for dt, v in zip(equity.index, equity.values)
+        for dt, v in zip(equity.index, equity.values, strict=False)
     ]
 
     return {
@@ -248,7 +245,7 @@ def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dic
         "sharpe": round(sharpe, 4),
         "sortino": round(sortino, 4),
         "max_drawdown": round(max_dd, 4),
-        "trade_count": len(closed),
+        "trade_count": len(closed_pnls),
         "win_rate": round(win_rate, 4),
         "profit_factor": round(profit_factor, 4) if profit_factor != float("inf") else 9999.0,
         "init_capital": init_capital,
@@ -270,37 +267,41 @@ def run(job_id: int) -> dict:
             raise ValueError(f"BacktestJob {job_id} not found")
 
         job.status = "running"
+        # 在 session 内取出后续要用的字段：commit 后 job 会 detach，
+        # 出 with 块再读 ORM 属性会触发 DetachedInstanceError（见 S3）。
+        symbol = job.symbol
+        start_date = str(job.start_date)
+        end_date = str(job.end_date)
+        class_name = job.class_name
+        params = job.params or {}
+        commission_rate = job.commission_rate
+        slippage = job.slippage
+        init_capital = job.init_capital
         db.commit()
 
     try:
         # 1. 加载 K 线
-        bars = _load_bars(
-            job.symbol,
-            str(job.start_date),
-            str(job.end_date),
-        )
+        bars = _load_bars(symbol, start_date, end_date)
         if len(bars) < 2:
-            raise RuntimeError(f"insufficient bars for {job.symbol}: {len(bars)}")
+            raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
 
-        logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), job.symbol)
+        logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
 
         # 2. 实例化策略
-        cls = get_strategy_class(job.class_name)
-        strategy = cls(job.symbol, job.params or {})
+        cls = get_strategy_class(class_name)
+        strategy = cls(symbol, params)
 
         # 3. 逐 bar 跑策略 + 撮合
         all_trades: list[Trade] = []
         pos = 0
         pending: list[PendingOrder] = []
 
-        for i, bar in enumerate(bars[:-1]):
-            next_bar = bars[i + 1]
-
+        for bar in bars[:-1]:
             # 撮合上一轮挂的单
             if pending:
                 new_trades, pos = _match_orders(
                     pending, bar,
-                    job.commission_rate, job.slippage, pos
+                    commission_rate, slippage, pos
                 )
                 all_trades.extend(new_trades)
                 strategy.state.pos = pos
@@ -320,25 +321,27 @@ def run(job_id: int) -> dict:
         if pending and len(bars) >= 2:
             new_trades, pos = _match_orders(
                 pending, bars[-1],
-                job.commission_rate, job.slippage, pos
+                commission_rate, slippage, pos
             )
             all_trades.extend(new_trades)
 
         # 4. 算资金曲线 & 指标
-        equity = _settle(all_trades, bars, job.init_capital)
-        result = _metrics(equity, all_trades, job.init_capital)
+        equity = _settle(all_trades, bars, init_capital)
+        result = _metrics(equity, all_trades, init_capital)
 
         # 5. 落库
         with SyncSessionLocal() as db:
             job = db.get(BacktestJob, job_id)
+            if job is None:
+                raise ValueError(f"BacktestJob {job_id} not found")
             job.status = "done"
             job.result = result
-            job.finished_at = datetime.now(tz=timezone.utc)
+            job.finished_at = datetime.now(tz=UTC)
 
             for t in all_trades:
                 db.add(BacktestTrade(
                     job_id=job_id,
-                    symbol=job.symbol,
+                    symbol=symbol,
                     direction=t.direction,
                     offset=t.offset,
                     price=t.price,
@@ -358,6 +361,6 @@ def run(job_id: int) -> dict:
             if job:
                 job.status = "failed"
                 job.error = str(exc)[:1024]
-                job.finished_at = datetime.now(tz=timezone.utc)
+                job.finished_at = datetime.now(tz=UTC)
                 db.commit()
         raise

@@ -7,11 +7,15 @@
 """
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import CurrentUser, require_permission
 from app.deps import DB
 from app.schemas.system import (
+    DataScope,
     PasswordReset,
     PermissionOut,
     RoleCreate,
@@ -25,7 +29,6 @@ from app.schemas.system import (
     UserUpdate,
 )
 from app.services import system as system_svc
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -41,6 +44,19 @@ def _to_user_item(user, role_codes: list[str]) -> UserListItem:
         created_at=user.created_at,
         last_login_at=user.last_login_at,
         role_codes=role_codes,
+    )
+
+
+def _to_role_detail(role, permission_codes: list[str]) -> RoleDetailOut:
+    return RoleDetailOut(
+        id=role.id,
+        code=role.code,
+        name=role.name,
+        data_scope=cast(DataScope, role.data_scope),
+        description=role.description,
+        created_at=role.created_at,
+        updated_at=role.updated_at,
+        permission_codes=permission_codes,
     )
 
 
@@ -185,16 +201,7 @@ async def get_role(role_id: int, db: AsyncSession = DB):
     if role is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
     codes = await system_svc.get_role_permission_codes(db, role_id)
-    return RoleDetailOut(
-        id=role.id,
-        code=role.code,
-        name=role.name,
-        data_scope=role.data_scope,
-        description=role.description,
-        created_at=role.created_at,
-        updated_at=role.updated_at,
-        permission_codes=codes,
-    )
+    return _to_role_detail(role, codes)
 
 
 @router.post(
@@ -266,17 +273,10 @@ async def set_role_permissions(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
 
     role = await system_svc.get_role(db, role_id)
+    if role is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
     codes = await system_svc.get_role_permission_codes(db, role_id)
-    return RoleDetailOut(
-        id=role.id,
-        code=role.code,
-        name=role.name,
-        data_scope=role.data_scope,
-        description=role.description,
-        created_at=role.created_at,
-        updated_at=role.updated_at,
-        permission_codes=codes,
-    )
+    return _to_role_detail(role, codes)
 
 
 # ── /permissions ───────────────────────────────────────────────────

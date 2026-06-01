@@ -13,7 +13,7 @@ warmup 拿最后 120 根（80..200），策略 state 应已捕获金叉/死叉�
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -22,7 +22,6 @@ import pandas as pd
 sys.path.insert(0, ".")
 
 from app.services.data import save_daily  # noqa: E402
-
 
 SYMBOL = "sh600000"
 N_BARS = 200

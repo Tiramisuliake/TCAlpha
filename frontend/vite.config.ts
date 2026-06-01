@@ -29,7 +29,6 @@ const BACKEND_PORT = readBackendPort();
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}`;
 
-// eslint-disable-next-line no-console
 console.log(`[vite] backend → ${BACKEND_URL}`);
 
 export default defineConfig({

@@ -65,5 +65,20 @@ async def delete_strategy(db: AsyncSession, strategy_id: int, user_id: int) -> b
     return True
 
 
+async def can_subscribe_signals(
+    db: AsyncSession, strategy_id: int, user_id: int, *, is_super: bool = False
+) -> bool:
+    """校验用户是否可订阅某个策略的信号推送。"""
+    if is_super:
+        return (
+            await db.execute(select(StrategyConfig.id).where(StrategyConfig.id == strategy_id))
+        ).scalar_one_or_none() is not None
+    stmt = select(StrategyConfig.id).where(
+        StrategyConfig.id == strategy_id,
+        StrategyConfig.user_id == user_id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
 def get_strategy_classes() -> list[dict]:
     return list_strategy_classes()

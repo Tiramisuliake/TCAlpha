@@ -7,7 +7,18 @@ from __future__ import annotations
 
 def normalize(symbol: str) -> str:
     """把 600000 / 600000.SH / sh.600000 等各种形式统一成 sh600000。"""
-    s = symbol.strip().lower().replace(".", "").replace("-", "")
+    raw = symbol.strip().lower().replace("-", "")
+    parts = raw.split(".")
+    if len(parts) == 2:
+        left, right = parts
+        if left.isdigit() and len(left) == 6 and right in {"sh", "sz", "bj"}:
+            return f"{right}{left}"
+        if left in {"sh", "sz", "bj"} and right.isdigit() and len(right) == 6:
+            return f"{left}{right}"
+
+    s = raw.replace(".", "")
+    if len(s) == 8 and s[:6].isdigit() and s[6:] in {"sh", "sz", "bj"}:
+        return f"{s[6:]}{s[:6]}"
     if s.startswith(("sh", "sz", "bj")):
         return s
     if len(s) == 6 and s.isdigit():

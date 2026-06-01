@@ -12,17 +12,27 @@ Path=/api/auth → 业务接口不会带 refresh，进一步降 CSRF 面。
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.auth_deps import CurrentUser
-from app.deps import get_db
+from app.deps import DB
 from app.schemas.auth import LoginRequest, MeResponse, TokenResponse
 from app.services import auth as auth_svc
 
 router = APIRouter()
+
+RefreshSameSite = Literal["lax", "strict", "none"]
+
+
+def _refresh_cookie_samesite() -> RefreshSameSite:
+    value = settings.refresh_cookie_samesite.lower()
+    if value in {"lax", "strict", "none"}:
+        return cast(RefreshSameSite, value)
+    return "strict"
 
 
 def _set_refresh_cookie(
@@ -33,7 +43,7 @@ def _set_refresh_cookie(
         value=token,
         httponly=True,
         secure=settings.refresh_cookie_secure,
-        samesite=settings.refresh_cookie_samesite,
+        samesite=_refresh_cookie_samesite(),
         path=settings.refresh_cookie_path,
         expires=expires,
     )
@@ -50,7 +60,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 async def login(
     payload: LoginRequest,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = DB,
 ):
     try:
         user = await auth_svc.authenticate(db, payload.username, payload.password)
@@ -117,7 +127,7 @@ async def logout(request: Request, response: Response):
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+async def me(user: CurrentUser, db: AsyncSession = DB):
     from sqlalchemy import select
 
     from app.db.models.user import User

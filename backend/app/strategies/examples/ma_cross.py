@@ -31,6 +31,7 @@ class MaCrossStrategy(StrategyBase):
         from vnpy.trader.utility import ArrayManager
 
         self.am = ArrayManager(size=max(self.params.slow + 10, 50))
+        self._pending_signal: tuple[str, str, int] | None = None
 
     def on_bar(self, bar) -> None:  # bar: vnpy BarData
         self.am.update_bar(bar)

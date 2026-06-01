@@ -8,8 +8,8 @@ B 阶段（稳定性补强）加入：
 """
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -22,8 +22,9 @@ from app.main import app
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client() -> Iterator[TestClient]:
+    with TestClient(app) as c:
+        yield c
 
 
 # ── ArcticDB mock library ─────────────────────────────────────────────
@@ -146,10 +147,9 @@ def sync_db(monkeypatch) -> Iterator[sessionmaker]:
     注意：`from app.db.postgres import SyncSessionLocal` 会在调用方模块拷一份
     引用，所以这里 patch 多个常见调用方的模块属性，确保替换生效。
     """
+    import app.db.models  # noqa: F401 — 触发模型 register 到 Base.metadata
     from app.db import postgres as pg_mod
     from app.db.postgres import Base
-
-    import app.db.models  # noqa: F401 — 触发模型 register 到 Base.metadata
 
     engine = create_engine(
         "sqlite:///:memory:",
@@ -190,7 +190,6 @@ def sync_db(monkeypatch) -> Iterator[sessionmaker]:
 @pytest.fixture
 def make_bar():
     """工厂：make_bar(dt, open=, high=, low=, close=, volume=) → vnpy BarData。"""
-    from datetime import timezone
 
     from vnpy.trader.constant import Exchange, Interval
     from vnpy.trader.object import BarData
@@ -206,7 +205,7 @@ def make_bar():
         volume: float = 1_000_000,
     ) -> BarData:
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return BarData(
             symbol=symbol,
             exchange=Exchange.SSE,

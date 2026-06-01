@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
 from app.config import settings
 from app.db.models import *  # noqa: F401,F403  让 autogenerate 看到所有模型
 from app.db.postgres import Base

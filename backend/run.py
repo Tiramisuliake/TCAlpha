@@ -86,10 +86,10 @@ def main() -> None:
     port = find_free_port()
     print()
     print("=" * 56)
-    print(f" ▶ TCAlpha 后端开发入口")
+    print(" ▶ TCAlpha 后端开发入口")
     print(f"   API     → http://{BIND_HOST}:{port}")
     print(f"   Swagger → http://{BIND_HOST}:{port}/docs")
-    print(f"   按 Ctrl+C 停止")
+    print("   按 Ctrl+C 停止")
     print("=" * 56)
     print()
 

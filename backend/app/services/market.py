@@ -1,10 +1,10 @@
 """行情查询业务逻辑（Phase 1）。"""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.arctic import get_library
@@ -31,8 +31,8 @@ async def get_symbols(
     if exchange:
         stmt = stmt.where(Symbol.exchange == exchange.upper())
 
-    count_stmt = stmt.with_only_columns(Symbol.id)
-    total = len((await db.execute(count_stmt)).all())
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar_one()
 
     stmt = stmt.order_by(Symbol.symbol).offset(offset).limit(limit)
     rows = (await db.execute(stmt)).scalars().all()
@@ -92,7 +92,7 @@ def trigger_download(symbol: str, period: str = "1d") -> str:
     if period.endswith("m"):
         result = download_one_symbol.delay(symbol, period)
     else:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         end = now.strftime("%Y-%m-%d")
         start = (now - timedelta(days=_FALLBACK_DAYS)).strftime("%Y-%m-%d")
         result = download_one_symbol.delay(symbol, period, start, end)

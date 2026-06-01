@@ -5,7 +5,12 @@
 from __future__ import annotations
 
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
@@ -35,10 +40,11 @@ def init_engine() -> None:
 
 
 async def dispose_engine() -> None:
-    global _engine
+    global _engine, async_session_factory
     if _engine is not None:
         await _engine.dispose()
         _engine = None
+        async_session_factory = None
 
 
 def get_engine() -> AsyncEngine:
@@ -53,4 +59,8 @@ _sync_engine = create_engine(
     pool_size=5,
     max_overflow=10,
 )
-SyncSessionLocal = sessionmaker(bind=_sync_engine, autocommit=False, autoflush=False)
+# expire_on_commit=False：commit 后不过期对象属性，避免 worker 代码在 session
+# 关闭后访问 ORM 属性触发 DetachedInstanceError（与异步 session 行为保持一致）。
+SyncSessionLocal = sessionmaker(
+    bind=_sync_engine, autocommit=False, autoflush=False, expire_on_commit=False
+)

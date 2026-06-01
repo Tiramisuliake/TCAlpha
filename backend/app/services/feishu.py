@@ -45,7 +45,7 @@ async def send_card(
     title: str,
     fields: list[dict[str, Any]],
     color: str = "blue",
-    timeout: float = 5.0,
+    request_timeout: float = 5.0,
 ) -> tuple[bool, str | None]:
     """发送一张飞书交互卡片。
 
@@ -55,7 +55,7 @@ async def send_card(
         title: 卡片标题
         fields: [{"label": "...", "value": "..."}, ...]
         color: blue / green / orange / red / grey / wathet / turquoise / yellow / carmine / violet
-        timeout: HTTP 超时（秒）
+        request_timeout: HTTP 超时（秒）
 
     Returns:
         (success, error_msg)。失败不抛异常，调用方写 NotifyLog 后继续。
@@ -98,7 +98,7 @@ async def send_card(
         body["sign"] = _gen_sign(ts, secret)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=request_timeout) as client:
             resp = await client.post(webhook, json=body)
         data = resp.json()
         if data.get("code") not in (0, None) and data.get("StatusCode") not in (0, None):
@@ -116,7 +116,7 @@ async def send_text(
     webhook: str,
     secret: str,
     content: str,
-    timeout: float = 5.0,
+    request_timeout: float = 5.0,
 ) -> tuple[bool, str | None]:
     """发送纯文本（测试 / 简短通知用）。"""
     if not webhook:
@@ -131,7 +131,7 @@ async def send_text(
         body["sign"] = _gen_sign(ts, secret)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=request_timeout) as client:
             resp = await client.post(webhook, json=body)
         data = resp.json()
         if data.get("code") not in (0, None) and data.get("StatusCode") not in (0, None):

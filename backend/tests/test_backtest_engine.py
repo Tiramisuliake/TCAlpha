@@ -5,9 +5,8 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -15,10 +14,9 @@ from app.core.backtest_engine import (
     PendingOrder,
     Trade,
     _match_orders,
-    _settle,
     _metrics,
+    _settle,
 )
-
 
 # ── _match_orders ─────────────────────────────────────────────────────
 
@@ -77,7 +75,7 @@ def test_match_orders_close_clamped_by_position(make_bar):
 
 
 def _make_bars(make_bar, prices: list[float]) -> list:
-    base = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    base = datetime(2025, 1, 1, tzinfo=UTC)
     return [
         make_bar(base + timedelta(days=i), open_=p, close=p, high=p * 1.01, low=p * 0.99)
         for i, p in enumerate(prices)
@@ -147,3 +145,76 @@ def test_metrics_handles_no_closed_trades():
     assert m["trade_count"] == 0
     assert m["win_rate"] == 0.0
     assert m["profit_factor"] in (9999.0, 0.0)
+
+
+# ── run() 端到端（S3：跨 session 访问 detached 对象回归）──────────────────
+
+
+def test_run_end_to_end_persists_done(sync_db, sample_bars_arctic):
+    """整条 run() 跑通并落库 done。
+
+    回归：修复前 run() 在第一个 session commit 后（job 已 detach）继续访问
+    job.symbol / job.params 等，会抛 DetachedInstanceError。
+    """
+    from datetime import date
+
+    from app.core.backtest_engine import run
+    from app.db.models.backtest import BacktestJob
+
+    symbol = sample_bars_arctic  # "sh600000"
+    with sync_db() as db:
+        job = BacktestJob(
+            user_id=1,
+            name="it",
+            class_name="MaCrossStrategy",
+            symbol=symbol,
+            params={"fast": 10, "slow": 20},
+            start_date=date(2025, 1, 1),
+            end_date=date(2026, 1, 1),
+            init_capital=1_000_000.0,
+            commission_rate=0.0003,
+            slippage=0.01,
+            status="pending",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    result = run(job_id)
+
+    assert "equity_curve" in result and result["equity_curve"]
+    assert result["final_equity"] > 0
+    with sync_db() as db:
+        job = db.get(BacktestJob, job_id)
+        assert job.status == "done"
+        assert job.result is not None
+        assert job.finished_at is not None
+
+
+# ── 策略实例隔离（S2：类属性单例污染回归）────────────────────────────────
+
+
+def test_strategy_instances_have_isolated_state():
+    """每个策略实例持有独立的 params/state/vars，互不污染，也不改类模板。
+
+    回归：修复前 state/vars/params 是类属性单例，多实例共享同一对象。
+    """
+    from app.strategies.examples.ma_cross import MaCrossStrategy
+
+    s1 = MaCrossStrategy("sh600000", {"fast": 5, "slow": 10})
+    s2 = MaCrossStrategy("sz000001", {"fast": 20, "slow": 60})
+
+    s1.state.pos = 100
+    s1.state.fast_ma = 9.9
+    s1.vars.direction = 1
+
+    # s2 不受 s1 影响
+    assert s2.state.pos == 0
+    assert s2.state.fast_ma == 0.0
+    assert s2.vars.direction == 0
+    # 参数各自独立
+    assert s1.params.fast == 5
+    assert s2.params.fast == 20
+    # 类属性模板未被实例操作污染
+    assert MaCrossStrategy.state.pos == 0
+    assert MaCrossStrategy.params.fast == 10

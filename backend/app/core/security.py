@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 import bcrypt
@@ -47,7 +47,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT 签发 ────────────────────────────────────────────────────────
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _encode(payload: dict[str, Any]) -> str:

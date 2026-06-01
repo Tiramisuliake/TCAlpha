@@ -5,10 +5,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
-
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from loguru import logger
 
 from app import __version__
 from app.api import (

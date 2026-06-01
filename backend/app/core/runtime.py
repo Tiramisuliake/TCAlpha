@@ -13,14 +13,13 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from loguru import logger
 
 from app.core.backtest_engine import _load_bars, get_strategy_class
 from app.core.event_bus import publish_event
-from app.core.pubsub import publish_signal, running_key, stop_key
-from app.core.pubsub import get_sync_redis
+from app.core.pubsub import get_sync_redis, publish_signal, running_key, stop_key
 from app.core.sim_gateway import SimGateway
 from app.db.models.strategy import StrategyConfig
 from app.db.postgres import SyncSessionLocal
@@ -70,7 +69,7 @@ class StrategyRuntime:
 
             # 3. 热身：从 ArcticDB 加载历史 bars
             from datetime import timedelta
-            end = datetime.now(tz=timezone.utc)
+            end = datetime.now(tz=UTC)
             start = end - timedelta(days=365)
             bars = _load_bars(symbol, str(start.date()), str(end.date()))
             warmup_bars = bars[-_WARMUP_BARS:] if len(bars) >= _WARMUP_BARS else bars
@@ -94,8 +93,11 @@ class StrategyRuntime:
                     r.delete(stop_key(self.strategy_id))
                     break
 
-                # 拉取最新 bar（每轮拉一次，判断是否有新 K 线）
-                fresh_bars = _load_bars(symbol, str(start.date()), str(end.date()))
+                # 拉取最新 bar：窗口滚动到今天（修 end 固定导致跨天拉不到新 K），
+                # 且只从最后一根 bar 当天开始增量读取，避免每轮重读整年。
+                now = datetime.now(tz=UTC)
+                fetch_start = last_bar_dt.date() if last_bar_dt else start.date()
+                fresh_bars = _load_bars(symbol, str(fetch_start), str(now.date()))
                 if fresh_bars and (last_bar_dt is None or fresh_bars[-1].datetime > last_bar_dt):
                     new_bars = [b for b in fresh_bars if last_bar_dt is None or b.datetime > last_bar_dt]
                     for bar in new_bars:
@@ -128,7 +130,7 @@ class StrategyRuntime:
                                 "strength": strategy.vars.strength,
                                 "tip": strategy.vars.tip,
                                 "pos": strategy.state.pos,
-                                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                                "ts": datetime.now(tz=UTC).isoformat(),
                             },
                         )
                         last_bar_dt = bar.datetime

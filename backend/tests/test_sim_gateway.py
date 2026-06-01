@@ -5,7 +5,7 @@ publish_order 走 monkeypatch 收集消息，不连真 Redis。
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -29,7 +29,7 @@ def gateway(sync_db, monkeypatch):
 
 
 def _bar(make_bar, *, symbol="sh600000", open_=10.0):
-    return make_bar(datetime(2025, 1, 2, tzinfo=timezone.utc), symbol=symbol, open_=open_)
+    return make_bar(datetime(2025, 1, 2, tzinfo=UTC), symbol=symbol, open_=open_)
 
 
 def test_send_order_creates_submitted(gateway):

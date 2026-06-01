@@ -27,16 +27,32 @@ export function setFeedbackApis(opts: {
 /** Promise-style feedback 适配器：bridge 未注入时降级到 console，保证调试可见。 */
 export const feedback = {
   success(msg: string) {
-    messageApi ? messageApi.success(msg) : console.info("[feedback]", msg);
+    if (messageApi) {
+      messageApi.success(msg);
+    } else {
+      console.info("[feedback]", msg);
+    }
   },
   error(msg: string) {
-    messageApi ? messageApi.error(msg) : console.error("[feedback]", msg);
+    if (messageApi) {
+      messageApi.error(msg);
+    } else {
+      console.error("[feedback]", msg);
+    }
   },
   info(msg: string) {
-    messageApi ? messageApi.info(msg) : console.info("[feedback]", msg);
+    if (messageApi) {
+      messageApi.info(msg);
+    } else {
+      console.info("[feedback]", msg);
+    }
   },
   warning(msg: string) {
-    messageApi ? messageApi.warning(msg) : console.warn("[feedback]", msg);
+    if (messageApi) {
+      messageApi.warning(msg);
+    } else {
+      console.warn("[feedback]", msg);
+    }
   },
   notify(title: string, description?: string) {
     if (notificationApi) {

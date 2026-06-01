@@ -1,7 +1,7 @@
 """数据下载任务（AKShare → ArcticDB / PG）。Phase 1 实现。"""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 
@@ -19,10 +19,11 @@ _MINUTE_PERIOD_MAP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
 def refresh_symbol_list(self) -> dict:
     """拉取 AKShare 全市场股票列表，upsert 到 PG symbols 表。"""
     try:
-        from app.services.data import fetch_symbol_list
-        from app.db.postgres import SyncSessionLocal
-        from app.db.models.symbol import Symbol
         from sqlalchemy import select
+
+        from app.db.models.symbol import Symbol
+        from app.db.postgres import SyncSessionLocal
+        from app.services.data import fetch_symbol_list
 
         symbols = fetch_symbol_list()
         with SyncSessionLocal() as db:
@@ -43,7 +44,7 @@ def refresh_symbol_list(self) -> dict:
 
     except Exception as exc:
         logger.exception("refresh_symbol_list failed: {}", exc)
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5)
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 5) from exc
 
 
 @celery_app.task(
@@ -60,7 +61,7 @@ def download_one_symbol(
 ) -> dict:
     """下载单个股票 K 线并写入 ArcticDB。"""
     try:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         end = end or now.strftime("%Y-%m-%d")
         start = start or (now - timedelta(days=_DEFAULT_HISTORY_DAYS)).strftime("%Y-%m-%d")
 
@@ -85,7 +86,7 @@ def download_one_symbol(
 
     except Exception as exc:
         logger.exception("download_one_symbol {} failed: {}", symbol, exc)
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 3)
+        raise self.retry(exc=exc, countdown=2 ** self.request.retries * 3) from exc
 
 
 @celery_app.task(
@@ -95,11 +96,12 @@ def download_one_symbol(
 def download_daily_kline_all(self) -> dict:
     """每日 20:00 beat 触发：为所有活跃股票队列日 K 下载任务。"""
     try:
-        from app.db.postgres import SyncSessionLocal
-        from app.db.models.symbol import Symbol
         from sqlalchemy import select
 
-        now = datetime.now(tz=timezone.utc)
+        from app.db.models.symbol import Symbol
+        from app.db.postgres import SyncSessionLocal
+
+        now = datetime.now(tz=UTC)
         end = now.strftime("%Y-%m-%d")
         start = (now - timedelta(days=5)).strftime("%Y-%m-%d")  # 仅补近 5 天
 
@@ -164,7 +166,7 @@ def push_quote_snapshot(self, symbols: list[str] | None = None) -> dict:
 
     except Exception as exc:
         logger.exception("push_quote_snapshot failed: {}", exc)
-        raise self.retry(exc=exc, countdown=10)
+        raise self.retry(exc=exc, countdown=10) from exc
 
 
 @celery_app.task(
@@ -188,9 +190,10 @@ def download_minute_kline_all(self, period: str = "1m", limit: int | None = None
         if period not in _MINUTE_PERIOD_MAP:
             raise ValueError(f"invalid period: {period}")
 
-        from app.db.postgres import SyncSessionLocal
-        from app.db.models.symbol import Symbol
         from sqlalchemy import select
+
+        from app.db.models.symbol import Symbol
+        from app.db.postgres import SyncSessionLocal
 
         with SyncSessionLocal() as db:
             stmt = select(Symbol.symbol).where(Symbol.is_active.is_(True))

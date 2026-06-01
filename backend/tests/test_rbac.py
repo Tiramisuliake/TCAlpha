@@ -68,16 +68,24 @@ def _ensure_engine():
 
 @pytest.fixture
 def as_user():
-    """临时把 get_current_user override 成返回指定 user，yield 之后清掉。"""
+    """临时把 get_current_user + get_current_user_id override 成指定 user，yield 后清掉。
+
+    get_current_user_id 也要 override：硬切 401 后它不再 fallback，测试不带真实
+    token，需让它返回 override 用户的 id，成功路径才能走到数据过滤逻辑。
+    """
+    from app.deps import get_current_user_id
 
     def _setter(user: AuthUser | None) -> None:
         if user is None:
             app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_current_user_id, None)
         else:
             app.dependency_overrides[get_current_user] = lambda: user
+            app.dependency_overrides[get_current_user_id] = lambda: user.id
 
     yield _setter
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_user_id, None)
 
 
 @pytest.fixture

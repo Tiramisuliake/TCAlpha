@@ -5,14 +5,13 @@
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.pubsub import order_channel, publish_order
+from app.core.pubsub import publish_order
 from app.db.models.order import SimOrder
 from app.db.postgres import SyncSessionLocal
 
@@ -81,7 +80,7 @@ class SimGateway:
                 order.price = exec_price
                 order.filled_volume = order.volume
                 order.status = "filled"
-                order.updated_at = datetime.now(tz=timezone.utc)
+                order.updated_at = datetime.now(tz=UTC)
                 filled_ids.append(order.id)
             db.commit()
 
@@ -101,7 +100,7 @@ class SimGateway:
             if not order or order.status != "submitted":
                 return False
             order.status = "cancelled"
-            order.updated_at = datetime.now(tz=timezone.utc)
+            order.updated_at = datetime.now(tz=UTC)
             db.commit()
             db.refresh(order)
             self._publish(db, order)
@@ -110,22 +109,31 @@ class SimGateway:
     # ── 持仓 ──────────────────────────────────────────────────────────
 
     def get_position(self, symbol: str) -> int:
-        """从已成交订单聚合净持仓（多头为正）。"""
+        """从已成交订单聚合净持仓（多头为正）。
+
+        在 DB 端按 direction/offset 分组求和（≤4 行），避免拉全部成交订单到内存聚合。
+        """
+        stmt = select(
+            SimOrder.direction,
+            SimOrder.offset,
+            func.sum(SimOrder.filled_volume),
+        ).where(
+            SimOrder.user_id == self.user_id,
+            SimOrder.symbol == symbol,
+            SimOrder.status == "filled",
+        )
+        if self.strategy_id is not None:
+            stmt = stmt.where(SimOrder.strategy_id == self.strategy_id)
+        stmt = stmt.group_by(SimOrder.direction, SimOrder.offset)
+
         with SyncSessionLocal() as db:
-            stmt = select(SimOrder).where(
-                SimOrder.user_id == self.user_id,
-                SimOrder.symbol == symbol,
-                SimOrder.status == "filled",
-            )
-            if self.strategy_id is not None:
-                stmt = stmt.where(SimOrder.strategy_id == self.strategy_id)
-            orders = db.execute(stmt).scalars().all()
+            rows = db.execute(stmt).all()
 
         pos = 0
-        for o in orders:
-            sign = 1 if o.direction == "long" else -1
-            sign *= 1 if o.offset == "open" else -1
-            pos += sign * o.filled_volume
+        for direction, offset, vol in rows:
+            sign = 1 if direction == "long" else -1
+            sign *= 1 if offset == "open" else -1
+            pos += sign * int(vol or 0)
         return pos
 
     # ── 内部 ──────────────────────────────────────────────────────────

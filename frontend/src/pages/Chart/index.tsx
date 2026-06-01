@@ -25,6 +25,7 @@ import { streamChartAnalysis } from "@/api/ai_chart";
 import type { KlineBar, Period, QuoteUpdate } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { wsUrl as buildWsUrl } from "@/store/useAuthStore";
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "日K", value: "1d" },
@@ -124,8 +125,7 @@ export default function ChartPage() {
 
   const wsUrl = useMemo(() => {
     if (!symbol) return "";
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${location.host}/ws/quote?symbol=${encodeURIComponent(symbol)}`;
+    return buildWsUrl(`/ws/quote?symbol=${encodeURIComponent(symbol)}`);
   }, [symbol]);
 
   useWebSocket(

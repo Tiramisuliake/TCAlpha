@@ -5,7 +5,7 @@
  * 不同点：这里是 GET（参数走 query），可以走原生 EventSource，但为了和 streamChat
  * 共用 abort / 错误处理逻辑，统一用 fetch + ReadableStream。
  */
-import { authHeader } from "@/store/useAuthStore";
+import { fetchWithAuthRefresh, streamHeaders } from "@/api/streamClient";
 
 export interface ChartStreamCallbacks {
   onChunk: (text: string) => void;
@@ -23,11 +23,11 @@ export async function streamChartAnalysis(
   cb: ChartStreamCallbacks,
 ): Promise<void> {
   const qs = new URLSearchParams({ symbol, period });
-  const resp = await fetch(`/api/ai/chart/analyze?${qs.toString()}`, {
+  const resp = await fetchWithAuthRefresh(`/api/ai/chart/analyze?${qs.toString()}`, () => ({
     method: "GET",
-    headers: { Accept: "text/event-stream", ...authHeader() },
+    headers: streamHeaders({ Accept: "text/event-stream" }),
     signal: cb.signal,
-  });
+  }));
 
   if (!resp.ok || !resp.body) {
     const text = await resp.text().catch(() => resp.statusText);

@@ -129,6 +129,8 @@ def fetch_single_quote(symbol: str) -> dict | None:
         v = data.get(key)
         if v in (None, "-", ""):
             return None
+        if not isinstance(v, (str, int, float)):
+            return None
         try:
             return float(v)
         except (TypeError, ValueError):

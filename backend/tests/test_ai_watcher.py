@@ -8,13 +8,10 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from app.services import ai_watcher
-from app.services.ai_watcher import build_snapshot, _call_ai_json, watch_symbol
-
+from app.services.ai_watcher import _call_ai_json, build_snapshot, watch_symbol
 
 # ── build_snapshot ────────────────────────────────────────────────────
 

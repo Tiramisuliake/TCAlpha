@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -23,6 +22,7 @@ from app.core.pubsub import get_sync_redis, publish_signal, running_key, stop_ke
 from app.core.sim_gateway import SimGateway
 from app.db.models.strategy import StrategyConfig
 from app.db.postgres import SyncSessionLocal
+from app.utils.trading_period import now_cn
 
 # 热身所需历史 bar 数量
 _WARMUP_BARS = 120
@@ -69,7 +69,7 @@ class StrategyRuntime:
 
             # 3. 热身：从 ArcticDB 加载历史 bars
             from datetime import timedelta
-            end = datetime.now(tz=UTC)
+            end = now_cn()
             start = end - timedelta(days=365)
             bars = _load_bars(symbol, str(start.date()), str(end.date()))
             warmup_bars = bars[-_WARMUP_BARS:] if len(bars) >= _WARMUP_BARS else bars
@@ -95,7 +95,7 @@ class StrategyRuntime:
 
                 # 拉取最新 bar：窗口滚动到今天（修 end 固定导致跨天拉不到新 K），
                 # 且只从最后一根 bar 当天开始增量读取，避免每轮重读整年。
-                now = datetime.now(tz=UTC)
+                now = now_cn()
                 fetch_start = last_bar_dt.date() if last_bar_dt else start.date()
                 fresh_bars = _load_bars(symbol, str(fetch_start), str(now.date()))
                 if fresh_bars and (last_bar_dt is None or fresh_bars[-1].datetime > last_bar_dt):
@@ -130,7 +130,7 @@ class StrategyRuntime:
                                 "strength": strategy.vars.strength,
                                 "tip": strategy.vars.tip,
                                 "pos": strategy.state.pos,
-                                "ts": datetime.now(tz=UTC).isoformat(),
+                                "ts": now_cn().isoformat(),
                             },
                         )
                         last_bar_dt = bar.datetime

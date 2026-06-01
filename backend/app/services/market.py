@@ -1,7 +1,7 @@
 """行情查询业务逻辑（Phase 1）。"""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -11,6 +11,7 @@ from app.db.arctic import get_library
 from app.db.models.symbol import Symbol
 from app.schemas.market import KlineBar, KlineResponse, SymbolListResponse, SymbolOut
 from app.utils.symbol import normalize
+from app.utils.trading_period import now_cn
 
 _FALLBACK_DAYS = 365
 
@@ -92,7 +93,7 @@ def trigger_download(symbol: str, period: str = "1d") -> str:
     if period.endswith("m"):
         result = download_one_symbol.delay(symbol, period)
     else:
-        now = datetime.now(tz=UTC)
+        now = now_cn()
         end = now.strftime("%Y-%m-%d")
         start = (now - timedelta(days=_FALLBACK_DAYS)).strftime("%Y-%m-%d")
         result = download_one_symbol.delay(symbol, period, start, end)

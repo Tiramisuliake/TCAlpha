@@ -14,12 +14,12 @@ notify_dispatcher worker 订阅 'events:*' 通配，按 NotifyRule 路由到具�
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
 
 from app.core.pubsub import get_sync_redis
+from app.utils.trading_period import now_cn
 
 EVENT_CHANNEL_PREFIX = "events:"
 
@@ -47,7 +47,7 @@ def publish_event(
         "type": event_type,
         "level": level,
         "user_id": user_id,
-        "ts": datetime.now(tz=UTC).isoformat(),
+        "ts": now_cn().isoformat(),
         "payload": payload or {},
     }
     try:

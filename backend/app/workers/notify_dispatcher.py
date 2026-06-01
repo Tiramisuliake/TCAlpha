@@ -16,7 +16,6 @@ import fnmatch
 import hashlib
 import json
 import signal
-from datetime import datetime
 from datetime import time as dtime
 from typing import Any
 
@@ -29,6 +28,7 @@ from app.core.event_bus import EVENT_CHANNEL_PREFIX
 from app.db.models.notify import NotifyLog, NotifyRule
 from app.db.postgres import SyncSessionLocal
 from app.services import feishu as feishu_svc
+from app.utils.trading_period import now_cn
 
 DEDUPE_TTL_S = 30
 
@@ -54,7 +54,7 @@ def _is_quiet_now(quiet_hours: str) -> bool:
     except (ValueError, AttributeError):
         logger.warning("invalid quiet_hours: {}", quiet_hours)
         return False
-    now = datetime.now().time()
+    now = now_cn().time()
     if start <= end:
         return start <= now < end
     # 跨天

@@ -1,8 +1,6 @@
 """AKShare 数据下载 + ArcticDB 落库（Phase 1）。"""
 from __future__ import annotations
 
-from datetime import datetime
-
 import pandas as pd
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -11,6 +9,7 @@ from app.db.arctic import get_library
 from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.rate_limit import acquire, wait_for_akshare
 from app.utils.symbol import code, normalize
+from app.utils.trading_period import now_cn
 
 
 def wait_for_rate_limit(max_per_sec: int | None = None) -> None:
@@ -117,7 +116,7 @@ def save_daily(symbol: str, df: pd.DataFrame) -> int:
     lib.write(
         sym_key,
         combined,
-        metadata={"source": "akshare", "fetched_at": datetime.now().isoformat()},
+        metadata={"source": "akshare", "fetched_at": now_cn().isoformat()},
     )
     rows = len(combined)
     logger.info("save_daily: {} → {} rows total", sym_key, rows)
@@ -220,7 +219,7 @@ def save_minute(symbol: str, period: int, df: pd.DataFrame) -> int:
         metadata={
             "source": "akshare",
             "period": f"{period}m",
-            "fetched_at": datetime.now().isoformat(),
+            "fetched_at": now_cn().isoformat(),
         },
     )
     rows = len(combined)

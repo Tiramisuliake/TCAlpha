@@ -1,11 +1,12 @@
 """数据下载任务（AKShare → ArcticDB / PG）。Phase 1 实现。"""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from loguru import logger
 
 from app.tasks.celery_app import celery_app
+from app.utils.trading_period import now_cn
 
 _DEFAULT_HISTORY_DAYS = 365 * 3  # 默认拉 3 年历史
 _MINUTE_PERIOD_MAP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
@@ -61,7 +62,7 @@ def download_one_symbol(
 ) -> dict:
     """下载单个股票 K 线并写入 ArcticDB。"""
     try:
-        now = datetime.now(tz=UTC)
+        now = now_cn()
         end = end or now.strftime("%Y-%m-%d")
         start = start or (now - timedelta(days=_DEFAULT_HISTORY_DAYS)).strftime("%Y-%m-%d")
 
@@ -101,7 +102,7 @@ def download_daily_kline_all(self) -> dict:
         from app.db.models.symbol import Symbol
         from app.db.postgres import SyncSessionLocal
 
-        now = datetime.now(tz=UTC)
+        now = now_cn()
         end = now.strftime("%Y-%m-%d")
         start = (now - timedelta(days=5)).strftime("%Y-%m-%d")  # 仅补近 5 天
 

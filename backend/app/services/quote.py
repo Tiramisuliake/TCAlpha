@@ -7,8 +7,6 @@ Redis pub/sub。前端 ``/ws/quote?symbol=xxx`` 订阅对应 channel。
 """
 from __future__ import annotations
 
-from datetime import datetime
-
 import pandas as pd
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -17,6 +15,7 @@ from app.services.data import wait_for_rate_limit
 from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.akshare_compat import _get_eastmoney_session
 from app.utils.symbol import code, normalize
+from app.utils.trading_period import now_cn
 
 _QUOTE_COLS = {
     "代码": "code",
@@ -58,7 +57,7 @@ def fetch_spot_snapshot() -> pd.DataFrame:
 
     df["symbol"] = df["code"].map(_norm)
     df = df.dropna(subset=["symbol"])
-    df["ts"] = datetime.now().isoformat()
+    df["ts"] = now_cn().isoformat()
 
     for col in ("price", "change", "pct_chg", "volume", "amount",
                 "open", "high", "low", "pre_close"):
@@ -149,7 +148,7 @@ def fetch_single_quote(symbol: str) -> dict | None:
         "pre_close": _num("f60"),
         "change": _num("f169"),
         "pct_chg": _num("f170"),
-        "ts": datetime.now().isoformat(),
+        "ts": now_cn().isoformat(),
     }
     return {k: v for k, v in out.items() if v is not None}
 

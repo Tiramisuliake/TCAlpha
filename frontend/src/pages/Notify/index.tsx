@@ -27,6 +27,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 import {
   createRule,
   deleteRule,
@@ -191,12 +192,12 @@ export default function NotifyPage() {
       width: 220,
       render: (_, row) => (
         <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
+          <PermButton perm="notify.rule.write" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
             编辑
-          </Button>
-          <Button size="small" icon={<SendOutlined />} onClick={() => onTest(row)}>
+          </PermButton>
+          <PermButton perm="notify.rule.write" size="small" icon={<SendOutlined />} onClick={() => onTest(row)}>
             测试
-          </Button>
+          </PermButton>
           <Popconfirm
             title="确认删除？"
             okText="删除"
@@ -204,9 +205,9 @@ export default function NotifyPage() {
             okType="danger"
             onConfirm={() => deleteMut.mutate(row.id)}
           >
-            <Button size="small" danger icon={<DeleteOutlined />}>
+            <PermButton perm="notify.rule.write" hideOnDenied size="small" danger icon={<DeleteOutlined />}>
               删
-            </Button>
+            </PermButton>
           </Popconfirm>
         </Space>
       ),
@@ -309,12 +310,12 @@ export default function NotifyPage() {
         }
         extra={
           <Space>
-            <Button icon={<SendOutlined />} onClick={onTestAdHoc}>
+            <PermButton perm="notify.rule.write" icon={<SendOutlined />} onClick={onTestAdHoc}>
               临时测试
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            </PermButton>
+            <PermButton perm="notify.rule.write" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               新建规则
-            </Button>
+            </PermButton>
           </Space>
         }
         className="flex-1"
@@ -378,13 +379,14 @@ export default function NotifyPage() {
         extra={
           <Space>
             <Button onClick={closeDrawer}>取消</Button>
-            <Button
+            <PermButton
+              perm="notify.rule.write"
               type="primary"
               loading={createMut.isPending || updateMut.isPending}
               onClick={submit}
             >
               保存
-            </Button>
+            </PermButton>
           </Space>
         }
       >

@@ -24,6 +24,7 @@ import { getKline, getSymbols, triggerDownload } from "@/api/market";
 import { streamChartAnalysis } from "@/api/ai_chart";
 import type { KlineBar, Period, QuoteUpdate } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { wsUrl as buildWsUrl } from "@/store/useAuthStore";
 
@@ -233,16 +234,18 @@ export default function ChartPage() {
             ))}
           </Space.Compact>
           {symbol && (
-            <Button
+            <PermButton
+              perm="data.download"
               icon={<DownloadOutlined />}
               size="small"
               loading={downloadMut.isPending}
               onClick={() => downloadMut.mutate()}
             >
               下载K线
-            </Button>
+            </PermButton>
           )}
-          <Button
+          <PermButton
+            perm="ai.chat"
             type="primary"
             ghost
             icon={<RobotOutlined />}
@@ -251,7 +254,7 @@ export default function ChartPage() {
             onClick={runAi}
           >
             AI 解读
-          </Button>
+          </PermButton>
           {isFetching && <Spin size="small" />}
           {quote && (
             <Space className="ml-2" size={16}>
@@ -296,9 +299,9 @@ export default function ChartPage() {
           ) : bars.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <Empty description={`暂无 ${symbol} ${period} K线数据`}>
-                <Button type="primary" loading={downloadMut.isPending} onClick={() => downloadMut.mutate()}>
+                <PermButton perm="data.download" type="primary" loading={downloadMut.isPending} onClick={() => downloadMut.mutate()}>
                   立即下载
-                </Button>
+                </PermButton>
               </Empty>
             </div>
           ) : (
@@ -330,14 +333,15 @@ export default function ChartPage() {
                 停止
               </Button>
             ) : (
-              <Button
+              <PermButton
+                perm="ai.chat"
                 size="small"
                 icon={<ReloadOutlined />}
                 onClick={runAi}
                 disabled={!symbol}
               >
                 重新分析
-              </Button>
+              </PermButton>
             )}
           </Space>
         }

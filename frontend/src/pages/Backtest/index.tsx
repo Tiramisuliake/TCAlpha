@@ -21,6 +21,7 @@ import dayjs from "dayjs";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -356,7 +357,8 @@ export default function Backtest() {
                   </Form.Item>
                 </Col>
               </Row>
-              <Button
+              <PermButton
+                perm="backtest.run"
                 type="primary"
                 htmlType="submit"
                 loading={submitMut.isPending}
@@ -364,7 +366,7 @@ export default function Backtest() {
                 block
               >
                 开始回测
-              </Button>
+              </PermButton>
             </Form>
           </Card>
 

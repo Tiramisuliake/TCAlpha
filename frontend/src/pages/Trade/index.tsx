@@ -30,6 +30,7 @@ import type {
   SimOrder,
 } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAuthStore, wsUrl as buildWsUrl } from "@/store/useAuthStore";
 
@@ -116,7 +117,8 @@ function OrderForm({
         <InputNumber min={100} step={100} className="!w-full" />
       </Form.Item>
 
-      <Button
+      <PermButton
+        perm="sim.order.place"
         type="primary"
         htmlType="submit"
         loading={submitting}
@@ -124,7 +126,7 @@ function OrderForm({
         size="large"
       >
         市价单提交
-      </Button>
+      </PermButton>
       <div className="text-xs text-slate-400 mt-2">
         ⚠️ 模拟交易：按当前实时报价立即成交，无资金校验。
       </div>
@@ -283,7 +285,8 @@ export default function TradePage() {
       width: 80,
       render: (_: unknown, row: SimOrder) =>
         row.status === "submitted" ? (
-          <Button
+          <PermButton
+            perm="sim.order.cancel"
             size="small"
             danger
             loading={cancelMut.isPending && cancelMut.variables === row.id}
@@ -299,7 +302,7 @@ export default function TradePage() {
             }
           >
             撤单
-          </Button>
+          </PermButton>
         ) : null,
     },
   ];

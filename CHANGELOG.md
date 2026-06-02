@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-06-02
+
+### Added — Phase 7 v0.7.6：前端按钮权限收紧 + 热门股 seed
+
+把 RBAC 闭环延伸到 UI 按钮层：viewer 视角下能看到自己点不动的按钮，但 disabled + Tooltip 提示缺什么权限，体验比"点了再被 403"更友好。
+
+前端
+- `components/PermButton.tsx`：包装 AntD `Button`，按 `useAuthStore.has(perm)` 决定 disabled + Tooltip；`hideOnDenied` 用于纯破坏性操作（删除）；`perm` 支持单字符串或字符串数组（全部都需要）；super 用户自动绕过
+- `pages/Strategy`：新建/编辑 → `strategy.write`；删除 → `strategy.delete`（hideOnDenied）；启动/停止 → `strategy.run`
+- `pages/Backtest`：开始回测 → `backtest.run`
+- `pages/Notify`：新建/编辑/测试发送/保存 → `notify.rule.write`；删除 → `notify.rule.write`（hideOnDenied）
+- `pages/Trade`：市价单提交 → `sim.order.place`；撤单 → `sim.order.cancel`
+- `pages/Data`：下载 K 线 / 刷新股票列表 → `data.download`
+- `pages/Chart`：下载 K 线 / 立即下载 → `data.download`；AI 解读 / 重新分析 → `ai.chat`
+
+工具
+- `backend/scripts/seed_symbols.py`：离线 seed 50 只热门 A 股到 PG `symbols` 表（沪深主板 / 创业板 / 科创板代表，覆盖银行 / 白酒 / 新能源 / 半导体 / 医药等），idempotent；不依赖 AKShare / Celery，dev 早期一键让 K 线 / 策略 / 回测 / 模拟交易页面立刻能搜到候选
+
+### Notes — UX 设计
+
+- **可发现性优先**：缺权限的按钮**默认 disabled + Tooltip 提示**，而不是隐藏。让 viewer 知道"这个功能存在但需要 xxx 权限"，鼓励申请权限
+- **破坏性操作隐藏**：删除按钮用 `hideOnDenied`，避免误导
+- **后端闸门是真正的安全边界**：前端 disabled 只是 UX；即使前端 bypass，后端 `require_permission` 仍会 403。前端只负责"别让 viewer 浪费一次往返"
+
 ## [0.7.5] — 2026-06-02
 
 ### Fixed — 时区统一（Asia/Shanghai）

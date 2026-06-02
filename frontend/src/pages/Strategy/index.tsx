@@ -25,6 +25,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 import {
   createStrategy,
   deleteStrategy,
@@ -274,8 +275,8 @@ export default function StrategyPage() {
           >
             选中
           </Button>
-          <Button size="small" onClick={() => openEdit(r)}>编辑</Button>
-          <Button size="small" danger onClick={() => confirmDelete(r.id)}>删除</Button>
+          <PermButton perm="strategy.write" size="small" onClick={() => openEdit(r)}>编辑</PermButton>
+          <PermButton perm="strategy.delete" hideOnDenied size="small" danger onClick={() => confirmDelete(r.id)}>删除</PermButton>
         </Space>
       ),
     },
@@ -314,9 +315,9 @@ export default function StrategyPage() {
             className="flex-1"
             classNames={{ body: "flex-1 flex flex-col min-h-0" }}
             extra={
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              <PermButton perm="strategy.write" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                 新建
-              </Button>
+              </PermButton>
             }
           >
             <Table<StrategyConfig>
@@ -341,23 +342,25 @@ export default function StrategyPage() {
                 size="small"
                 extra={
                   isRunning ? (
-                    <Button
+                    <PermButton
+                      perm="strategy.run"
                       danger
                       icon={<PauseOutlined />}
                       loading={stopMut.isPending}
                       onClick={() => stopMut.mutate(activeStrategyId)}
                     >
                       停止
-                    </Button>
+                    </PermButton>
                   ) : (
-                    <Button
+                    <PermButton
+                      perm="strategy.run"
                       type="primary"
                       icon={<CaretRightOutlined />}
                       loading={startMut.isPending}
                       onClick={() => startMut.mutate(activeStrategyId)}
                     >
                       启动
-                    </Button>
+                    </PermButton>
                   )
                 }
               >

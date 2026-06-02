@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Button, Card, Input, Select, Space, Table, Tag, message } from "antd";
+import { Card, Input, Select, Space, Table, Tag, message } from "antd";
 import { ReloadOutlined, DownloadOutlined } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import { getSymbols, refreshSymbols, triggerDownload } from "@/api/market";
 import type { Symbol } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
+import { PermButton } from "@/components/PermButton";
 
 const EXCHANGES = [
   { value: "", label: "全部" },
@@ -59,14 +60,15 @@ export default function DataMgr() {
     {
       title: "操作", key: "actions", width: 90,
       render: (_, row) => (
-        <Button
+        <PermButton
+          perm="data.download"
           size="small"
           icon={<DownloadOutlined />}
           loading={downloadMut.isPending}
           onClick={() => downloadMut.mutate(row.symbol)}
         >
           下载K线
-        </Button>
+        </PermButton>
       ),
     },
   ];
@@ -78,14 +80,15 @@ export default function DataMgr() {
         className="flex-1"
         classNames={{ body: "flex-1 flex flex-col min-h-0" }}
         extra={
-          <Button
+          <PermButton
+            perm="data.download"
             type="primary"
             icon={<ReloadOutlined />}
             loading={refreshMut.isPending}
             onClick={() => refreshMut.mutate()}
           >
             刷新股票列表
-          </Button>
+          </PermButton>
         }
       >
         <Space className="mb-4 flex flex-wrap gap-2">

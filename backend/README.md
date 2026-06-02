@@ -57,6 +57,10 @@ make migrate
 
 # 5. 创建超级管理员（交互式，会要 username + password）
 uv --directory backend run python scripts/create_admin.py
+
+# 6. （可选）灌 50 只热门 A 股到 PG，让前端立即能搜到候选
+#    不依赖 AKShare / Celery worker；idempotent
+uv --directory backend run python scripts/seed_symbols.py
 ```
 
 > ⚠️ 本地 dev 默认账号是 `admin / 123456`（v0.7.1 hotfix 调试时设的）。
@@ -145,8 +149,11 @@ app/
 
 scripts/
 ├── create_admin.py     交互式建/重置超管
+├── seed_symbols.py     ★ 离线 seed 50 只热门 A 股（dev 早期 onboarding）
+├── inject_fake_kline.py 给指定股票灌假 K 线（无网调试用）
 ├── gen_password_hash.py
-└── ...
+├── check_pubsub.py     Redis pub/sub 调试
+└── ws_listener.py
 
 tests/                  pytest（pytest-asyncio）
 alembic/                数据库迁移

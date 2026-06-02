@@ -1,6 +1,10 @@
 # Plan: TCAlpha 项目 Bug 修复与启动稳定化
 
-**Generated**: 2026-05-30  
+> 📦 **归档**：本计划已在 **v0.7.4 ~ v0.7.6** 全部落地实施。完整修复清单见 `CHANGELOG.md`。
+> 保留本文件作为修复决策的历史参考。
+
+**Generated**: 2026-05-30
+**Implemented**: 2026-06-02（v0.7.4 主体 + v0.7.6 后续补丁）
 **Estimated Complexity**: Medium
 
 ## Overview

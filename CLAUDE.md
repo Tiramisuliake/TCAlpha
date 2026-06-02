@@ -58,93 +58,121 @@ API 层（router）→ Service 层（业务逻辑）→ DB 层（ORM / ArcticDB 
 
 ---
 
-## 目录结构
+## 目录结构（v0.7.6）
 
 ```
 tcalpha/
 ├── backend/
+│   ├── run.py                    # ★ dev 启动入口（自动扫端口 + 写 .dev-port）
 │   ├── app/
 │   │   ├── main.py               # FastAPI 入口 + 路由挂载 + lifespan
 │   │   ├── config.py             # ★ 全局配置（Pydantic Settings，读 .env）
-│   │   ├── deps.py               # ★ Depends（AsyncSession / current_user）
-│   │   ├── api/                  # HTTP 入口（仅做路由 + 参数校验）
+│   │   ├── deps.py               # ★ Depends（AsyncSession / current_user_id）
+│   │   ├── api/                  # HTTP 入口（仅做路由 + 参数校验 + require_permission）
 │   │   │   ├── health.py
-│   │   │   ├── market.py         # GET /api/market/*
+│   │   │   ├── auth.py           # /api/auth/* (login/refresh/logout/me)
+│   │   │   ├── system.py         # /api/system/* (users/roles/permissions 管理)
+│   │   │   ├── market.py         # /api/market/*
 │   │   │   ├── strategy.py       # /api/strategy/*
 │   │   │   ├── backtest.py       # /api/backtest/*
+│   │   │   ├── sim.py            # /api/sim/*（手工下单 + 撤单 + 持仓）
 │   │   │   ├── data.py           # /api/data/*
-│   │   │   ├── ai.py             # /api/ai/*（SSE 流式）
-│   │   │   └── ws.py             # WebSocket 实时行情
+│   │   │   ├── ai.py             # /api/ai/chat（SSE 流式）
+│   │   │   ├── ai_chart.py       # /api/ai/chart/analyze（图表 AI）
+│   │   │   ├── ai_alerts.py      # /api/ai-alerts/*（AI 盯盘告警）
+│   │   │   ├── watchlist.py      # /api/watchlist/*
+│   │   │   ├── notify.py         # /api/notify/*（飞书规则）
+│   │   │   └── ws.py             # WebSocket 实时行情 / 信号
 │   │   ├── services/             # 业务逻辑（无 HTTP 知识）
-│   │   │   ├── market.py
-│   │   │   ├── strategy.py
-│   │   │   ├── backtest.py
-│   │   │   ├── data.py
-│   │   │   └── ai.py
-│   │   ├── schemas/              # Pydantic DTO
-│   │   │   ├── market.py
-│   │   │   ├── strategy.py
-│   │   │   └── backtest.py
+│   │   │   ├── auth.py           # 密码校验 + JWT 签发 / 旋转 / 黑名单
+│   │   │   ├── system.py         # 用户 / 角色 / 权限 CRUD
+│   │   │   ├── market.py / strategy.py / backtest.py / sim.py / data.py
+│   │   │   ├── ai.py / ai_chart.py / ai_watcher.py / ai_alerts.py
+│   │   │   ├── notify.py / feishu.py / watchlist.py / quote.py
+│   │   ├── schemas/              # Pydantic v2 DTO
+│   │   │   ├── auth.py / system.py / market.py / strategy.py / backtest.py
+│   │   │   └── sim.py / ai.py / notify.py / watchlist.py / ai_alert.py
 │   │   ├── db/
-│   │   │   ├── postgres.py       # ★ AsyncEngine + AsyncSession + Base
+│   │   │   ├── postgres.py       # ★ AsyncEngine + AsyncSession + Base + SyncSessionLocal
 │   │   │   ├── arctic.py         # ★ ArcticDB 单例
-│   │   │   ├── redis_client.py   # Redis 客户端单例
-│   │   │   └── models/           # ORM 模型
-│   │   │       ├── user.py
-│   │   │       ├── strategy.py
-│   │   │       ├── backtest.py
-│   │   │       └── order.py
+│   │   │   ├── redis_client.py
+│   │   │   └── models/           # ORM
+│   │   │       ├── user.py / role.py / permission.py     # ★ RBAC
+│   │   │       ├── strategy.py / backtest.py / order.py / symbol.py
+│   │   │       ├── notify.py / watchlist.py / ai_alert.py
 │   │   ├── tasks/
-│   │   │   ├── celery_app.py     # ★ Celery 实例 + beat_schedule
-│   │   │   ├── data_tasks.py     # AKShare 数据下载任务
-│   │   │   ├── backtest_tasks.py # 回测异步任务
-│   │   │   └── strategy_tasks.py # 策略运行任务
-│   │   ├── core/
-│   │   │   ├── gateway.py        # Gateway 抽象基类
-│   │   │   ├── sim_gateway.py    # 模拟撮合
-│   │   │   ├── backtest_engine.py# 回测引擎
-│   │   │   ├── runtime.py        # 策略运行时
-│   │   │   └── pubsub.py         # Redis PubSub 推送
+│   │   │   ├── celery_app.py     # ★ Celery 实例 + beat_schedule（Asia/Shanghai 时区）
+│   │   │   ├── data_tasks.py     # AKShare 数据下载 + 实时报价快照
+│   │   │   ├── backtest_tasks.py # 回测异步
+│   │   │   ├── strategy_tasks.py # 策略 worker（长跑）
+│   │   │   └── ai_tasks.py       # AI 盯盘 beat
+│   │   ├── core/                 # 纯 Python，无 FastAPI 依赖
+│   │   │   ├── security.py       # ★ bcrypt + JWT + Redis jti 黑名单
+│   │   │   ├── auth_deps.py      # ★ AuthUser + get_current_user + require_permission
+│   │   │   ├── gateway.py / sim_gateway.py / backtest_engine.py / runtime.py
+│   │   │   ├── pubsub.py / event_bus.py
+│   │   ├── middleware/
+│   │   │   └── basic_auth.py     # v0.6 遗留，默认未挂载（v0.7 起走 JWT）
+│   │   ├── workers/
+│   │   │   └── notify_dispatcher.py  # 独立进程：订阅 events:* → 飞书
 │   │   ├── strategies/
-│   │   │   ├── base.py           # ★ StrategyBase
-│   │   │   └── examples/
-│   │   │       └── ma_cross.py   # 双均线示例策略
+│   │   │   ├── base.py           # ★ StrategyBase（Params / State / Vars 三层 + 实例深拷贝）
+│   │   │   └── examples/ma_cross.py
 │   │   ├── indicators/           # 技术指标插件
 │   │   └── utils/
-│   │       ├── logger.py         # loguru 初始化
-│   │       ├── symbol.py         # 股票代码工具
-│   │       └── trading_period.py # 交易时段判断
-│   ├── tests/                    # pytest 测试
+│   │       ├── logger.py / symbol.py / trading_period.py / rate_limit.py
+│   ├── scripts/
+│   │   ├── create_admin.py       # 交互式建/重置超管
+│   │   ├── seed_symbols.py       # 离线 seed 50 只热门 A 股
+│   │   ├── gen_password_hash.py / inject_fake_kline.py / check_pubsub.py
+│   ├── tests/
+│   │   ├── test_rbac.py / test_system_api.py
+│   │   ├── test_backtest_engine.py / test_sim_gateway.py / test_rate_limit.py
+│   │   ├── test_ai_watcher.py / test_health.py
+│   │   └── conftest.py           # fake_arctic / sample_bars / sync_db fixtures
 │   ├── alembic/                  # 数据库迁移
-│   └── pyproject.toml            # uv 依赖配置
+│   └── pyproject.toml
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── main.tsx              # 入口（ReactDOM + QueryClient + Provider）
-│   │   ├── App.tsx               # Shell + 路由 + 侧栏菜单
-│   │   ├── styles/
-│   │   │   └── index.css         # TailwindCSS 4 + 全局样式
+│   │   ├── main.tsx              # 入口（<AntApp> + FeedbackBridge + QueryClient + Router）
+│   │   ├── App.tsx               # Shell + 路由 + 侧栏按 has(perm) 过滤
+│   │   ├── styles/index.css      # TailwindCSS 4 + 工业风全局样式
 │   │   ├── api/
-│   │   │   ├── client.ts         # ★ Axios 实例 + 拦截器
-│   │   │   └── market.ts         # 行情 API 调用函数
-│   │   ├── types/
-│   │   │   └── index.ts          # TypeScript 类型定义
+│   │   │   ├── client.ts         # ★ Axios 实例 + 401 自动 refresh
+│   │   │   ├── auth.ts           # 裸 axios（不走 client）防 401-on-401 死循环
+│   │   │   ├── streamClient.ts   # 带刷新的 fetch / SSE 客户端
+│   │   │   ├── market.ts / strategy.ts / backtest.ts / sim.ts
+│   │   │   ├── ai.ts / ai_chart.ts / notify.ts / watchlist.ts / ai_alerts.ts
+│   │   │   └── system.ts         # users / roles / permissions
+│   │   ├── components/
+│   │   │   ├── PermButton.tsx    # ★ 权限按钮（disabled+Tooltip / hideOnDenied）
+│   │   │   ├── FeedbackBridge.tsx
+│   │   │   ├── PageScaffold.tsx
+│   │   │   └── WorkspaceTabs/
 │   │   ├── store/
-│   │   │   └── auth.ts           # Zustand store（示例）
-│   │   ├── hooks/                # 自定义 Hook
+│   │   │   ├── useAuthStore.ts   # ★ access token + me（has/hasAny/scope 助手）
+│   │   │   └── useWorkspaceStore.ts
+│   │   ├── hooks/                # useWebSocket / useSSE
+│   │   ├── types/index.ts
+│   │   ├── utils/feedback.ts
 │   │   └── pages/
-│   │       ├── Dashboard/        # 首页 / 总览
-│   │       ├── Chart/            # K 线图 + 实时行情
-│   │       ├── Strategy/         # 策略管理
-│   │       ├── Backtest/         # 回测
-│   │       ├── Data/             # 数据管理
-│   │       └── AI/               # AI 助手
-│   ├── vite.config.ts            # Vite 代理 + 路径别名
+│   │       ├── Dashboard/ / Chart/ / Strategy/ / Backtest/ / Trade/ / Data/
+│   │       ├── AI/ / Notify/ / Login/
+│   │       └── System/Users/ + System/Roles/   # ★ 用户/角色管理
+│   ├── .dev-port                 # run.py 写入（gitignored）
+│   ├── vite.config.ts            # 读 .dev-port 决定代理目标
 │   └── package.json
 │
+├── docs/
+│   ├── deploy.md                 # 生产部署（v0.7.x JWT）
+│   └── project-bugfix-plan.md    # v0.7.4 修复计划（归档）
+├── scripts/start_backend.ps1     # 端口扫描 + uvicorn（PyCharm Run 调它）
+├── start-backend.bat / start-frontend.bat
+├── .run/                         # ★ PyCharm Run 配置（Backend / Frontend / Celery）
 ├── docker-compose.yml            # PG + Redis
-├── .env.example                  # 环境变量模板
-└── Makefile                      # ★ 快捷命令
+├── .env.example
+└── Makefile
 ```
 
 ---
@@ -389,6 +417,26 @@ export const fetchKline = (code: string, period: string) =>
 | 服务端数据（列表 / 详情） | `useQuery`（React Query） |
 | 服务端写操作 | `useMutation`（React Query） |
 | 全局 UI 状态（主题 / 用户 / 侧栏） | Zustand store |
+| 当前登录态 / 权限判断 | `useAuthStore`（`accessToken` / `me` / `has(perm)` / `scope()`） |
+
+### 写按钮加权限守卫（v0.7.6+）
+
+```tsx
+import { PermButton } from "@/components/PermButton"
+
+<PermButton perm="strategy.write" type="primary" onClick={openCreate}>
+  新建策略
+</PermButton>
+
+// 纯破坏性操作（删除）用 hideOnDenied 彻底隐藏
+<PermButton perm="strategy.delete" hideOnDenied danger onClick={confirm}>
+  删除
+</PermButton>
+```
+
+- super 用户自动绕过（`useAuthStore.has` 处理）
+- 默认 disabled + Tooltip 提示"需要权限：xxx"，让 viewer 知道功能存在
+- 真正的安全边界是后端 `require_permission(...)`，前端只是 UX
 
 ---
 
@@ -418,16 +466,28 @@ export const fetchKline = (code: string, period: string) =>
 
 ---
 
-## 构建与运行
+## 构建与运行（v0.7.6）
+
+### 启动后端（4 选 1，本质都是跑 `backend/run.py`）
+
+| 方式 | 命令 / 操作 |
+|------|-------------|
+| **PyCharm Run（推荐）** | 顶栏 ▶「Backend (run.py)」 |
+| 资源管理器双击 | `start-backend.bat`（Windows） |
+| Makefile | `make back-safe` |
+| 裸 Python | `uv --directory backend run python run.py` |
+
+`run.py` 会自动 `socket.bind()` 从 8000..8049 找一个真正可用的端口（绕开 Windows tcpip.sys socket 泄漏），把端口写到 `frontend/.dev-port`；vite 启动时读这个文件决定代理目标，前后端永远自动对齐。
 
 ### 快捷命令（Makefile）
 
 ```bash
 make up          # 起 PG + Redis (docker compose up -d)
 make down        # 停依赖服务
-make back        # 起 FastAPI 热重载 (localhost:8000)
-make worker      # 起 Celery worker
-make beat        # 起 Celery beat
+make back-safe   # 起 FastAPI（动态端口 + 热重载）
+make worker      # 起 Celery worker（跑回测 / 数据下载 / AI 盯盘需要）
+make beat        # 起 Celery beat（定时任务）
+make notify      # 起飞书通知分发 worker
 make front       # 起 Vite 前端 (localhost:5173)
 make migrate     # alembic upgrade head
 make revision m="消息"  # 生成新迁移
@@ -440,24 +500,25 @@ make lint        # ruff check + mypy
 
 ```bash
 # 后端（uv）
-uv --directory backend run uvicorn app.main:app --reload
+uv --directory backend run python run.py        # 推荐入口
 uv --directory backend run pytest tests/
 uv --directory backend run alembic upgrade head
+uv --directory backend run python scripts/create_admin.py   # 建超管
+uv --directory backend run python scripts/seed_symbols.py   # seed 50 只热门股
 
 # 前端（pnpm）
 pnpm --dir frontend dev
 pnpm --dir frontend build
-pnpm --dir frontend tsc --noEmit
+pnpm --dir frontend exec tsc --noEmit
 ```
 
 ### 开发地址
 
-| 服务 | 地址 |
-|------|------|
-| FastAPI 后端 | `http://localhost:8000` |
-| FastAPI Docs | `http://localhost:8000/docs` |
-| Vite 前端 | `http://localhost:5173` |
-| MCP chrome-devtools | 访问 `http://localhost:5173` |
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| FastAPI 后端 | `http://127.0.0.1:<port>` | `<port>` 由 `frontend/.dev-port` 决定（run.py 启动时打印） |
+| FastAPI Docs | `http://127.0.0.1:<port>/docs` | Swagger UI（需 Bearer token 才能调业务接口） |
+| Vite 前端 | `http://localhost:5173` | 浏览器入口；/api 自动代理到后端 |
 
 ---
 

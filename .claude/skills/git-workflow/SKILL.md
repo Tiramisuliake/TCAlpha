@@ -1,6 +1,6 @@
 ---
 name: git-workflow
-description: Git 工作流 / 提交规范 / 双远程（GitHub + Gitee）/ 分支策略 / 发布流程。触发词：Git、提交、commit、分支、merge、push、推送、远程
+description: Git 工作流 / 提交规范 / 双远程（GitHub + Gitee）/ 分支策略 / 发布流程 / gitmoji 提交。触发词：Git、提交、commit、分支、merge、push、推送、远程、gitmoji、emoji
 ---
 
 # Git 工作流
@@ -31,24 +31,31 @@ git push github master && git push gitee master
 
 ## Commit 规范
 
-格式：`<type>: <短描述>`
+格式：`<emoji> <type>: <短描述>`（emoji 与 type 间留一个空格）
 
-| type | 用途 |
-|---|---|
-| feat | 新功能 |
-| fix | Bug 修复 |
-| chore | 配置 / 工具 / 依赖更新 |
-| refactor | 重构（不改外部行为） |
-| docs | 文档 |
-| test | 测试 |
-| perf | 性能 |
-| build | 构建（docker / CI） |
-| release | 版本发布 |
+例：`✨ feat: 接入 AKShare 日 K 下载`
+
+| emoji | type | 用途 |
+|---|---|---|
+| ✨ | feat | 新功能 |
+| 🐛 | fix | Bug 修复 |
+| 📝 | docs | 文档 |
+| ♻️ | refactor | 重构（不改外部行为） |
+| 🔥 | remove | 删除代码 / 文件 |
+| 🚀 | deploy | 部署 / 上线相关 |
+| 🔧 | chore | 配置 / 工具 / 依赖更新 |
+| ✅ | test | 测试 |
+| ⚡️ | perf | 性能 |
+| 👷 | build | 构建（docker / CI） |
+| 🔖 | release | 版本发布 |
+
+> 前 6 个（✨🐛📝♻️🔥🚀）为你指定的核心映射；其余按 gitmoji 官方约定补全，保证每种提交都有对应 emoji。
+> 🔴 **每次 commit 必须以对应 emoji 开头**，再 push 到双远程。
 
 ### 好的 commit
 
 ```
-feat: 接入 AKShare 日 K 下载（限流 2 req/s + Celery）
+✨ feat: 接入 AKShare 日 K 下载（限流 2 req/s + Celery）
 
 - 新增 services/data.py 的 fetch_daily_kline()
 - tasks/data_tasks.py 加 download_one_symbol 任务
@@ -65,7 +72,7 @@ feat: 接入 AKShare 日 K 下载（限流 2 req/s + Celery）
 
 1. 更新 `CHANGELOG.md`（顶部加新版本块）
 2. 后端 `pyproject.toml` + 前端 `package.json` 版本号同步
-3. `git commit -m "release: v0.x.y …"`
+3. `git commit -m "🔖 release: v0.x.y …"`
 4. `git tag v0.x.y`
 5. `git push github master --tags && git push gitee master --tags`
 6. GitHub Release notes 复制 CHANGELOG 当版本块

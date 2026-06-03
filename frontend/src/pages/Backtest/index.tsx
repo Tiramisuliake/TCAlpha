@@ -20,6 +20,8 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
+import { getStrategyClasses } from "@/api/strategy";
+import { StrategyParamsForm } from "@/components/StrategyParamsForm";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
@@ -208,6 +210,14 @@ export default function Backtest() {
     queryFn: () => getSymbols({ limit: 200 }),
   });
 
+  const { data: classes = [] } = useQuery({
+    queryKey: ["strategy", "classes"],
+    queryFn: getStrategyClasses,
+  });
+  const classOptions = classes.map((c) => ({ value: c.class_name, label: c.class_name }));
+  const watchedClass = Form.useWatch("class_name", form);
+  const selectedSchema = classes.find((c) => c.class_name === watchedClass)?.params_schema;
+
   const submitMut = useMutation({
     mutationFn: submitBacktest,
     onSuccess: (data) => {
@@ -225,7 +235,7 @@ export default function Backtest() {
       name: values.name as string ?? `回测_${dayjs().format("MMDD_HHmm")}`,
       class_name: values.class_name as string,
       symbol: values.symbol as string,
-      params: { fast: values.fast as number ?? 10, slow: values.slow as number ?? 20 },
+      params: (values.params as Record<string, unknown>) ?? {},
       start_date: start.format("YYYY-MM-DD"),
       end_date: end.format("YYYY-MM-DD"),
       init_capital: values.init_capital as number ?? 1000000,
@@ -309,10 +319,7 @@ export default function Backtest() {
           <Card title="提交回测" size="small">
             <Form form={form} layout="vertical" onFinish={onFinish} size="small">
               <Form.Item label="策略类" name="class_name" rules={[{ required: true }]}>
-                <Select
-                  options={[{ value: "MaCrossStrategy", label: "MA 均线交叉" }]}
-                  placeholder="选择策略"
-                />
+                <Select options={classOptions} placeholder="选择策略" />
               </Form.Item>
               <Form.Item label="标的" name="symbol" rules={[{ required: true }]}>
                 <Select
@@ -324,18 +331,7 @@ export default function Backtest() {
                   placeholder="搜索股票"
                 />
               </Form.Item>
-              <Row gutter={8}>
-                <Col span={12}>
-                  <Form.Item label="快线" name="fast" initialValue={10}>
-                    <InputNumber min={2} max={200} className="!w-full" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="慢线" name="slow" initialValue={20}>
-                    <InputNumber min={2} max={500} className="!w-full" />
-                  </Form.Item>
-                </Col>
-              </Row>
+              <StrategyParamsForm schema={selectedSchema} />
               <Form.Item label="开始日期" name="start_date" rules={[{ required: true }]}>
                 <DatePicker className="!w-full" />
               </Form.Item>

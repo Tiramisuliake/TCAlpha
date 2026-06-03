@@ -75,7 +75,10 @@ export interface StrategyCreate {
 export interface StrategyClassInfo {
   class_name: string;
   author: string;
-  params_schema: Record<string, { title: string; default: unknown; type: string }>;
+  params_schema: Record<
+    string,
+    { title: string; default: unknown; type: string; minimum?: number | null; maximum?: number | null }
+  >;
 }
 
 // ── Backtest ──────────────────────────────────────────────

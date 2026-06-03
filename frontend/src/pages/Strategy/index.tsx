@@ -7,7 +7,6 @@ import {
   Drawer,
   Form,
   Input,
-  InputNumber,
   Modal,
   Row,
   Select,
@@ -26,6 +25,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
+import { StrategyParamsForm } from "@/components/StrategyParamsForm";
 import {
   createStrategy,
   deleteStrategy,
@@ -66,7 +66,7 @@ export default function StrategyPage() {
   const [activeStrategyId, setActiveStrategyId] = useState<number | null>(null);
   const [signal, setSignal] = useState<StrategySignal | null>(null);
   const [liveOrders, setLiveOrders] = useState<SimOrder[]>([]);
-  const [form] = Form.useForm<StrategyCreate & { paramsFast?: number; paramsSlow?: number }>();
+  const [form] = Form.useForm<StrategyCreate>();
 
   // 订单 WS（用户级别，不随策略切换断开）
   const onOrderMsg = useCallback((raw: string) => {
@@ -118,6 +118,8 @@ export default function StrategyPage() {
     queryKey: ["strategy", "classes"],
     queryFn: getStrategyClasses,
   });
+  const watchedClass = Form.useWatch("class_name", form);
+  const selectedSchema = classes.find((c) => c.class_name === watchedClass)?.params_schema;
 
   const { data: symbolsResp } = useQuery({
     queryKey: ["symbols", { limit: 200 }],
@@ -203,22 +205,21 @@ export default function StrategyPage() {
 
   function openEdit(item: StrategyConfig) {
     setEditItem(item);
-    const params = item.params as Record<string, number>;
     form.setFieldsValue({
       name: item.name,
       class_name: item.class_name,
       symbol: item.symbol,
-      paramsFast: params.fast ?? 10,
-      paramsSlow: params.slow ?? 20,
+      params: item.params as Record<string, number>,
     });
     setDrawerOpen(true);
   }
 
-  function onFinish(values: StrategyCreate & { paramsFast?: number; paramsSlow?: number }) {
-    const { paramsFast, paramsSlow, ...rest } = values;
+  function onFinish(values: StrategyCreate) {
     const payload: StrategyCreate = {
-      ...rest,
-      params: { fast: paramsFast ?? 10, slow: paramsSlow ?? 20 },
+      name: values.name,
+      class_name: values.class_name,
+      symbol: values.symbol,
+      params: (values.params as Record<string, unknown>) ?? {},
     };
     if (editItem) {
       updateMut.mutate({ id: editItem.id, payload });
@@ -464,12 +465,7 @@ export default function StrategyPage() {
               placeholder="搜索股票代码或名称"
             />
           </Form.Item>
-          <Form.Item label="快线周期" name="paramsFast" initialValue={10}>
-            <InputNumber min={2} max={200} className="!w-full" />
-          </Form.Item>
-          <Form.Item label="慢线周期" name="paramsSlow" initialValue={20}>
-            <InputNumber min={2} max={500} className="!w-full" />
-          </Form.Item>
+          <StrategyParamsForm schema={selectedSchema} />
         </Form>
       </Drawer>
     </PageScaffold>

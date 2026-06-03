@@ -70,10 +70,13 @@ def list_strategy_classes() -> list[dict]:
         params = getattr(cls, "params", None)
         if params is not None and hasattr(params, "model_fields"):
             for fname, finfo in cast_model_fields(params).items():
+                minimum, maximum = _field_bounds(finfo)
                 params_schema[fname] = {
                     "title": finfo.title or fname,
                     "default": finfo.default,
                     "type": str(finfo.annotation),
+                    "minimum": minimum,
+                    "maximum": maximum,
                 }
         result.append({
             "class_name": name,
@@ -85,6 +88,23 @@ def list_strategy_classes() -> list[dict]:
 
 def cast_model_fields(model: Any) -> dict[str, Any]:
     return model.model_fields
+
+
+def _field_bounds(finfo: Any) -> tuple[float | None, float | None]:
+    """从 Pydantic FieldInfo.metadata 提取 ge/gt（下界）与 le/lt（上界），供前端表单约束。"""
+    import annotated_types as at
+
+    minimum = maximum = None
+    for meta in getattr(finfo, "metadata", []):
+        if isinstance(meta, at.Ge):
+            minimum = meta.ge
+        elif isinstance(meta, at.Gt):
+            minimum = meta.gt
+        elif isinstance(meta, at.Le):
+            maximum = meta.le
+        elif isinstance(meta, at.Lt):
+            maximum = meta.lt
+    return minimum, maximum
 
 
 # ── K 线加载 ──────────────────────────────────────────────────────────

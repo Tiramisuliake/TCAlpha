@@ -28,6 +28,9 @@ import Login from "./pages/Login";
 import SystemUsers from "./pages/System/Users";
 import SystemRoles from "./pages/System/Roles";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { RequirePerm } from "./components/RequirePerm";
+import NotFound from "./pages/NotFound";
 import {
   useWorkspaceStore,
   WORKSPACE_ROUTES,
@@ -122,6 +125,7 @@ function Shell() {
   const activeKey = useWorkspaceStore((s) => s.activeKey);
   const has = useAuthStore((s) => s.has);
   const me = useAuthStore((s) => s.me);
+  const location = useLocation();
 
   // 按权限过滤侧栏：super 全可见，其他按 perm 字段
   const visibleMenu = MENU_ITEMS.filter(
@@ -163,7 +167,9 @@ function Shell() {
         <Layout className="!bg-slate-100 flex-1 min-w-0 flex flex-col">
           <WorkspaceTabs />
           <Content className="flex-1 min-h-0 p-4 overflow-hidden flex flex-col">
-            <Outlet />
+            <ErrorBoundary key={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </Content>
         </Layout>
       </Layout>
@@ -184,14 +190,15 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/chart" element={<Chart />} />
-        <Route path="/strategy" element={<Strategy />} />
-        <Route path="/backtest" element={<Backtest />} />
-        <Route path="/trade" element={<Trade />} />
-        <Route path="/data" element={<DataMgr />} />
-        <Route path="/ai" element={<AI />} />
-        <Route path="/notify" element={<Notify />} />
-        <Route path="/system/users" element={<SystemUsers />} />
-        <Route path="/system/roles" element={<SystemRoles />} />
+        <Route path="/strategy" element={<RequirePerm perm="strategy.read"><Strategy /></RequirePerm>} />
+        <Route path="/backtest" element={<RequirePerm perm="backtest.read"><Backtest /></RequirePerm>} />
+        <Route path="/trade" element={<RequirePerm perm="sim.order.read"><Trade /></RequirePerm>} />
+        <Route path="/data" element={<RequirePerm perm="data.read"><DataMgr /></RequirePerm>} />
+        <Route path="/ai" element={<RequirePerm perm="ai.chat"><AI /></RequirePerm>} />
+        <Route path="/notify" element={<RequirePerm perm="notify.rule.read"><Notify /></RequirePerm>} />
+        <Route path="/system/users" element={<RequirePerm perm="system.user.read"><SystemUsers /></RequirePerm>} />
+        <Route path="/system/roles" element={<RequirePerm perm="system.role.read"><SystemRoles /></RequirePerm>} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );

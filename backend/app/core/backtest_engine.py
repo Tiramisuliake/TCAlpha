@@ -43,8 +43,14 @@ STRATEGY_CLASSES: dict[str, type] = {}
 def _load_strategy_classes() -> None:
     if STRATEGY_CLASSES:
         return
+    from app.strategies.examples.boll import BollStrategy
     from app.strategies.examples.ma_cross import MaCrossStrategy
+    from app.strategies.examples.macd import MacdStrategy
+    from app.strategies.examples.rsi import RsiStrategy
     STRATEGY_CLASSES["MaCrossStrategy"] = MaCrossStrategy
+    STRATEGY_CLASSES["MacdStrategy"] = MacdStrategy
+    STRATEGY_CLASSES["RsiStrategy"] = RsiStrategy
+    STRATEGY_CLASSES["BollStrategy"] = BollStrategy
 
 
 def get_strategy_class(class_name: str) -> type:

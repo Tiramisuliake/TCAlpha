@@ -17,9 +17,9 @@ import {
   StopOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createChart } from "lightweight-charts";
-import type { IChartApi } from "lightweight-charts";
+import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { getKline, getSymbols, triggerDownload } from "@/api/market";
 import { streamChartAnalysis } from "@/api/ai_chart";
 import type { KlineBar, Period, QuoteUpdate } from "@/types";
@@ -27,6 +27,10 @@ import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { wsUrl as buildWsUrl } from "@/store/useAuthStore";
+
+// 涨跌色（A 股惯例 红涨绿跌），与 styles/index.css 的 --tc-up/--tc-down 对齐
+const UP = "#ef4444";
+const DOWN = "#00a778";
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "日K", value: "1d" },
@@ -40,7 +44,10 @@ const PERIODS: { label: string; value: Period }[] = [
 function KlineChart({ bars }: { bars: KlineBar[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
+  // 建图实例：只一次（[]）。避免每次 bars 变化销毁重建导致闪烁。
   useEffect(() => {
     if (!ref.current) return;
     const el = ref.current;
@@ -54,38 +61,21 @@ function KlineChart({ bars }: { bars: KlineBar[] }) {
     });
     chartRef.current = chart;
 
-    const candle = chart.addCandlestickSeries({
-      upColor: "#ef4444",
-      downColor: "#10b981",
-      borderUpColor: "#ef4444",
-      borderDownColor: "#10b981",
-      wickUpColor: "#ef4444",
-      wickDownColor: "#10b981",
+    candleRef.current = chart.addCandlestickSeries({
+      upColor: UP,
+      downColor: DOWN,
+      borderUpColor: UP,
+      borderDownColor: DOWN,
+      wickUpColor: UP,
+      wickDownColor: DOWN,
     });
 
-    const vol = chart.addHistogramSeries({
+    volRef.current = chart.addHistogramSeries({
       color: "#94a3b8",
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
     });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-
-    const candleData = bars.map((b) => ({
-      time: Math.floor(new Date(b.dt).getTime() / 1000) as unknown as number,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
-    }));
-    const volData = bars.map((b) => ({
-      time: Math.floor(new Date(b.dt).getTime() / 1000) as unknown as number,
-      value: b.volume,
-      color: b.close >= b.open ? "#ef444480" : "#10b98180",
-    }));
-
-    candle.setData(candleData as never);
-    vol.setData(volData as never);
-    chart.timeScale().fitContent();
 
     const onResize = () => {
       if (!ref.current) return;
@@ -101,14 +91,37 @@ function KlineChart({ bars }: { bars: KlineBar[] }) {
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
+      candleRef.current = null;
+      volRef.current = null;
       window.removeEventListener("resize", onResize);
     };
+  }, []);
+
+  // 数据更新：bars 变化只 setData，不重建图。
+  useEffect(() => {
+    if (!candleRef.current || !volRef.current) return;
+    const candleData = bars.map((b) => ({
+      time: Math.floor(new Date(b.dt).getTime() / 1000) as UTCTimestamp,
+      open: b.open,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+    }));
+    const volData = bars.map((b) => ({
+      time: Math.floor(new Date(b.dt).getTime() / 1000) as UTCTimestamp,
+      value: b.volume,
+      color: b.close >= b.open ? `${UP}80` : `${DOWN}80`,
+    }));
+    candleRef.current.setData(candleData);
+    volRef.current.setData(volData);
+    chartRef.current?.timeScale().fitContent();
   }, [bars]);
 
   return <div ref={ref} className="w-full h-full min-h-[320px]" />;
 }
 
 export default function ChartPage() {
+  const qc = useQueryClient();
   const [symbol, setSymbol] = useState<string | undefined>(undefined);
   const [period, setPeriod] = useState<Period>("1d");
   const [symbolSearch, setSymbolSearch] = useState("");
@@ -160,7 +173,16 @@ export default function ChartPage() {
   const downloadMut = useMutation({
     mutationFn: () => triggerDownload(symbol!, period),
     onSuccess: (res: { task_id: string }) => {
-      message.success(`下载任务已提交（task: ${res.task_id.slice(0, 8)}…），完成后刷新页面查看`);
+      message.success(`下载任务已提交（task: ${res.task_id.slice(0, 8)}…），正在等待数据回填…`);
+      // 下载走 Celery 异步，完成时间不定：有限次轮询自动刷新 K 线，省去手动刷新页面
+      const sym = symbol;
+      const prd = period;
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries += 1;
+        qc.invalidateQueries({ queryKey: ["kline", sym, prd] });
+        if (tries >= 6) clearInterval(timer);
+      }, 3000);
     },
   });
 
@@ -266,9 +288,9 @@ export default function ChartPage() {
                   fontSize: 16,
                   color:
                     (quote.pct_chg ?? 0) > 0
-                      ? "#ef4444"
+                      ? UP
                       : (quote.pct_chg ?? 0) < 0
-                        ? "#10b981"
+                        ? DOWN
                         : undefined,
                 }}
               />
@@ -280,7 +302,7 @@ export default function ChartPage() {
                   suffix="%"
                   valueStyle={{
                     fontSize: 14,
-                    color: quote.pct_chg > 0 ? "#ef4444" : quote.pct_chg < 0 ? "#10b981" : undefined,
+                    color: quote.pct_chg > 0 ? UP : quote.pct_chg < 0 ? DOWN : undefined,
                   }}
                 />
               )}

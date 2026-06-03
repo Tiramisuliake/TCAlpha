@@ -220,7 +220,7 @@ export default function TradePage() {
       key: "net_position",
       align: "right",
       render: (v: number) => (
-        <span className={v > 0 ? "text-red-500" : "text-green-500"}>
+        <span className={`num ${v > 0 ? "up" : "down"}`}>
           {v > 0 ? `+${v}` : v}
         </span>
       ),
@@ -228,7 +228,7 @@ export default function TradePage() {
   ];
 
   const orderCols: ColumnsType<SimOrder> = [
-    { title: "ID", dataIndex: "id", key: "id", width: 64 },
+    { title: "ID", dataIndex: "id", key: "id", width: 64, render: (v: number) => <span className="num">{v}</span> },
     { title: "股票", dataIndex: "symbol", key: "symbol", width: 110 },
     {
       title: "方向",
@@ -277,7 +277,7 @@ export default function TradePage() {
       dataIndex: "created_at",
       key: "created_at",
       width: 170,
-      render: (s: string) => new Date(s).toLocaleString(),
+      render: (s: string) => <span className="num">{new Date(s).toLocaleString()}</span>,
     },
     {
       title: "操作",

@@ -3,9 +3,10 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { App as AntApp, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { FeedbackBridge } from "@/components/FeedbackBridge";
+import { feedback } from "@/utils/feedback";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
@@ -13,8 +14,34 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./styles/index.css";
 
+function extractErrMsg(err: unknown): string {
+  const e = err as {
+    response?: { status?: number; data?: { detail?: string } };
+    message?: string;
+  };
+  return e?.response?.data?.detail ?? e?.message ?? "请求失败";
+}
+
+function isAuthErr(err: unknown): boolean {
+  return (err as { response?: { status?: number } })?.response?.status === 401;
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  // 读：仅首次加载失败提示；后台 refetch 失败（已有缓存）静默，避免 toast 轰炸
+  queryCache: new QueryCache({
+    onError: (err, query) => {
+      if (isAuthErr(err)) return; // 401 由 client 拦截器统一处理（refresh / 跳转）
+      if (query.state.data === undefined) feedback.error(extractErrMsg(err));
+    },
+  }),
+  // 写：用户主动操作，失败必须反馈
+  mutationCache: new MutationCache({
+    onError: (err) => {
+      if (isAuthErr(err)) return;
+      feedback.error(extractErrMsg(err));
+    },
+  }),
 });
 
 /**

@@ -86,8 +86,8 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    const msg = err?.response?.data?.detail ?? err?.message ?? "请求失败";
-    feedback.error(String(msg));
+    // 错误提示交给 React Query 的 QueryCache / MutationCache（见 main.tsx）：
+    // 读操作后台 refetch 失败静默、写操作失败提示，避免无差别 toast 轰炸。
     return Promise.reject(err);
   },
 );

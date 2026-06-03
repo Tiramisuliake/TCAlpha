@@ -92,7 +92,7 @@ function OrderForm({
           block
           options={[
             { label: "买入（多）", value: "long" },
-            { label: "卖出（空）", value: "short" },
+            { label: "卖出（空）", value: "short", disabled: true },
           ]}
         />
       </Form.Item>
@@ -128,7 +128,7 @@ function OrderForm({
         市价单提交
       </PermButton>
       <div className="text-xs text-slate-400 mt-2">
-        ⚠️ 模拟交易：按当前实时报价立即成交，无资金校验。
+        ⚠️ 模拟交易：按当前实时报价立即成交，无资金校验。A 股不支持裸卖空，仅可买入开仓 / 卖出平仓（多头）。
       </div>
     </Form>
   );

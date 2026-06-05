@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
-from app.schemas.backtest import BacktestStatusOut, BacktestSubmit, BacktestTradeOut
+from app.schemas.backtest import (
+    BacktestStatusOut,
+    BacktestSubmit,
+    BacktestTradeOut,
+    SweepStatusOut,
+    SweepSubmit,
+)
 from app.services import backtest as backtest_svc
 
 router = APIRouter()
@@ -68,3 +74,48 @@ async def get_backtest_trades(
     if trades is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "backtest job not found")
     return trades
+
+
+# ── 网格扫参（路由顺序：/sweep/list 必须在 /sweep/{job_id} 之前）──────────
+
+
+@router.post(
+    "/sweep/submit",
+    response_model=SweepStatusOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("backtest.run"))],
+)
+async def submit_sweep(
+    payload: SweepSubmit,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    return await backtest_svc.submit_sweep(db, user_id, payload)
+
+
+@router.get(
+    "/sweep/list",
+    response_model=list[SweepStatusOut],
+    dependencies=[Depends(require_permission("backtest.read"))],
+)
+async def list_sweeps(
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    return await backtest_svc.list_sweeps(db, user_id)
+
+
+@router.get(
+    "/sweep/{job_id}",
+    response_model=SweepStatusOut,
+    dependencies=[Depends(require_permission("backtest.read"))],
+)
+async def get_sweep(
+    job_id: int,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    obj = await backtest_svc.get_sweep_status(db, job_id, user_id)
+    if not obj:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "sweep job not found")
+    return obj

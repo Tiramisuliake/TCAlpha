@@ -26,6 +26,7 @@ import { StrategyParamsForm } from "@/components/StrategyParamsForm";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import { BacktestCompare } from "@/components/BacktestCompare";
+import { ParamSweep } from "@/components/ParamSweep";
 import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -180,7 +181,7 @@ export default function Backtest() {
   const [form] = Form.useForm();
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [pollingEnabled, setPollingEnabled] = useState(false);
-  const [mode, setMode] = useState<"single" | "compare">("single");
+  const [mode, setMode] = useState<"single" | "compare" | "sweep">("single");
 
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({
     queryKey: ["backtest", "list"],
@@ -318,15 +319,18 @@ export default function Backtest() {
     <PageScaffold>
       <Segmented
         value={mode}
-        onChange={(v) => setMode(v as "single" | "compare")}
+        onChange={(v) => setMode(v as "single" | "compare" | "sweep")}
         options={[
           { label: "单次回测", value: "single" },
           { label: "策略对比", value: "compare" },
+          { label: "参数寻优", value: "sweep" },
         ]}
         className="self-start"
       />
       {mode === "compare" ? (
         <BacktestCompare symbolOptions={symbolOptions} />
+      ) : mode === "sweep" ? (
+        <ParamSweep symbolOptions={symbolOptions} />
       ) : (
       <Row gutter={[16, 16]} className="flex-1 min-h-0">
         {/* 左：提交表单 */}

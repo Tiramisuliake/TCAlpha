@@ -121,6 +121,46 @@ export interface BacktestStatus {
   error: string | null;
 }
 
+export interface SweepSubmit {
+  name: string;
+  class_name: string;
+  symbol: string;
+  param_grid: Record<string, number[]>;
+  target: string;
+  start_date: string;
+  end_date: string;
+  init_capital: number;
+  commission_rate: number;
+  slippage: number;
+}
+
+export interface SweepResultRow {
+  params: Record<string, number>;
+  metrics: {
+    total_return: number;
+    annual_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    win_rate: number;
+    trade_count: number;
+  };
+}
+
+export interface SweepResult {
+  target: string;
+  param_keys: string[];
+  count: number;
+  results: SweepResultRow[];
+  best: SweepResultRow | null;
+}
+
+export interface SweepStatus {
+  job_id: number;
+  status: "pending" | "running" | "done" | "failed";
+  result: SweepResult | null;
+  error: string | null;
+}
+
 // ── Sim Trading ───────────────────────────────────────────
 
 export interface SimOrder {

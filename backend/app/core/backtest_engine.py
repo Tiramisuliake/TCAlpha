@@ -280,6 +280,107 @@ def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dic
     }
 
 
+# ── 纯回测 + 网格扫参 ─────────────────────────────────────────────────
+
+def _simulate(
+    bars: list,
+    symbol: str,
+    class_name: str,
+    params: dict,
+    init_capital: float,
+    commission_rate: float,
+    slippage: float,
+) -> tuple[dict, list[Trade]]:
+    """纯回测：实例化策略 → 逐 bar 撮合（next bar 开盘价）→ 算指标。
+
+    返回 (metrics, trades)。不依赖 BacktestJob，供 run() 与 run_sweep() 共用。
+    """
+    cls = get_strategy_class(class_name)
+    strategy = cls(symbol, params)
+
+    all_trades: list[Trade] = []
+    pos = 0
+    pending: list[PendingOrder] = []
+
+    for bar in bars[:-1]:
+        if pending:
+            new_trades, pos = _match_orders(pending, bar, commission_rate, slippage, pos)
+            all_trades.extend(new_trades)
+            strategy.state.pos = pos
+            pending = []
+
+        strategy.on_bar(bar)
+
+        sig = getattr(strategy, "_pending_signal", None)
+        if sig:
+            direction, offset, volume = sig
+            pending.append(PendingOrder(direction=direction, offset=offset, volume=volume))
+            strategy._pending_signal = None
+
+    if pending and len(bars) >= 2:
+        new_trades, pos = _match_orders(pending, bars[-1], commission_rate, slippage, pos)
+        all_trades.extend(new_trades)
+
+    equity = _settle(all_trades, bars, init_capital)
+    result = _metrics(equity, all_trades, init_capital)
+    return result, all_trades
+
+
+_SWEEP_METRIC_KEYS = (
+    "total_return",
+    "annual_return",
+    "sharpe",
+    "max_drawdown",
+    "win_rate",
+    "trade_count",
+)
+
+
+def run_sweep(
+    symbol: str,
+    class_name: str,
+    param_grid: dict[str, list],
+    start: str,
+    end: str,
+    init_capital: float,
+    commission_rate: float,
+    slippage: float,
+    target: str = "sharpe",
+) -> dict:
+    """网格扫参：对 param_grid 的笛卡尔积逐组回测，按 target 降序排序。
+
+    K 线只加载一次；每组参数复用 _simulate。返回 {results, best, ...}。
+    """
+    import itertools
+
+    bars = _load_bars(symbol, start, end)
+    if len(bars) < 2:
+        raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
+
+    keys = list(param_grid.keys())
+    combos = list(itertools.product(*[param_grid[k] for k in keys]))
+
+    results: list[dict] = []
+    for combo in combos:
+        params = dict(zip(keys, combo, strict=False))
+        metrics, _ = _simulate(
+            bars, symbol, class_name, params, init_capital, commission_rate, slippage
+        )
+        results.append(
+            {"params": params, "metrics": {k: metrics[k] for k in _SWEEP_METRIC_KEYS}}
+        )
+
+    # 所有目标指标均"越大越好"（max_drawdown 为负，越接近 0 越大）
+    results.sort(key=lambda r: r["metrics"].get(target, 0) or 0, reverse=True)
+    return {
+        "target": target,
+        "param_keys": keys,
+        "count": len(results),
+        "results": results,
+        "best": results[0] if results else None,
+    }
+
+
 # ── 主入口 ────────────────────────────────────────────────────────────
 
 def run(job_id: int) -> dict:
@@ -313,47 +414,11 @@ def run(job_id: int) -> dict:
 
         logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
 
-        # 2. 实例化策略
-        cls = get_strategy_class(class_name)
-        strategy = cls(symbol, params)
-
-        # 3. 逐 bar 跑策略 + 撮合
-        all_trades: list[Trade] = []
-        pos = 0
-        pending: list[PendingOrder] = []
-
-        for bar in bars[:-1]:
-            # 撮合上一轮挂的单
-            if pending:
-                new_trades, pos = _match_orders(
-                    pending, bar,
-                    commission_rate, slippage, pos
-                )
-                all_trades.extend(new_trades)
-                strategy.state.pos = pos
-                pending = []
-
-            # 策略计算
-            strategy.on_bar(bar)
-
-            # 收集信号
-            sig = getattr(strategy, "_pending_signal", None)
-            if sig:
-                direction, offset, volume = sig
-                pending.append(PendingOrder(direction=direction, offset=offset, volume=volume))
-                strategy._pending_signal = None
-
-        # 最后一根 bar 后的挂单用收盘价撮合（无 next bar 时放弃）
-        if pending and len(bars) >= 2:
-            new_trades, pos = _match_orders(
-                pending, bars[-1],
-                commission_rate, slippage, pos
-            )
-            all_trades.extend(new_trades)
-
-        # 4. 算资金曲线 & 指标
-        equity = _settle(all_trades, bars, init_capital)
-        result = _metrics(equity, all_trades, init_capital)
+        # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
+        result, all_trades = _simulate(
+            bars, symbol, class_name, params,
+            init_capital, commission_rate, slippage,
+        )
 
         # 5. 落库
         with SyncSessionLocal() as db:

@@ -1,6 +1,6 @@
 """ORM 模型集中导入入口（供 alembic autogenerate 扫描）。"""
 from app.db.models.ai_alert import AiAlert  # noqa: F401
-from app.db.models.backtest import BacktestJob, BacktestTrade  # noqa: F401
+from app.db.models.backtest import BacktestJob, BacktestTrade, ParamSweepJob  # noqa: F401
 from app.db.models.notify import NotifyLog, NotifyRule  # noqa: F401
 from app.db.models.order import SimOrder  # noqa: F401
 from app.db.models.permission import Permission  # noqa: F401

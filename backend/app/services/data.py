@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import pandas as pd
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.db.arctic import get_library
 from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.rate_limit import acquire, wait_for_akshare
-from app.utils.symbol import code, normalize
+from app.utils.symbol import normalize
 from app.utils.trading_period import now_cn
 
 
@@ -24,32 +23,11 @@ def wait_for_rate_limit(max_per_sec: int | None = None) -> None:
 # 股票列表
 # ──────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
 def fetch_symbol_list() -> list[dict]:
-    """从 AKShare 拉全市场股票列表，返回标准化 dict 列表。"""
-    import akshare as ak
+    """全市场股票列表 —— 委托统一 DataProvider。"""
+    from app.data import get_provider
 
-    wait_for_rate_limit()
-    df = ak.stock_zh_a_spot_em()
-    # 原始列：代码 名称 最新价 涨跌幅 ...
-    df = df[["代码", "名称"]].copy()
-    df.columns = ["code", "name"]
-
-    result: list[dict] = []
-    for _, row in df.iterrows():
-        raw_code: str = str(row["code"]).zfill(6)
-        try:
-            sym = normalize(raw_code)
-        except ValueError:
-            continue
-        result.append({
-            "symbol": sym,
-            "code": code(sym),
-            "exchange": sym[:2].upper(),
-            "name": row["name"],
-        })
-    logger.info("fetch_symbol_list: {} symbols", len(result))
-    return result
+    return get_provider().fetch_symbol_list()
 
 
 # ──────────────────────────────────────────────
@@ -59,46 +37,11 @@ def fetch_symbol_list() -> list[dict]:
 _DAILY_COLS = ["open", "high", "low", "close", "volume", "amount"]
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
 def fetch_daily(symbol: str, start: str, end: str) -> pd.DataFrame:
-    """从 AKShare 下载日 K，返回 DatetimeIndex DataFrame（Asia/Shanghai）。"""
-    import akshare as ak
+    """日 K（前复权）—— 委托统一 DataProvider。"""
+    from app.data import get_provider
 
-    wait_for_rate_limit()
-    raw_code = code(normalize(symbol))
-    df = ak.stock_zh_a_hist(
-        symbol=raw_code,
-        period="daily",
-        start_date=start.replace("-", ""),
-        end_date=end.replace("-", ""),
-        adjust="qfq",
-    )
-    if df is None or df.empty:
-        raise ValueError(f"empty data for {symbol} [{start}~{end}]")
-
-    # 列名适配（AKShare 可能因版本变化）
-    df.columns = [c.strip() for c in df.columns]
-    rename_map = {
-        "日期": "dt", "开盘": "open", "收盘": "close",
-        "最高": "high", "最低": "low", "成交量": "volume", "成交额": "amount",
-    }
-    df = df.rename(columns=rename_map)
-
-    df["dt"] = pd.to_datetime(df["dt"]).dt.tz_localize("Asia/Shanghai")
-    df = df.set_index("dt").sort_index()
-
-    for col in _DAILY_COLS:
-        if col not in df.columns:
-            df[col] = 0.0
-    df = df[_DAILY_COLS].astype(float)
-
-    # 数据完整性校验
-    if df["close"].isna().any():
-        raise ValueError(f"NaN in close price for {symbol}")
-    if not df.index.is_monotonic_increasing:
-        raise ValueError(f"index not monotonic for {symbol}")
-
-    return df
+    return get_provider().fetch_daily(symbol, start, end)
 
 
 def save_daily(symbol: str, df: pd.DataFrame) -> int:
@@ -138,64 +81,16 @@ _MINUTE_PERIODS = (1, 5, 15, 30, 60)
 _MINUTE_COLS = ["open", "high", "low", "close", "volume", "amount"]
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
 def fetch_minute_kline(
     symbol: str,
     period: int,
     start: str | None = None,
     end: str | None = None,
 ) -> pd.DataFrame:
-    """从 AKShare 下载分钟 K，period ∈ {1,5,15,30,60}。
+    """分钟 K（前复权），period ∈ {1,5,15,30,60} —— 委托统一 DataProvider。"""
+    from app.data import get_provider
 
-    AKShare ``stock_zh_a_hist_min_em`` 要求 symbol 用 ``sh600000`` 格式，period 传字符串。
-    start/end 格式 ``YYYY-MM-DD HH:MM:SS``；不传则取近一段（AKShare 默认窗口）。
-    """
-    if period not in _MINUTE_PERIODS:
-        raise ValueError(f"unsupported minute period: {period}, allowed {_MINUTE_PERIODS}")
-
-    import akshare as ak
-
-    wait_for_rate_limit()
-    sym_key = normalize(symbol)
-    raw_code = code(sym_key)
-    kwargs: dict = {
-        "symbol": raw_code,
-        "period": str(period),
-        "adjust": "qfq",
-    }
-    if start:
-        kwargs["start_date"] = start
-    if end:
-        kwargs["end_date"] = end
-
-    df = ak.stock_zh_a_hist_min_em(**kwargs)
-    if df is None or df.empty:
-        raise ValueError(f"empty minute data for {symbol} period={period}")
-
-    df.columns = [c.strip() for c in df.columns]
-    rename_map = {
-        "时间": "dt", "开盘": "open", "收盘": "close",
-        "最高": "high", "最低": "low",
-        "成交量": "volume", "成交额": "amount",
-    }
-    df = df.rename(columns=rename_map)
-
-    df["dt"] = pd.to_datetime(df["dt"]).dt.tz_localize("Asia/Shanghai")
-    df = df.set_index("dt").sort_index()
-
-    for col in _MINUTE_COLS:
-        if col not in df.columns:
-            df[col] = 0.0
-    df = df[_MINUTE_COLS].astype(float)
-
-    if df["close"].isna().any():
-        raise ValueError(f"NaN in close price for {symbol} period={period}")
-    if not df.index.is_monotonic_increasing:
-        raise ValueError(f"index not monotonic for {symbol} period={period}")
-    if df.index.duplicated().any():
-        df = df[~df.index.duplicated(keep="last")]
-
-    return df
+    return get_provider().fetch_minute_kline(symbol, period, start, end)
 
 
 def save_minute(symbol: str, period: int, df: pd.DataFrame) -> int:

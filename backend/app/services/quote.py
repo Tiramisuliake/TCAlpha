@@ -9,12 +9,8 @@ from __future__ import annotations
 
 import pandas as pd
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.services.data import wait_for_rate_limit
 from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
-from app.utils.akshare_compat import _get_eastmoney_session
-from app.utils.symbol import code, normalize
 from app.utils.trading_period import now_cn
 
 _QUOTE_COLS = {
@@ -32,39 +28,20 @@ _QUOTE_COLS = {
 }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
 def fetch_spot_snapshot() -> pd.DataFrame:
-    """拉 AKShare 全市场即时快照，返回标准化 DataFrame。
+    """全市场即时报价快照 —— 委托统一 DataProvider（与选股共用快照，避免重复拉取）。
 
     列：symbol/code/name/price/change/pct_chg/volume/amount/open/high/low/pre_close/ts
     """
-    import akshare as ak
+    from app.data import get_provider
 
-    wait_for_rate_limit()
-    df = ak.stock_zh_a_spot_em()
-    if df is None or df.empty:
-        raise ValueError("empty spot snapshot")
-
-    df.columns = [c.strip() for c in df.columns]
-    keep_cols = [c for c in _QUOTE_COLS if c in df.columns]
-    df = df[keep_cols].rename(columns=_QUOTE_COLS)
-
-    def _norm(raw: object) -> str | None:
-        try:
-            return normalize(str(raw).zfill(6))
-        except ValueError:
-            return None
-
-    df["symbol"] = df["code"].map(_norm)
-    df = df.dropna(subset=["symbol"])
+    df = get_provider().fetch_market_spot()
+    keep = [c for c in (
+        "symbol", "code", "name", "price", "change", "pct_chg",
+        "volume", "amount", "open", "high", "low", "pre_close",
+    ) if c in df.columns]
+    df = df[keep].copy()
     df["ts"] = now_cn().isoformat()
-
-    for col in ("price", "change", "pct_chg", "volume", "amount",
-                "open", "high", "low", "pre_close"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    logger.info("fetch_spot_snapshot: {} rows", len(df))
     return df
 
 
@@ -99,58 +76,11 @@ _SINGLE_FIELDS = ",".join([
 ])
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=5))
 def fetch_single_quote(symbol: str) -> dict | None:
-    """直调 eastmoney push2/api/qt/stock/get 拉单 symbol 实时报价。
+    """单 symbol 实时报价 —— 委托统一 DataProvider。"""
+    from app.data import get_provider
 
-    返回标准化 dict：symbol/code/name/price/change/pct_chg/volume/amount/
-    open/high/low/pre_close/ts，找不到返回 None。
-    """
-    sym = normalize(symbol)
-    raw_code = code(sym)
-    # 用归一化前缀判定（sh 沪市 → 1；sz 深市 / bj 北交所 → 0）
-    market = 1 if sym.startswith("sh") else 0
-    params = {
-        "fltt": "2",
-        "invt": "2",
-        "fields": _SINGLE_FIELDS,
-        "secid": f"{market}.{raw_code}",
-    }
-    wait_for_rate_limit()
-    resp = _get_eastmoney_session().get(_SINGLE_QUOTE_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    payload = resp.json() or {}
-    data = payload.get("data") or {}
-    if not data or data.get("f43") in (None, "-"):
-        return None
-
-    def _num(key: str) -> float | None:
-        v = data.get(key)
-        if v in (None, "-", ""):
-            return None
-        if not isinstance(v, (str, int, float)):
-            return None
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return None
-
-    out: dict = {
-        "symbol": sym,
-        "code": str(data.get("f57") or raw_code),
-        "name": data.get("f58"),
-        "price": _num("f43"),
-        "high": _num("f44"),
-        "low": _num("f45"),
-        "open": _num("f46"),
-        "volume": _num("f47"),
-        "amount": _num("f48"),
-        "pre_close": _num("f60"),
-        "change": _num("f169"),
-        "pct_chg": _num("f170"),
-        "ts": now_cn().isoformat(),
-    }
-    return {k: v for k, v in out.items() if v is not None}
+    return get_provider().fetch_single_quote(symbol)
 
 
 def fetch_quotes(symbols: list[str]) -> list[dict]:

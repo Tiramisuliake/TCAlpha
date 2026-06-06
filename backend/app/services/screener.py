@@ -9,12 +9,8 @@ from __future__ import annotations
 import io
 
 import pandas as pd
-from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.db.redis_client import get_redis
-from app.services.data import wait_for_rate_limit
-from app.utils.symbol import normalize
 
 SNAPSHOT_KEY = "screener:snapshot:v1"
 SNAPSHOT_TTL = 300  # 5 分钟
@@ -35,34 +31,16 @@ _SCREEN_COLS = {
 _NUMERIC_COLS = ("price", "pct_chg", "amount", "turnover", "market_cap", "pe", "pb")
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8))
 def fetch_screen_snapshot() -> pd.DataFrame:
-    """拉全市场快照（含市值/PE/换手），标准化。Celery 任务调用（同步）。"""
-    import akshare as ak
+    """全市场快照（含市值/PE/换手）—— 委托统一 DataProvider。"""
+    from app.data import get_provider
 
-    wait_for_rate_limit()
-    df = ak.stock_zh_a_spot_em()
-    if df is None or df.empty:
-        raise ValueError("empty spot snapshot")
-
-    df.columns = [c.strip() for c in df.columns]
-    keep = [c for c in _SCREEN_COLS if c in df.columns]
-    df = df[keep].rename(columns=_SCREEN_COLS)
-
-    def _norm(raw: object) -> str | None:
-        try:
-            return normalize(str(raw).zfill(6))
-        except ValueError:
-            return None
-
-    df["symbol"] = df["code"].map(_norm)
-    df = df.dropna(subset=["symbol"])
-    for col in _NUMERIC_COLS:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    logger.info("fetch_screen_snapshot: {} rows", len(df))
-    return df
+    df = get_provider().fetch_market_spot()
+    keep = [c for c in (
+        "symbol", "code", "name", "price", "pct_chg",
+        "amount", "turnover", "market_cap", "pe", "pb",
+    ) if c in df.columns]
+    return df[keep].copy()
 
 
 def refresh_snapshot_cache_sync() -> int:

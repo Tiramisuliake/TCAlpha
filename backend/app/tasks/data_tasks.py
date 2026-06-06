@@ -13,6 +13,20 @@ _MINUTE_PERIOD_MAP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
 
 
 @celery_app.task(
+    name="app.tasks.data_tasks.refresh_market_snapshot",
+    bind=True,
+    time_limit=120,
+)
+def refresh_market_snapshot(self) -> dict:
+    """刷新全市场快照（市值/PE/成交额/换手）写 Redis，供选股器筛选。"""
+    from app.services.screener import refresh_snapshot_cache_sync
+
+    rows = refresh_snapshot_cache_sync()
+    logger.info("refresh_market_snapshot: {} rows cached", rows)
+    return {"rows": rows}
+
+
+@celery_app.task(
     name="app.tasks.data_tasks.refresh_symbol_list",
     bind=True,
     max_retries=3,

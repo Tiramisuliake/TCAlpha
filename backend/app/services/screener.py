@@ -15,21 +15,6 @@ from app.db.redis_client import get_redis
 SNAPSHOT_KEY = "screener:snapshot:v1"
 SNAPSHOT_TTL = 300  # 5 分钟
 
-# 在报价字段基础上加市值/PE/换手（stock_zh_a_spot_em 返回但 quote.py 丢弃了）
-_SCREEN_COLS = {
-    "代码": "code",
-    "名称": "name",
-    "最新价": "price",
-    "涨跌幅": "pct_chg",
-    "成交额": "amount",
-    "换手率": "turnover",
-    "总市值": "market_cap",
-    "市盈率-动态": "pe",
-    "市净率": "pb",
-}
-
-_NUMERIC_COLS = ("price", "pct_chg", "amount", "turnover", "market_cap", "pe", "pb")
-
 
 def fetch_screen_snapshot() -> pd.DataFrame:
     """全市场快照（含市值/PE/换手）—— 委托统一 DataProvider。"""

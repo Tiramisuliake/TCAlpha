@@ -13,20 +13,6 @@ from loguru import logger
 from app.utils import akshare_compat  # noqa: F401  # 注入 UA 补丁
 from app.utils.trading_period import now_cn
 
-_QUOTE_COLS = {
-    "代码": "code",
-    "名称": "name",
-    "最新价": "price",
-    "涨跌额": "change",
-    "涨跌幅": "pct_chg",
-    "成交量": "volume",
-    "成交额": "amount",
-    "今开": "open",
-    "最高": "high",
-    "最低": "low",
-    "昨收": "pre_close",
-}
-
 
 def fetch_spot_snapshot() -> pd.DataFrame:
     """全市场即时报价快照 —— 委托统一 DataProvider（与选股共用快照，避免重复拉取）。
@@ -53,27 +39,6 @@ def build_quote_dict(row: pd.Series) -> dict:
             continue
         out[k] = v.item() if hasattr(v, "item") else v
     return out
-
-
-# ──────────────────────────────────────────────
-# 单 symbol 实时报价（直调 eastmoney，避开 AKShare 分页限速）
-# ──────────────────────────────────────────────
-
-_SINGLE_QUOTE_URL = "https://push2.eastmoney.com/api/qt/stock/get"
-# fltt=2 + invt=2 时 eastmoney 已返回 float-friendly 真实数值，不再缩放
-_SINGLE_FIELDS = ",".join([
-    "f43",   # 最新价 price
-    "f44",   # 最高 high
-    "f45",   # 最低 low
-    "f46",   # 今开 open
-    "f47",   # 成交量 volume（手）
-    "f48",   # 成交额 amount（元）
-    "f57",   # code
-    "f58",   # name
-    "f60",   # 昨收 pre_close
-    "f169",  # 涨跌额 change
-    "f170",  # 涨跌幅 pct_chg（百分比数值，如 -2.44）
-])
 
 
 def fetch_single_quote(symbol: str) -> dict | None:

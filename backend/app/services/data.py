@@ -34,9 +34,6 @@ def fetch_symbol_list() -> list[dict]:
 # 日 K 线
 # ──────────────────────────────────────────────
 
-_DAILY_COLS = ["open", "high", "low", "close", "volume", "amount"]
-
-
 def fetch_daily(symbol: str, start: str, end: str) -> pd.DataFrame:
     """日 K（前复权）—— 委托统一 DataProvider。"""
     from app.data import get_provider
@@ -78,7 +75,6 @@ def download_and_save_daily(symbol: str, start: str, end: str) -> dict:
 # ──────────────────────────────────────────────
 
 _MINUTE_PERIODS = (1, 5, 15, 30, 60)
-_MINUTE_COLS = ["open", "high", "low", "close", "volume", "amount"]
 
 
 def fetch_minute_kline(

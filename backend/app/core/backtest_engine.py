@@ -154,17 +154,52 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
 
 # ── 撮合 ──────────────────────────────────────────────────────────────
 
+def _limit_pct(symbol: str) -> float:
+    """A 股涨跌停比例（按板块）：创业板(300/301)/科创板(688) 20%，北交所 30%，主板 10%。
+
+    ST 需股票名判定，回测无名称，暂按板块比例处理（不单独 5%）。
+    """
+    s = symbol.lower()
+    raw = s[2:] if s[:2] in ("sh", "sz", "bj") else s
+    if s.startswith("bj") or raw.startswith(("8", "4")):
+        return 0.30
+    if raw.startswith(("300", "301", "688")):
+        return 0.20
+    return 0.10
+
+
 def _match_orders(
     pending: list[PendingOrder],
     next_bar,
     commission_rate: float,
     slippage: float,
     pos: int,
+    prev_close: float | None = None,
+    symbol: str = "",
 ) -> tuple[list[Trade], int]:
-    """用下一根 bar 的开盘价撮合，返回成交列表和新持仓。"""
+    """用下一根 bar 的开盘价撮合，返回成交列表和新持仓。
+
+    A 股约束：停牌（volume==0）不成交；一字涨停（最低价≥涨停价）买不进；
+    一字跌停（最高价≤跌停价）卖不出。涨跌停价由 prev_close 按板块比例推算
+    （prev_close 为 None 时不做涨跌停约束，向后兼容）。
+    """
     trades: list[Trade] = []
+
+    # 停牌：当日无成交，挂单无法撮合
+    if getattr(next_bar, "volume", 0) == 0:
+        return trades, pos
+
+    up_limit = down_limit = None
+    if prev_close:
+        pct = _limit_pct(symbol)
+        up_limit = round(prev_close * (1 + pct), 2)
+        down_limit = round(prev_close * (1 - pct), 2)
+
     for order in pending:
         if order.offset == "open":
+            # 一字涨停：开盘即封死，买不进
+            if up_limit is not None and next_bar.low_price >= up_limit:
+                continue
             exec_price = next_bar.open_price + (slippage if order.direction == "long" else -slippage)
             commission = exec_price * order.volume * commission_rate
             trades.append(Trade(
@@ -179,6 +214,9 @@ def _match_orders(
         else:  # close
             vol = min(order.volume, abs(pos))
             if vol <= 0:
+                continue
+            # 一字跌停：卖不出
+            if down_limit is not None and next_bar.high_price <= down_limit:
                 continue
             exec_price = next_bar.open_price - (slippage if order.direction == "long" else -slippage)
             commission = exec_price * vol * commission_rate
@@ -302,9 +340,12 @@ def _simulate(
     pos = 0
     pending: list[PendingOrder] = []
 
-    for bar in bars[:-1]:
+    for i, bar in enumerate(bars[:-1]):
         if pending:
-            new_trades, pos = _match_orders(pending, bar, commission_rate, slippage, pos)
+            prev_close = bars[i - 1].close_price if i >= 1 else None
+            new_trades, pos = _match_orders(
+                pending, bar, commission_rate, slippage, pos, prev_close, symbol
+            )
             all_trades.extend(new_trades)
             strategy.state.pos = pos
             pending = []
@@ -318,7 +359,9 @@ def _simulate(
             strategy._pending_signal = None
 
     if pending and len(bars) >= 2:
-        new_trades, pos = _match_orders(pending, bars[-1], commission_rate, slippage, pos)
+        new_trades, pos = _match_orders(
+            pending, bars[-1], commission_rate, slippage, pos, bars[-2].close_price, symbol
+        )
         all_trades.extend(new_trades)
 
     equity = _settle(all_trades, bars, init_capital)

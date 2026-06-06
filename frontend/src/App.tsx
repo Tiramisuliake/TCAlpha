@@ -11,6 +11,7 @@ import {
   RobotOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  FilterOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
   ThunderboltOutlined,
@@ -22,6 +23,7 @@ import Strategy from "./pages/Strategy";
 import Backtest from "./pages/Backtest";
 import Trade from "./pages/Trade";
 import DataMgr from "./pages/Data";
+import Screener from "./pages/Screener";
 import AI from "./pages/AI";
 import Notify from "./pages/Notify";
 import Login from "./pages/Login";
@@ -53,6 +55,7 @@ const MENU_ITEMS: MenuItem[] = [
   { key: "backtest", icon: <ExperimentOutlined />, label: "回测", perm: "backtest.read" },
   { key: "trade", icon: <DollarOutlined />, label: "模拟交易", perm: "sim.order.read" },
   { key: "data", icon: <DatabaseOutlined />, label: "数据管理", perm: "data.read" },
+  { key: "screener", icon: <FilterOutlined />, label: "选股器", perm: "data.read" },
   { key: "ai", icon: <RobotOutlined />, label: "AI 助手", perm: "ai.chat" },
   { key: "notify", icon: <BellOutlined />, label: "通知中心", perm: "notify.rule.read" },
   { key: "system-users", icon: <TeamOutlined />, label: "用户管理", perm: "system.user.read" },
@@ -194,6 +197,7 @@ export default function App() {
         <Route path="/backtest" element={<RequirePerm perm="backtest.read"><Backtest /></RequirePerm>} />
         <Route path="/trade" element={<RequirePerm perm="sim.order.read"><Trade /></RequirePerm>} />
         <Route path="/data" element={<RequirePerm perm="data.read"><DataMgr /></RequirePerm>} />
+        <Route path="/screener" element={<RequirePerm perm="data.read"><Screener /></RequirePerm>} />
         <Route path="/ai" element={<RequirePerm perm="ai.chat"><AI /></RequirePerm>} />
         <Route path="/notify" element={<RequirePerm perm="notify.rule.read"><Notify /></RequirePerm>} />
         <Route path="/system/users" element={<RequirePerm perm="system.user.read"><SystemUsers /></RequirePerm>} />

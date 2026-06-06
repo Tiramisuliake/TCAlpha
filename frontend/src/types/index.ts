@@ -161,6 +161,41 @@ export interface SweepStatus {
   error: string | null;
 }
 
+// ── Screener 选股器 ───────────────────────────────────────
+
+export interface ScreenFilters {
+  market_cap_min?: number;
+  market_cap_max?: number;
+  pe_min?: number;
+  pe_max?: number;
+  amount_min?: number;
+  turnover_min?: number;
+  pct_chg_min?: number;
+  pct_chg_max?: number;
+  exclude_st?: boolean;
+  sort_by?: string;
+  limit?: number;
+}
+
+export interface ScreenCandidate {
+  symbol: string;
+  code: string;
+  name: string;
+  price?: number;
+  pct_chg?: number;
+  amount?: number;
+  turnover?: number;
+  market_cap?: number;
+  pe?: number;
+  pb?: number;
+}
+
+export interface ScreenResult {
+  ready: boolean;
+  count: number;
+  candidates: ScreenCandidate[];
+}
+
 // ── Sim Trading ───────────────────────────────────────────
 
 export interface SimOrder {

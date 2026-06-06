@@ -8,6 +8,7 @@ export type WorkspaceRouteKey =
   | "backtest"
   | "trade"
   | "data"
+  | "screener"
   | "ai"
   | "notify"
   | "system-users"
@@ -30,6 +31,7 @@ export const WORKSPACE_ROUTES: Record<WorkspaceRouteKey, WorkspaceRouteMeta> = {
   backtest: { path: "/backtest", title: "回测", closable: true },
   trade: { path: "/trade", title: "模拟交易", closable: true },
   data: { path: "/data", title: "数据管理", closable: true },
+  screener: { path: "/screener", title: "选股器", closable: true },
   ai: { path: "/ai", title: "AI 助手", closable: true },
   notify: { path: "/notify", title: "通知中心", closable: true },
   "system-users": { path: "/system/users", title: "用户管理", closable: true },

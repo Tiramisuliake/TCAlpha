@@ -57,10 +57,12 @@ async def get_backtest_status(
     return BacktestStatusOut(job_id=job.id, status=job.status, result=job.result, error=job.error)
 
 
-async def list_backtests(db: AsyncSession, user_id: int) -> list[BacktestStatusOut]:
-    stmt = select(BacktestJob).where(BacktestJob.user_id == user_id).order_by(
-        BacktestJob.created_at.desc()
-    )
+async def list_backtests(
+    db: AsyncSession, user_id: int, scope: str = "self"
+) -> list[BacktestStatusOut]:
+    stmt = select(BacktestJob).order_by(BacktestJob.created_at.desc())
+    if scope != "all":
+        stmt = stmt.where(BacktestJob.user_id == user_id)
     rows = (await db.execute(stmt)).scalars().all()
     return [
         BacktestStatusOut(job_id=r.id, status=r.status, result=r.result, error=r.error)
@@ -129,10 +131,12 @@ async def get_sweep_status(
     return SweepStatusOut(job_id=job.id, status=job.status, result=job.result, error=job.error)
 
 
-async def list_sweeps(db: AsyncSession, user_id: int) -> list[SweepStatusOut]:
-    stmt = select(ParamSweepJob).where(ParamSweepJob.user_id == user_id).order_by(
-        ParamSweepJob.created_at.desc()
-    )
+async def list_sweeps(
+    db: AsyncSession, user_id: int, scope: str = "self"
+) -> list[SweepStatusOut]:
+    stmt = select(ParamSweepJob).order_by(ParamSweepJob.created_at.desc())
+    if scope != "all":
+        stmt = stmt.where(ParamSweepJob.user_id == user_id)
     rows = (await db.execute(stmt)).scalars().all()
     return [
         SweepStatusOut(job_id=r.id, status=r.status, result=r.result, error=r.error)

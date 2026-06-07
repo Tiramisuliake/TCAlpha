@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_deps import require_permission
+from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.sim import (
     PlaceOrderRequest,
@@ -23,12 +23,14 @@ router = APIRouter()
     dependencies=[Depends(require_permission("sim.order.read"))],
 )
 async def list_orders(
+    user: CurrentUser,
     strategy_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
-    user_id: int = CurrentUserId,
     db: AsyncSession = DB,
 ):
-    return await sim_svc.list_orders(db, user_id, strategy_id=strategy_id, limit=limit)
+    return await sim_svc.list_orders(
+        db, user.id, strategy_id=strategy_id, limit=limit, scope=effective_scope(user)
+    )
 
 
 @router.post(

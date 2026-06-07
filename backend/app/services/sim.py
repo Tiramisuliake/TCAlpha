@@ -55,9 +55,15 @@ async def stop_strategy(db: AsyncSession, strategy_id: int, user_id: int) -> dic
 
 
 async def list_orders(
-    db: AsyncSession, user_id: int, strategy_id: int | None = None, limit: int = 50
+    db: AsyncSession,
+    user_id: int,
+    strategy_id: int | None = None,
+    limit: int = 50,
+    scope: str = "self",
 ) -> list[SimOrderOut]:
-    stmt = select(SimOrder).where(SimOrder.user_id == user_id)
+    stmt = select(SimOrder)
+    if scope != "all":
+        stmt = stmt.where(SimOrder.user_id == user_id)
     if strategy_id is not None:
         stmt = stmt.where(SimOrder.strategy_id == strategy_id)
     stmt = stmt.order_by(SimOrder.created_at.desc()).limit(limit)

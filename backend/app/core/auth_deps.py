@@ -60,6 +60,17 @@ def _widest_scope(scopes: list[str]) -> str:
     return max(scopes, key=lambda s: _SCOPE_RANK.get(s, -1))
 
 
+def effective_scope(user: AuthUser) -> str:
+    """合并 is_super 与 data_scope → 数据行级可见范围。
+
+    - is_super 或 data_scope == 'all' → 'all'（跨用户可见，管理员监控）
+    - 否则 'self'（仅自己；无部门模型，dept 退化为 self）
+
+    service 层 list 查询据此决定是否加 ``user_id`` 过滤。
+    """
+    return "all" if (user.is_super or user.data_scope == "all") else "self"
+
+
 def _bearer_token(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.lower().startswith("bearer "):

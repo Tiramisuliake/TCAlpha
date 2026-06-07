@@ -9,10 +9,12 @@ from app.db.models.strategy import StrategyConfig
 from app.schemas.strategy import StrategyCreate, StrategyOut
 
 
-async def list_strategies(db: AsyncSession, user_id: int) -> list[StrategyOut]:
-    stmt = select(StrategyConfig).where(StrategyConfig.user_id == user_id).order_by(
-        StrategyConfig.created_at.desc()
-    )
+async def list_strategies(
+    db: AsyncSession, user_id: int, scope: str = "self"
+) -> list[StrategyOut]:
+    stmt = select(StrategyConfig).order_by(StrategyConfig.created_at.desc())
+    if scope != "all":
+        stmt = stmt.where(StrategyConfig.user_id == user_id)
     rows = (await db.execute(stmt)).scalars().all()
     return [StrategyOut.model_validate(r) for r in rows]
 

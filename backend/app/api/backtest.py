@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_deps import require_permission
+from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.backtest import (
     BacktestStatusOut,
@@ -24,10 +24,10 @@ router = APIRouter()
     dependencies=[Depends(require_permission("backtest.read"))],
 )
 async def list_backtests(
-    user_id: int = CurrentUserId,
+    user: CurrentUser,
     db: AsyncSession = DB,
 ):
-    return await backtest_svc.list_backtests(db, user_id)
+    return await backtest_svc.list_backtests(db, user.id, scope=effective_scope(user))
 
 
 @router.post(
@@ -99,10 +99,10 @@ async def submit_sweep(
     dependencies=[Depends(require_permission("backtest.read"))],
 )
 async def list_sweeps(
-    user_id: int = CurrentUserId,
+    user: CurrentUser,
     db: AsyncSession = DB,
 ):
-    return await backtest_svc.list_sweeps(db, user_id)
+    return await backtest_svc.list_sweeps(db, user.id, scope=effective_scope(user))
 
 
 @router.get(

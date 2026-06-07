@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_deps import require_permission
+from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.strategy import StrategyCreate, StrategyOut
 from app.services import sim as sim_svc
@@ -25,10 +25,10 @@ async def list_strategy_classes():
     dependencies=[Depends(require_permission("strategy.read"))],
 )
 async def list_strategies(
-    user_id: int = CurrentUserId,
+    user: CurrentUser,
     db: AsyncSession = DB,
 ):
-    return await strategy_svc.list_strategies(db, user_id)
+    return await strategy_svc.list_strategies(db, user.id, scope=effective_scope(user))
 
 
 @router.post(

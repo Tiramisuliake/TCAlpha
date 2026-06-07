@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Card,
   Col,
   DatePicker,
+  Drawer,
   Form,
   InputNumber,
   Row,
@@ -14,7 +15,7 @@ import {
   Tag,
   message,
 } from "antd";
-import { ExperimentOutlined } from "@ant-design/icons";
+import { ExperimentOutlined, RobotOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import type { ColumnsType } from "antd/es/table";
@@ -23,6 +24,7 @@ import { useSearchParams } from "react-router";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
 import { getStrategyClasses } from "@/api/strategy";
+import { streamBacktestAnalysis } from "@/api/ai";
 import { StrategyParamsForm } from "@/components/StrategyParamsForm";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
@@ -323,6 +325,31 @@ export default function Backtest() {
 
   const result = selectedJob?.result as BacktestResult | null;
 
+  // ── AI 回测归因（SSE 流式）──
+  const aiAbort = useRef<AbortController | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiStreaming, setAiStreaming] = useState(false);
+
+  function openAiAnalysis() {
+    if (!selectedJobId) return;
+    aiAbort.current?.abort();
+    const ctrl = new AbortController();
+    aiAbort.current = ctrl;
+    setAiOpen(true);
+    setAiText("");
+    setAiStreaming(true);
+    void streamBacktestAnalysis(selectedJobId, {
+      signal: ctrl.signal,
+      onChunk: (t) => setAiText((p) => p + t),
+      onDone: () => setAiStreaming(false),
+      onError: (m) => {
+        setAiText((p) => p + `\n\n⚠️ ${m}`);
+        setAiStreaming(false);
+      },
+    });
+  }
+
   return (
     <PageScaffold>
       <Segmented
@@ -436,6 +463,11 @@ export default function Backtest() {
             </Card>
           ) : result ? (
             <div className="flex-1 flex flex-col gap-4 min-h-0">
+              <div className="flex justify-end">
+                <PermButton perm="ai.chat" icon={<RobotOutlined />} onClick={openAiAnalysis}>
+                  AI 归因
+                </PermButton>
+              </div>
               <Row gutter={[8, 8]}>
                 <Col span={8}>
                   <MetricCard
@@ -514,6 +546,23 @@ export default function Backtest() {
         </Col>
       </Row>
       )}
+
+      <Drawer
+        title={`AI 回测归因 #${selectedJobId ?? ""}`}
+        open={aiOpen}
+        width={480}
+        onClose={() => {
+          aiAbort.current?.abort();
+          setAiOpen(false);
+        }}
+      >
+        {aiText ? (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{aiText}</div>
+        ) : (
+          <div className="text-slate-400">正在生成归因…</div>
+        )}
+        {aiStreaming && <span className="ml-1 animate-pulse text-blue-500">▋</span>}
+      </Drawer>
     </PageScaffold>
   );
 }

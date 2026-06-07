@@ -1,5 +1,5 @@
 /**
- * AI chat 流式调用（SSE over fetch POST，无法用浏览器 EventSource，因为它只支持 GET）。
+ * AI 流式调用（SSE over fetch）。
  *
  * 协议参见 backend/app/api/ai.py：
  *   data: "<chunk-json-string>"
@@ -29,17 +29,8 @@ export interface StreamCallbacks {
 const DONE = "[DONE]";
 const ERROR_PREFIX = "[ERROR]";
 
-export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise<void> {
-  const resp = await fetchWithAuthRefresh("/api/ai/chat", () => ({
-    method: "POST",
-    headers: streamHeaders({
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    }),
-    body: JSON.stringify(req),
-    signal: cb.signal,
-  }));
-
+/** 消费 SSE 响应流，按帧解析 data: 行并回调（chat / 回测归因共用）。 */
+async function consumeSSE(resp: Response, cb: StreamCallbacks): Promise<void> {
   if (!resp.ok || !resp.body) {
     const text = await resp.text().catch(() => resp.statusText);
     cb.onError?.(`HTTP ${resp.status}: ${text}`);
@@ -62,7 +53,6 @@ export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise
         const frame = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
 
-        // 单帧可能有多行；只关心 data:
         for (const line of frame.split("\n")) {
           if (!line.startsWith("data:")) continue;
           const data = line.slice(5).trimStart();
@@ -74,12 +64,10 @@ export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise
             cb.onError?.(data.slice(ERROR_PREFIX.length));
             return;
           }
-          // 服务端把 chunk JSON.dumps 过，这里反序列化
+          // 服务端把 chunk JSON.dumps 过，这里反序列化（兼容裸字符串）
           try {
-            const text = JSON.parse(data) as string;
-            cb.onChunk(text);
+            cb.onChunk(JSON.parse(data) as string);
           } catch {
-            // 兼容：少数情况下 chunk 是裸字符串
             cb.onChunk(data);
           }
         }
@@ -90,4 +78,31 @@ export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise
     if ((e as Error).name === "AbortError") return;
     cb.onError?.((e as Error).message || "stream failed");
   }
+}
+
+/** 流式 chat（POST，因为浏览器 EventSource 只支持 GET）。 */
+export async function streamChat(req: ChatRequest, cb: StreamCallbacks): Promise<void> {
+  const resp = await fetchWithAuthRefresh("/api/ai/chat", () => ({
+    method: "POST",
+    headers: streamHeaders({
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    }),
+    body: JSON.stringify(req),
+    signal: cb.signal,
+  }));
+  await consumeSSE(resp, cb);
+}
+
+/** 流式回测绩效归因（GET /api/ai/backtest/{jobId}/analyze）。 */
+export async function streamBacktestAnalysis(
+  jobId: number,
+  cb: StreamCallbacks,
+): Promise<void> {
+  const resp = await fetchWithAuthRefresh(`/api/ai/backtest/${jobId}/analyze`, () => ({
+    method: "GET",
+    headers: streamHeaders({ Accept: "text/event-stream" }),
+    signal: cb.signal,
+  }));
+  await consumeSSE(resp, cb);
 }

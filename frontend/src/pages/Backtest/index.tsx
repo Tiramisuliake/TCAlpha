@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import { useSearchParams } from "react-router";
 import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
 import { getStrategyClasses } from "@/api/strategy";
@@ -182,6 +183,13 @@ export default function Backtest() {
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [pollingEnabled, setPollingEnabled] = useState(false);
   const [mode, setMode] = useState<"single" | "compare" | "sweep">("single");
+  const [sp] = useSearchParams();
+
+  // 选股页「去回测」跳转：预填 symbol
+  useEffect(() => {
+    const s = sp.get("symbol");
+    if (s) form.setFieldsValue({ symbol: s });
+  }, [sp, form]);
 
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({
     queryKey: ["backtest", "list"],

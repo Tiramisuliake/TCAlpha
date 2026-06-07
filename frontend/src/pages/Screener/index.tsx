@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Button, Card, Empty, InputNumber, Select, Switch, Table, message } from "antd";
-import { FilterOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Empty, InputNumber, Select, Space, Switch, Table, message } from "antd";
+import { FilterOutlined, StarOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import type { ColumnsType } from "antd/es/table";
 import { runScreen } from "@/api/screener";
+import { addWatch } from "@/api/watchlist";
 import { PageScaffold } from "@/components/PageScaffold";
 import type { ScreenCandidate, ScreenFilters } from "@/types";
 
@@ -32,6 +34,12 @@ export default function Screener() {
     limit: 50,
   });
   const set = (patch: Partial<ScreenFilters>) => setFilters((p) => ({ ...p, ...patch }));
+
+  const navigate = useNavigate();
+  const addMut = useMutation({
+    mutationFn: (symbol: string) => addWatch(symbol),
+    onSuccess: () => message.success("已加入自选"),
+  });
 
   const mut = useMutation({
     mutationFn: runScreen,
@@ -83,6 +91,29 @@ export default function Screener() {
       dataIndex: "turnover",
       align: "right",
       render: (v: number | null) => (v != null ? <span className="num">{v.toFixed(2)}</span> : "-"),
+    },
+    {
+      title: "操作",
+      key: "actions",
+      width: 180,
+      render: (_: unknown, row: ScreenCandidate) => (
+        <Space size={4}>
+          <Button
+            size="small"
+            icon={<StarOutlined />}
+            loading={addMut.isPending && addMut.variables === row.symbol}
+            onClick={() => addMut.mutate(row.symbol)}
+          >
+            自选
+          </Button>
+          <Button size="small" type="link" onClick={() => navigate(`/backtest?symbol=${row.symbol}`)}>
+            回测
+          </Button>
+          <Button size="small" type="link" onClick={() => navigate(`/strategy?symbol=${row.symbol}`)}>
+            建策略
+          </Button>
+        </Space>
+      ),
     },
   ];
 

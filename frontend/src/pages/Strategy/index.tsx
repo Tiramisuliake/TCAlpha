@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -23,6 +23,7 @@ import {
 } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
+import { useSearchParams } from "react-router";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import { StrategyParamsForm } from "@/components/StrategyParamsForm";
@@ -67,6 +68,18 @@ export default function StrategyPage() {
   const [signal, setSignal] = useState<StrategySignal | null>(null);
   const [liveOrders, setLiveOrders] = useState<SimOrder[]>([]);
   const [form] = Form.useForm<StrategyCreate>();
+  const [sp] = useSearchParams();
+
+  // 选股页「建策略」跳转：自动打开新建抽屉并预填 symbol
+  useEffect(() => {
+    const s = sp.get("symbol");
+    if (s) {
+      setEditItem(null);
+      form.resetFields();
+      form.setFieldsValue({ symbol: s });
+      setDrawerOpen(true);
+    }
+  }, [sp, form]);
 
   // 订单 WS（用户级别，不随策略切换断开）
   const onOrderMsg = useCallback((raw: string) => {

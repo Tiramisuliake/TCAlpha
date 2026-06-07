@@ -13,9 +13,11 @@ import pytest
 from app.core.backtest_engine import (
     PendingOrder,
     Trade,
+    _limit_pct,
     _match_orders,
     _metrics,
     _settle,
+    run_sweep,
 )
 
 # ── _match_orders ─────────────────────────────────────────────────────
@@ -218,3 +220,67 @@ def test_strategy_instances_have_isolated_state():
     # 类属性模板未被实例操作污染
     assert MaCrossStrategy.state.pos == 0
     assert MaCrossStrategy.params.fast == 10
+
+
+# ── 涨跌停 / 停牌撮合约束（④）──────────────────────────────────────────
+
+
+def test_limit_pct_by_board():
+    """板块涨跌停比例：主板 10% / 创业板·科创板 20% / 北交所 30%。"""
+    assert _limit_pct("sh600000") == 0.10
+    assert _limit_pct("sz000001") == 0.10
+    assert _limit_pct("sz300001") == 0.20
+    assert _limit_pct("sh688001") == 0.20
+    assert _limit_pct("bj830799") == 0.30
+
+
+def test_match_orders_suspension_no_fill(make_bar):
+    """停牌（volume==0）：挂单不成交。"""
+    bar = make_bar(datetime(2025, 1, 2), open_=10, high=10, low=10, close=10, volume=0)
+    trades, pos = _match_orders(
+        [PendingOrder("long", "open", 100)], bar, 0.0003, 0.01, 0, prev_close=10, symbol="sh600000"
+    )
+    assert trades == [] and pos == 0
+
+
+def test_match_orders_limit_up_blocks_buy(make_bar):
+    """一字涨停（主板 prev=10 → 涨停 11）：买不进。"""
+    bar = make_bar(datetime(2025, 1, 2), open_=11, high=11, low=11, close=11)
+    trades, pos = _match_orders(
+        [PendingOrder("long", "open", 100)], bar, 0.0003, 0.01, 0, prev_close=10, symbol="sh600000"
+    )
+    assert trades == [] and pos == 0
+
+
+def test_match_orders_limit_down_blocks_sell(make_bar):
+    """一字跌停（主板 prev=10 → 跌停 9）：卖不出，持仓不变。"""
+    bar = make_bar(datetime(2025, 1, 2), open_=9, high=9, low=9, close=9)
+    trades, pos = _match_orders(
+        [PendingOrder("long", "close", 100)], bar, 0.0003, 0.01, 100, prev_close=10, symbol="sh600000"
+    )
+    assert trades == [] and pos == 100
+
+
+def test_match_orders_no_limit_when_prev_close_none(make_bar):
+    """prev_close=None：不做涨跌停约束（向后兼容），一字涨停也成交。"""
+    bar = make_bar(datetime(2025, 1, 2), open_=11, high=11, low=11, close=11)
+    trades, pos = _match_orders([PendingOrder("long", "open", 100)], bar, 0.0003, 0.01, 0)
+    assert len(trades) == 1 and pos == 100
+
+
+# ── run_sweep 网格扫参 ─────────────────────────────────────────────────
+
+
+def test_run_sweep_grid(fake_arctic, sample_bars_arctic):
+    """笛卡尔积扫参：2×2=4 组合，按 target 排序返回 best。"""
+    res = run_sweep(
+        "sh600000", "MaCrossStrategy",
+        {"fast": [5, 10], "slow": [20, 30]},
+        "2025-01-01", "2026-01-01",
+        1_000_000.0, 0.0003, 0.01, "sharpe",
+    )
+    assert res["count"] == 4
+    assert len(res["results"]) == 4
+    assert res["param_keys"] == ["fast", "slow"]
+    assert res["best"] is not None
+    assert "sharpe" in res["best"]["metrics"]

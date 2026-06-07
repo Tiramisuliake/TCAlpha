@@ -59,7 +59,8 @@ async def screen(filters: dict) -> dict:
         refresh_market_snapshot.delay()
         return {"ready": False, "count": 0, "candidates": []}
 
-    df = pd.read_json(io.StringIO(raw))
+    # code 必须强制 str：纯数字字符串会被 read_json 推断成 int，丢深市前导 0（000001→1）
+    df = pd.read_json(io.StringIO(raw), dtype={"code": str, "symbol": str, "name": str})
     if df.empty:
         return {"ready": True, "count": 0, "candidates": []}
 

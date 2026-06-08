@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # AKShare
     akshare_rate_limit: int = 2
 
+    # 数据同步告警（⑤）：下载最终失败时推飞书系统告警；留空则只记日志 + SyncLog
+    sync_alert_webhook: str = ""
+    sync_alert_secret: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

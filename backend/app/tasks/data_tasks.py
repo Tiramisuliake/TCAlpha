@@ -12,6 +12,79 @@ _DEFAULT_HISTORY_DAYS = 365 * 3  # 默认拉 3 年历史
 _MINUTE_PERIOD_MAP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
 
 
+def _upsert_sync_log(
+    symbol: str,
+    period: str,
+    status: str,
+    last_date: str | None = None,
+    rows: int = 0,
+    error: str | None = None,
+) -> None:
+    """记录/更新某只票某周期的同步水位（同步 session，幂等 upsert）。"""
+    from sqlalchemy import select
+
+    from app.db.models.sync_log import SyncLog
+    from app.db.postgres import SyncSessionLocal
+    from app.utils.symbol import normalize
+
+    sym = normalize(symbol)
+    try:
+        with SyncSessionLocal() as db:
+            row = db.execute(
+                select(SyncLog).where(SyncLog.symbol == sym, SyncLog.period == period)
+            ).scalar_one_or_none()
+            if row is None:
+                row = SyncLog(symbol=sym, period=period)
+                db.add(row)
+            row.status = status
+            if last_date is not None:
+                row.last_date = last_date
+            row.rows = rows
+            row.error = error
+            db.commit()
+    except Exception as exc:
+        logger.warning("upsert sync_log failed for {} {}: {}", sym, period, exc)
+
+
+def _last_synced_date(symbol: str, period: str) -> str | None:
+    """读上次同步成功的水位日期（增量起点）；无记录/上次失败返回 None。"""
+    from sqlalchemy import select
+
+    from app.db.models.sync_log import SyncLog
+    from app.db.postgres import SyncSessionLocal
+    from app.utils.symbol import normalize
+
+    sym = normalize(symbol)
+    try:
+        with SyncSessionLocal() as db:
+            row = db.execute(
+                select(SyncLog).where(SyncLog.symbol == sym, SyncLog.period == period)
+            ).scalar_one_or_none()
+            return row.last_date if row and row.status == "ok" else None
+    except Exception:
+        return None
+
+
+def _send_sync_alert(text: str) -> None:
+    """数据同步最终失败 → 飞书系统告警（仅当配置了 sync_alert_webhook）。"""
+    from app.config import settings
+
+    if not settings.sync_alert_webhook:
+        return
+    try:
+        import asyncio
+
+        from app.services.feishu import send_text
+
+        ok, err = asyncio.run(
+            send_text(settings.sync_alert_webhook, settings.sync_alert_secret, text)
+        )
+        if not ok:
+            logger.warning("sync alert feishu failed: {}", err)
+    except Exception as exc:
+        logger.warning("sync alert dispatch failed: {}", exc)
+
+
 @celery_app.task(
     name="app.tasks.data_tasks.refresh_market_snapshot",
     bind=True,
@@ -74,11 +147,14 @@ def download_one_symbol(
     start: str | None = None,
     end: str | None = None,
 ) -> dict:
-    """下载单个股票 K 线并写入 ArcticDB。"""
+    """下载单个股票 K 线并写入 ArcticDB（增量 + 同步状态记录 + 失败告警）。"""
     try:
         now = now_cn()
         end = end or now.strftime("%Y-%m-%d")
-        start = start or (now - timedelta(days=_DEFAULT_HISTORY_DAYS)).strftime("%Y-%m-%d")
+        if start is None:
+            # 增量：优先从上次同步水位起（日线）；无水位则拉默认历史
+            incr = _last_synced_date(symbol, period) if period == "1d" else None
+            start = incr or (now - timedelta(days=_DEFAULT_HISTORY_DAYS)).strftime("%Y-%m-%d")
 
         if period == "1d":
             from app.services.data import download_and_save_daily
@@ -96,11 +172,19 @@ def download_one_symbol(
             logger.warning("period {} not yet implemented, skip {}", period, symbol)
             return {"symbol": symbol, "period": period, "status": "skipped"}
 
+        _upsert_sync_log(symbol, period, "ok", last_date=end, rows=int(result.get("rows", 0)))
         logger.info("download_one_symbol done: {}", result)
         return {**result, "status": "ok"}
 
     except Exception as exc:
         logger.exception("download_one_symbol {} failed: {}", symbol, exc)
+        if self.request.retries >= self.max_retries:
+            # 最终失败：落库 failed + 飞书告警，不再重试（避免无限占用队列）
+            _upsert_sync_log(symbol, period, "failed", error=str(exc)[:500])
+            _send_sync_alert(
+                f"⚠️ 数据同步失败\n{symbol} [{period}]\n{type(exc).__name__}: {exc}"
+            )
+            return {"symbol": symbol, "period": period, "status": "failed", "error": str(exc)}
         raise self.retry(exc=exc, countdown=2 ** self.request.retries * 3) from exc
 
 

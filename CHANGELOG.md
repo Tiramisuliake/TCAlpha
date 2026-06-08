@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-08
+
+> 量化能力大扩充：策略库扩到 5 类，回测引擎进化（网格扫参 + 多策略对比 + A 股撮合约束 + AI 归因），新增**选股器**与**盯盘驾驶舱**两大业务模块，统一数据获取层 **DataProvider**，并补齐 GitHub Actions CI。
+
+### Added — 策略库扩充
+- `strategies/examples/`：新增 **海龟唐奇安通道突破**（趋势跟踪）、**RSI**、**MACD**、**布林带** 四套策略，连同原有 MA 交叉共 5 类，覆盖均线 / 动量 / 趋势 / 波动率
+- **策略参数表单动态化**：前端按后端 `params_schema` 自动渲染参数输入，新增策略无需改前端
+
+### Added — 回测引擎进化
+- **网格扫参（Param Sweep）**：新增 `ParamSweepJob` 表 + 迁移；回测引擎提取 `_simulate` 复用、新增 `run_sweep` 核心；后端 API（schema / service / task / 路由）+ 前端扫参 UI + 结果热力图
+- **多策略对比回测**：同标的、同区间多策略 PK
+- **A 股撮合约束**：回测撮合加入涨跌停 / 停牌限制，更贴近真实成交
+- **AI 回测归因**：回测结果一键 LLM 流式解读（走 SSE）
+
+### Added — 选股器（Screener）
+- 后端：screener 服务 + 全市场快照刷新 task + `/api/screener/run` API
+- **多因子打分**：动量 / 估值 / 换手率归一化加权打分排序
+- 前端：筛选表单 + 结果表页面（`pages/Screener`）
+- **选股闭环**：结果行一键「加自选 / 去回测 / 建策略」
+
+### Added — 盯盘驾驶舱 + 自选股
+- **盯盘驾驶舱**页（`pages/Monitor`）：自选股实时报价 + AI 告警聚合
+
+### Added — 工程化（CI）
+- **GitHub Actions CI**：ruff + pytest（带 PG / Redis service 容器）+ 前端 tsc 类型检查
+- 前端 CI 工具链对齐本地：Node 20→22、pnpm 9→11、`pnpm-workspace.yaml` 修正、install 加 `--ignore-scripts`
+
+### Changed — 数据层收口
+- 统一数据获取层 **DataProvider**：收口所有 AKShare 调用，单点限流 / 缓存 / 重试
+- **数据同步健壮性**：新增 `SyncLog` 水位表 + 增量下载 + 同步失败飞书告警
+- 清理 DataProvider 收口后残留的死常量
+
+### Changed — 权限（Phase 8 起步）
+- `data_scope` 数据权限**真正生效**：`all` scope 可跨用户可见 —— Phase 8 数据权限落地第一步
+
+### Changed — 前端体验
+- 前端健壮性兜底：`ErrorBoundary` + 404 页 + 路由级权限守卫
+- 前端设计落地与体验优化；策略监控台细节打磨（信号占位 / 参数格式化 / 持仓卡片 / 运行脉冲）；模拟交易禁用卖空
+
+### Fixed
+- `screener` 股票代码前导 0 丢失
+- `app/data` 被 `.gitignore` 误伤导致 DataProvider 文件漏提交
+
+### Tests
+- 补充网格扫参 / 涨跌停 / 策略 / 选股器单测
+
 ## [0.7.6] — 2026-06-02
 
 ### Added — Phase 7 v0.7.6：前端按钮权限收紧 + 热门股 seed

@@ -35,6 +35,7 @@ import {
   updateStrategy,
 } from "@/api/strategy";
 import {
+  getPosition,
   getStrategyRunning,
   listOrders,
   startStrategy,
@@ -253,6 +254,13 @@ export default function StrategyPage() {
   }
 
   const isRunning = runningData?.running ?? false;
+  const activeSymbol = strategies.find((s) => s.id === activeStrategyId)?.symbol;
+  const { data: position } = useQuery({
+    queryKey: ["sim", "position", activeSymbol],
+    queryFn: () => getPosition(activeSymbol!),
+    enabled: !!activeSymbol,
+    refetchInterval: isRunning ? 5000 : false,
+  });
   const displayOrders = liveOrders.length > 0 ? liveOrders : ordersData;
 
   const strategyColumns: ColumnsType<StrategyConfig> = [
@@ -263,14 +271,23 @@ export default function StrategyPage() {
       title: "参数",
       key: "params",
       render: (_, r) => (
-        <span className="text-xs text-slate-500">{JSON.stringify(r.params)}</span>
+        <span className="text-xs text-slate-500">
+          {Object.entries(r.params ?? {})
+            .map(([k, v]) => `${k}=${String(v)}`)
+            .join("  ") || "-"}
+        </span>
       ),
     },
     {
       title: "状态",
       dataIndex: "status",
       width: 80,
-      render: (s: string) => <Tag color={STATUS_COLOR[s] ?? "default"}>{s}</Tag>,
+      render: (s: string) => (
+        <span>
+          {s === "running" && <Badge status="processing" className="mr-1" />}
+          <Tag color={STATUS_COLOR[s] ?? "default"}>{s}</Tag>
+        </span>
+      ),
     },
     {
       title: "操作",
@@ -387,27 +404,57 @@ export default function StrategyPage() {
               </Card>
 
               {/* 信号面板 */}
-              {signal && (
+              {(signal || isRunning) && (
                 <Card title="最新信号" size="small">
-                  <Row gutter={8}>
-                    <Col span={8}>
+                  {signal ? (
+                    <>
+                      <Row gutter={8}>
+                        <Col span={8}>
+                          <Statistic
+                            title="方向"
+                            value={signal.direction > 0 ? "多头" : signal.direction < 0 ? "空头" : "中性"}
+                            valueStyle={{ color: signal.direction > 0 ? "#ef4444" : signal.direction < 0 ? "#10b981" : "#94a3b8" }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Statistic title="强度" value={signal.strength} suffix="%" />
+                        </Col>
+                        <Col span={8}>
+                          <Statistic title="持仓" value={signal.pos} />
+                        </Col>
+                      </Row>
+                      <div className="mt-2 text-sm text-slate-600 bg-slate-50 rounded px-3 py-2">
+                        {signal.tip || "无信号"}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">Bar: {signal.bar_dt}</div>
+                    </>
+                  ) : (
+                    <div className="text-slate-400 text-sm py-2 flex items-center gap-2">
+                      <span className="animate-pulse">●</span> 运行中，等待首个信号…
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {/* 当前持仓 */}
+              {activeSymbol && (
+                <Card title="当前持仓" size="small">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-500">{activeSymbol}</span>
+                    {position && position.net_position !== 0 ? (
                       <Statistic
-                        title="方向"
-                        value={signal.direction > 0 ? "多头" : signal.direction < 0 ? "空头" : "中性"}
-                        valueStyle={{ color: signal.direction > 0 ? "#ef4444" : signal.direction < 0 ? "#10b981" : "#94a3b8" }}
+                        value={Math.abs(position.net_position)}
+                        prefix={position.net_position > 0 ? "多" : "空"}
+                        suffix="股"
+                        valueStyle={{
+                          color: position.net_position > 0 ? "#ef4444" : "#10b981",
+                          fontSize: 18,
+                        }}
                       />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic title="强度" value={signal.strength} suffix="%" />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic title="持仓" value={signal.pos} />
-                    </Col>
-                  </Row>
-                  <div className="mt-2 text-sm text-slate-600 bg-slate-50 rounded px-3 py-2">
-                    {signal.tip || "无信号"}
+                    ) : (
+                      <span className="text-slate-400">无持仓</span>
+                    )}
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">Bar: {signal.bar_dt}</div>
                 </Card>
               )}
 

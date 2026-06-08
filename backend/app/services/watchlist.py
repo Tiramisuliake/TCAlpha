@@ -43,3 +43,29 @@ async def remove_item(db: AsyncSession, user_id: int, item_id: int) -> bool:
     await db.delete(obj)
     await db.commit()
     return True
+
+
+async def get_board(db: AsyncSession, user_id: int):
+    """盯盘驾驶舱聚合：自选股 + 实时报价（快照）+ 最近 AI 告警。"""
+    from app.schemas.watchlist import BoardItem, BoardOut
+    from app.services.ai_alerts import list_alerts
+    from app.services.screener import get_snapshot_quotes
+
+    items = await list_items(db, user_id)
+    quotes = await get_snapshot_quotes([i.symbol for i in items])
+    alerts = await list_alerts(db, user_id, limit=20)
+
+    board_items: list[BoardItem] = []
+    for i in items:
+        q = quotes.get(i.symbol, {})
+        board_items.append(
+            BoardItem(
+                symbol=i.symbol,
+                notes=i.notes,
+                name=q.get("name"),
+                price=q.get("price"),
+                pct_chg=q.get("pct_chg"),
+                amount=q.get("amount"),
+            )
+        )
+    return BoardOut(items=board_items, alerts=alerts, quote_ready=bool(quotes))

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import require_permission
 from app.deps import DB, CurrentUserId
-from app.schemas.watchlist import WatchlistCreate, WatchlistOut
+from app.schemas.watchlist import BoardOut, WatchlistCreate, WatchlistOut
 from app.services import watchlist as watchlist_svc
 
 router = APIRouter()
@@ -19,6 +19,16 @@ router = APIRouter()
 )
 async def list_items(user_id: int = CurrentUserId, db: AsyncSession = DB):
     return await watchlist_svc.list_items(db, user_id)
+
+
+@router.get(
+    "/board",
+    response_model=BoardOut,
+    dependencies=[Depends(require_permission("ai.watch"))],
+)
+async def get_board(user_id: int = CurrentUserId, db: AsyncSession = DB):
+    """盯盘驾驶舱聚合：自选股 + 报价快照 + 最近 AI 告警。"""
+    return await watchlist_svc.get_board(db, user_id)
 
 
 @router.post(

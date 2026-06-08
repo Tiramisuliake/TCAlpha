@@ -94,3 +94,34 @@ async def screen(filters: dict) -> dict:
         {k: (None if pd.isna(v) else v) for k, v in rec.items()} for rec in records
     ]
     return {"ready": True, "count": len(candidates), "candidates": candidates}
+
+
+async def get_snapshot_quotes(symbols: list[str]) -> dict[str, dict]:
+    """从全市场快照取指定 symbols 的报价（盯盘驾驶舱用）。
+
+    返回 {symbol: {name, price, pct_chg, amount}}；快照缺失返回空 dict。
+    """
+    if not symbols:
+        return {}
+    raw = await get_redis().get(SNAPSHOT_KEY)
+    if not raw:
+        return {}
+    df = pd.read_json(io.StringIO(raw), dtype={"code": str, "symbol": str, "name": str})
+    if df.empty or "symbol" not in df.columns:
+        return {}
+    sub = df[df["symbol"].isin(set(symbols))]
+
+    def _val(v: object) -> object:
+        if pd.isna(v):
+            return None
+        return v.item() if hasattr(v, "item") else v
+
+    out: dict[str, dict] = {}
+    for _, row in sub.iterrows():
+        out[str(row["symbol"])] = {
+            "name": _val(row.get("name")),
+            "price": _val(row.get("price")),
+            "pct_chg": _val(row.get("pct_chg")),
+            "amount": _val(row.get("amount")),
+        }
+    return out

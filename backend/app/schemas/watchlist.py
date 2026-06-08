@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.ai_alert import AiAlertOut
 from app.utils.symbol import normalize
 
 
@@ -28,3 +29,21 @@ class WatchlistOut(BaseModel):
     symbol: str
     notes: str
     added_at: datetime
+
+
+# ── 盯盘驾驶舱 ──────────────────────────────────────────────
+
+
+class BoardItem(BaseModel):
+    symbol: str
+    notes: str = ""
+    name: str | None = None
+    price: float | None = None
+    pct_chg: float | None = None
+    amount: float | None = None
+
+
+class BoardOut(BaseModel):
+    items: list[BoardItem]
+    alerts: list[AiAlertOut]
+    quote_ready: bool

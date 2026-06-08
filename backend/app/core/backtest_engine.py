@@ -47,10 +47,12 @@ def _load_strategy_classes() -> None:
     from app.strategies.examples.ma_cross import MaCrossStrategy
     from app.strategies.examples.macd import MacdStrategy
     from app.strategies.examples.rsi import RsiStrategy
+    from app.strategies.examples.turtle import TurtleStrategy
     STRATEGY_CLASSES["MaCrossStrategy"] = MaCrossStrategy
     STRATEGY_CLASSES["MacdStrategy"] = MacdStrategy
     STRATEGY_CLASSES["RsiStrategy"] = RsiStrategy
     STRATEGY_CLASSES["BollStrategy"] = BollStrategy
+    STRATEGY_CLASSES["TurtleStrategy"] = TurtleStrategy
 
 
 def get_strategy_class(class_name: str) -> type:

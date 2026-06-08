@@ -17,7 +17,7 @@ def _trend_bars(make_bar, n: int = 160, amp: float = 5.0) -> list:
 
 
 @pytest.mark.parametrize(
-    "cls_name", ["MaCrossStrategy", "MacdStrategy", "RsiStrategy", "BollStrategy"]
+    "cls_name", ["MaCrossStrategy", "MacdStrategy", "RsiStrategy", "BollStrategy", "TurtleStrategy"]
 )
 def test_strategy_registered(cls_name):
     from app.core.backtest_engine import get_strategy_class
@@ -74,3 +74,32 @@ def test_macd_generates_buy_and_sell_signals(make_bar):
                 s.state.pos -= vol
     assert opens > 0
     assert closes > 0
+
+
+def test_turtle_breakout_open_and_close(make_bar):
+    """海龟：上涨突破前 N 日高开多、回落跌破前 M 日低平多。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("TurtleStrategy")(
+        "sh600519", {"entry_window": 20, "exit_window": 10}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    opens = closes = 0
+    for i in range(120):
+        if i < 30:
+            c = 100 + math.sin(i * 0.3)  # 平缓
+        elif i < 70:
+            c = 100 + (i - 30) * 1.5  # 突破上涨
+        else:
+            c = 160 - (i - 70) * 1.2  # 回落
+        s.on_bar(make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c))
+        sig = getattr(s, "_pending_signal", None)
+        if sig:
+            if sig[1] == "open":
+                opens += 1
+                s.state.pos += sig[2]
+            else:
+                closes += 1
+                s.state.pos -= sig[2]
+    assert opens > 0   # 突破开多
+    assert closes > 0  # 跌破平多

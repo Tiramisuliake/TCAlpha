@@ -83,9 +83,12 @@ async def screen(filters: dict) -> dict:
     if filters.get("exclude_st"):
         df = df[~df["name"].astype(str).str.contains("ST", case=False, na=False)]
 
-    sort_by = filters.get("sort_by") or "amount"
-    if sort_by in df.columns:
-        df = df.sort_values(sort_by, ascending=False)
+    if filters.get("factor_mode"):
+        df = _apply_factor_score(df, filters)
+    else:
+        sort_by = filters.get("sort_by") or "amount"
+        if sort_by in df.columns:
+            df = df.sort_values(sort_by, ascending=False)
 
     limit = int(filters.get("limit") or 50)
     records = df.head(limit).to_dict("records")
@@ -125,3 +128,39 @@ async def get_snapshot_quotes(symbols: list[str]) -> dict[str, dict]:
             "amount": _val(row.get("amount")),
         }
     return out
+
+
+def _apply_factor_score(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+    """多因子综合打分：各因子组内 min-max 归一化后加权，按总分降序。
+
+    因子：动量(pct_chg↑) / 估值(pe↓，仅 PE>0) / 活跃(turnover↑)。
+    在候选集内归一化到 [0,1]，缺失或恒定列给中性 0。candidates 暴露 score 字段。
+    """
+
+    def _norm(col: str, ascending: bool) -> pd.Series:
+        if col not in df.columns:
+            return pd.Series(0.0, index=df.index)
+        s = pd.to_numeric(df[col], errors="coerce")
+        lo, hi = s.min(), s.max()
+        if pd.isna(lo) or pd.isna(hi) or hi == lo:
+            return pd.Series(0.0, index=df.index)
+        n = (s - lo) / (hi - lo)
+        n = n if ascending else 1 - n
+        return n.fillna(0.0)
+
+    wm = float(filters.get("w_momentum", 1.0))
+    wv = float(filters.get("w_value", 1.0))
+    wt = float(filters.get("w_turnover", 1.0))
+
+    # 估值仅对 PE>0 计分（亏损股 PE<=0 不参与，给 0）
+    pe = pd.to_numeric(df.get("pe"), errors="coerce")
+    value = _norm("pe", ascending=False).where(pe > 0, 0.0)
+
+    score = (
+        wm * _norm("pct_chg", ascending=True)
+        + wv * value
+        + wt * _norm("turnover", ascending=True)
+    )
+    out = df.copy()
+    out["score"] = score.round(4)
+    return out.sort_values("score", ascending=False)

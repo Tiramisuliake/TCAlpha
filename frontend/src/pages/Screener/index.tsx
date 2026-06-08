@@ -92,6 +92,15 @@ export default function Screener() {
       align: "right",
       render: (v: number | null) => (v != null ? <span className="num">{v.toFixed(2)}</span> : "-"),
     },
+    ...(filters.factor_mode
+      ? ([{
+          title: "评分",
+          dataIndex: "score",
+          align: "right" as const,
+          render: (v: number | null) =>
+            v != null ? <span className="num font-medium text-blue-600">{v.toFixed(3)}</span> : "-",
+        }] as ColumnsType<ScreenCandidate>)
+      : []),
     {
       title: "操作",
       key: "actions",
@@ -148,6 +157,22 @@ export default function Screener() {
           <Field label="排除 ST">
             <Switch size="small" checked={filters.exclude_st} onChange={(v) => set({ exclude_st: v })} />
           </Field>
+          <Field label="多因子打分">
+            <Switch size="small" checked={filters.factor_mode} onChange={(v) => set({ factor_mode: v })} />
+          </Field>
+          {filters.factor_mode && (
+            <>
+              <Field label="动量权重">
+                <InputNumber size="small" min={0} step={0.5} value={filters.w_momentum ?? 1} onChange={(v) => set({ w_momentum: v ?? 1 })} />
+              </Field>
+              <Field label="估值权重">
+                <InputNumber size="small" min={0} step={0.5} value={filters.w_value ?? 1} onChange={(v) => set({ w_value: v ?? 1 })} />
+              </Field>
+              <Field label="换手权重">
+                <InputNumber size="small" min={0} step={0.5} value={filters.w_turnover ?? 1} onChange={(v) => set({ w_turnover: v ?? 1 })} />
+              </Field>
+            </>
+          )}
           <Field label="排序">
             <Select size="small" style={{ width: 110 }} options={SORT_OPTIONS} value={filters.sort_by} onChange={(v) => set({ sort_by: v })} />
           </Field>

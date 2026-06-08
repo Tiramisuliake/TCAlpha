@@ -66,3 +66,20 @@ async def test_screen_cache_miss_returns_not_ready(monkeypatch):
 
     assert res["ready"] is False
     assert res["candidates"] == []
+
+
+async def test_screen_factor_mode_scores_and_sorts(monkeypatch):
+    """多因子模式：candidates 带 score 且按 score 降序。"""
+    from app.services import screener
+
+    monkeypatch.setattr(screener, "get_redis", lambda: _FakeRedis(_fake_snapshot_json()))
+    res = await screener.screen(
+        {"factor_mode": True, "w_momentum": 1, "w_value": 1, "w_turnover": 1}
+    )
+
+    assert res["ready"] is True
+    cands = res["candidates"]
+    assert len(cands) == 3
+    assert all("score" in c for c in cands)
+    scores = [c["score"] for c in cands]
+    assert scores == sorted(scores, reverse=True)

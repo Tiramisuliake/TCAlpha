@@ -175,6 +175,10 @@ export interface ScreenFilters {
   exclude_st?: boolean;
   sort_by?: string;
   limit?: number;
+  factor_mode?: boolean;
+  w_momentum?: number;
+  w_value?: number;
+  w_turnover?: number;
 }
 
 export interface ScreenCandidate {
@@ -188,6 +192,7 @@ export interface ScreenCandidate {
   market_cap?: number;
   pe?: number;
   pb?: number;
+  score?: number;
 }
 
 export interface ScreenResult {

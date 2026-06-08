@@ -18,6 +18,11 @@ class ScreenRequest(BaseModel):
     exclude_st: bool = False
     sort_by: str = "amount"
     limit: int = 50
+    # 多因子打分（factor_mode=True 时按综合得分排序，覆盖 sort_by）
+    factor_mode: bool = False
+    w_momentum: float = 1.0  # 动量：涨幅越高越优
+    w_value: float = 1.0     # 估值：PE 越低越优（仅 PE>0 计分）
+    w_turnover: float = 1.0  # 活跃：换手率越高越优
 
 
 class ScreenResult(BaseModel):

@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# 同一分支新 push 取消进行中的旧 run，省额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-lint:
+    name: 后端 Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: ruff check
+        working-directory: backend
+        run: uv run ruff check .
+
+  backend-test:
+    name: 后端 Pytest
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tcalpha
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: tcalpha
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖
+        working-directory: backend
+        run: uv sync --dev
+      - name: Alembic 迁移
+        working-directory: backend
+        run: uv run alembic upgrade head
+      - name: Pytest
+        working-directory: backend
+        run: uv run pytest -q
+
+  frontend:
+    name: 前端 tsc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: 安装依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: tsc 类型检查
+        working-directory: frontend
+        run: pnpm exec tsc --noEmit

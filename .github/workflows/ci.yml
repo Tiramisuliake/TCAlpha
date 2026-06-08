@@ -80,7 +80,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: 安装依赖
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: tsc 类型检查
         working-directory: frontend
         run: pnpm exec tsc --noEmit

@@ -93,6 +93,7 @@ export interface BacktestSubmit {
   init_capital: number;
   commission_rate: number;
   slippage: number;
+  benchmark?: string; // 对比基准指数代码（默认 000300 沪深300）
 }
 
 export interface EquityPoint {

@@ -29,6 +29,7 @@ async def submit_backtest(
         init_capital=payload.init_capital,
         commission_rate=payload.commission_rate,
         slippage=payload.slippage,
+        benchmark=payload.benchmark,
         status="pending",
     )
     db.add(job)

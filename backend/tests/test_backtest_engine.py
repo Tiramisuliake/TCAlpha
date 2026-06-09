@@ -173,7 +173,7 @@ def test_benchmark_metrics_flat_benchmark():
     bench_dates = pd.date_range("2025-01-01", periods=5, freq="D", tz="Asia/Shanghai")
     benchmark = pd.Series([3000.0] * 5, index=bench_dates)  # 完全走平
 
-    b = _benchmark_metrics(equity, benchmark, init_capital=100.0)
+    b = _benchmark_metrics(equity, benchmark, init_capital=100.0, benchmark_name="沪深300")
 
     assert b["benchmark"] == "沪深300"
     assert b["benchmark_return"] == pytest.approx(0.0, abs=1e-9)

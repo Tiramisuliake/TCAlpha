@@ -23,6 +23,8 @@ class BacktestJob(Base):
     init_capital: Mapped[float] = mapped_column(Float, default=1_000_000.0)
     commission_rate: Mapped[float] = mapped_column(Float, default=0.0003)
     slippage: Mapped[float] = mapped_column(Float, default=0.01)
+    # 对比基准指数代码（000300 沪深300 / 000905 中证500 / 399006 创业板指 / 000016 上证50）
+    benchmark: Mapped[str] = mapped_column(String(16), default="000300", server_default="000300")
 
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/running/done/failed
     celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

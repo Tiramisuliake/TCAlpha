@@ -156,8 +156,17 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
 
 # ── 基准指数（回测对比） ──────────────────────────────────────────────
 
-_DEFAULT_BENCHMARK = "000300"   # 沪深300
-_BENCHMARK_NAME = "沪深300"
+_DEFAULT_BENCHMARK = "000300"
+_BENCHMARK_INDICES = {
+    "000300": "沪深300",
+    "000905": "中证500",
+    "399006": "创业板指",
+    "000016": "上证50",
+}
+
+
+def _benchmark_name(code: str) -> str:
+    return _BENCHMARK_INDICES.get(code, code)
 
 
 def _load_index_close(index_code: str, start: str, end: str) -> pd.Series:
@@ -325,6 +334,7 @@ def _metrics(
     trades: list[Trade],
     init_capital: float,
     benchmark_close: pd.Series | None = None,
+    benchmark_name: str = "基准",
 ) -> dict:
     rets = equity.pct_change().dropna()
     total_return = float(equity.iloc[-1] / init_capital - 1)
@@ -368,11 +378,13 @@ def _metrics(
         "equity_curve": equity_curve,
     }
     if benchmark_close is not None and not benchmark_close.empty:
-        out.update(_benchmark_metrics(equity, benchmark_close, init_capital))
+        out.update(_benchmark_metrics(equity, benchmark_close, init_capital, benchmark_name))
     return out
 
 
-def _benchmark_metrics(equity: pd.Series, benchmark_close: pd.Series, init_capital: float) -> dict:
+def _benchmark_metrics(
+    equity: pd.Series, benchmark_close: pd.Series, init_capital: float, benchmark_name: str = "基准"
+) -> dict:
     """对齐基准到策略交易日，算 Alpha / Beta / 超额收益 / 信息比率 + 归一化基准曲线。
 
     两边时区语义不同（equity 的 index 被标成 UTC、基准是 Asia/Shanghai），
@@ -419,7 +431,7 @@ def _benchmark_metrics(equity: pd.Series, benchmark_close: pd.Series, init_capit
         for d, v in zip(bench_norm.index, bench_norm.values, strict=False)
     ]
     return {
-        "benchmark": _BENCHMARK_NAME,
+        "benchmark": benchmark_name,
         "benchmark_return": round(bench_return, 4),
         "excess_return": round(total_return - bench_return, 4),
         "alpha": round(alpha, 4),
@@ -440,6 +452,7 @@ def _simulate(
     commission_rate: float,
     slippage: float,
     benchmark_close: pd.Series | None = None,
+    benchmark_name: str = "基准",
 ) -> tuple[dict, list[Trade]]:
     """纯回测：实例化策略 → 逐 bar 撮合（next bar 开盘价）→ 算指标。
 
@@ -477,7 +490,7 @@ def _simulate(
         all_trades.extend(new_trades)
 
     equity = _settle(all_trades, bars, init_capital)
-    result = _metrics(equity, all_trades, init_capital, benchmark_close)
+    result = _metrics(equity, all_trades, init_capital, benchmark_close, benchmark_name)
     return result, all_trades
 
 
@@ -559,6 +572,7 @@ def run(job_id: int) -> dict:
         commission_rate = job.commission_rate
         slippage = job.slippage
         init_capital = job.init_capital
+        benchmark = job.benchmark or _DEFAULT_BENCHMARK
         db.commit()
 
     try:
@@ -569,14 +583,15 @@ def run(job_id: int) -> dict:
 
         logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
 
-        # 基准（沪深300）：lazy 加载并缓存到 ArcticDB，失败返回空 Series 不影响主回测
-        benchmark_close = _load_index_close(_DEFAULT_BENCHMARK, start_date, end_date)
+        # 基准：按 job.benchmark lazy 加载并缓存到 ArcticDB，失败返回空 Series 不影响主回测
+        benchmark_close = _load_index_close(benchmark, start_date, end_date)
 
         # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
         result, all_trades = _simulate(
             bars, symbol, class_name, params,
             init_capital, commission_rate, slippage,
             benchmark_close=benchmark_close,
+            benchmark_name=_benchmark_name(benchmark),
         )
 
         # 5. 落库

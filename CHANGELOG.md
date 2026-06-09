@@ -2,10 +2,11 @@
 
 ## [Unreleased]
 
-### Added — 回测基准对比（Alpha / Beta vs 沪深300）
+### Added — 回测基准对比（Alpha / Beta / 超额收益 vs 指数基准）
 - `data/provider.py`：新增 `fetch_index_daily()`（AKShare `index_zh_a_hist`）拉指数日 K，写进 `DataProvider` 契约
-- `core/backtest_engine.py`：回测自动对比**沪深300**基准 —— 新增 **Alpha / Beta / 超额收益 / 信息比率 / 基准收益** 指标（`_benchmark_metrics`）；基准指数日 K 经 `_load_index_close` lazy 下载并缓存到 ArcticDB `index_1d` 库；按自然日跨时区对齐，任何失败都跳过基准、绝不拖垮主回测
-- 前端回测页：资金曲线叠加基准线（灰色虚线），指标区在有基准时追加 超额收益 / Alpha / Beta 三张卡片
+- `core/backtest_engine.py`：回测自动对比指数基准 —— 新增 **Alpha / Beta / 超额收益 / 信息比率 / 基准收益** 指标（`_benchmark_metrics`）；基准指数日 K 经 `_load_index_close` lazy 下载并缓存到 ArcticDB `index_1d` 库；按自然日跨时区对齐，任何失败都跳过基准、绝不拖垮主回测
+- **基准可配置**：`_BENCHMARK_INDICES` 支持 沪深300 / 中证500 / 创业板指 / 上证50，基准名贯穿 `_metrics` / `_simulate` / `run`；`backtest_jobs` 新增 `benchmark` 列（默认 `000300`）+ 迁移 `b2cf008fad46`，`schemas` / `services` 透传选择
+- 前端回测页：单次回测表单新增**对比基准下拉**（4 指数）；资金曲线叠加基准线（灰色虚线），指标区在有基准时追加 超额收益 / Alpha / Beta 三张卡片
 - 测试：基准指标计算单测（跨时区对齐 / 平基准 beta=0 / 正相关 beta>0 / 向后兼容无基准字段）
 
 ## [0.8.0] — 2026-06-08

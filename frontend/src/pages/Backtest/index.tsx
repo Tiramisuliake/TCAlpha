@@ -39,6 +39,14 @@ const STATUS_COLOR: Record<string, string> = {
   failed: "error",
 };
 
+// 对比基准指数（与后端 _BENCHMARK_INDICES 对齐）
+const BENCHMARK_OPTIONS = [
+  { value: "000300", label: "沪深300" },
+  { value: "000905", label: "中证500" },
+  { value: "399006", label: "创业板指" },
+  { value: "000016", label: "上证50" },
+];
+
 function hasBenchmark(r: BacktestResult): boolean {
   return !!r.benchmark_curve && r.benchmark_curve.length > 0;
 }
@@ -283,6 +291,7 @@ export default function Backtest() {
       init_capital: values.init_capital as number ?? 1000000,
       commission_rate: (values.commission_rate as number ?? 0.03) / 100,
       slippage: values.slippage as number ?? 0.01,
+      benchmark: (values.benchmark as string) ?? "000300",
     });
   }
 
@@ -422,6 +431,9 @@ export default function Backtest() {
               </Form.Item>
               <Form.Item label="初始资金" name="init_capital" initialValue={1000000}>
                 <InputNumber min={10000} step={100000} className="!w-full" />
+              </Form.Item>
+              <Form.Item label="对比基准" name="benchmark" initialValue="000300">
+                <Select options={BENCHMARK_OPTIONS} />
               </Form.Item>
               <Row gutter={8}>
                 <Col span={12}>

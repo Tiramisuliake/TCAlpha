@@ -17,6 +17,7 @@ class BacktestSubmit(BaseModel):
     init_capital: float = 1_000_000.0
     commission_rate: float = 0.0003
     slippage: float = 0.01
+    benchmark: str = "000300"  # 对比基准指数代码
 
 
 class BacktestStatusOut(BaseModel):

@@ -39,6 +39,10 @@ const STATUS_COLOR: Record<string, string> = {
   failed: "error",
 };
 
+function hasBenchmark(r: BacktestResult): boolean {
+  return !!r.benchmark_curve && r.benchmark_curve.length > 0;
+}
+
 function MetricCard({ label, value, suffix = "" }: { label: string; value: string | number; suffix?: string }) {
   return (
     <Card size="small" className="text-center">
@@ -96,12 +100,23 @@ function EquityChart({
   const drawdown = computeDrawdown(result.equity_curve);
   const markers = buildTradeMarkers(trades, result.equity_curve);
 
+  // 基准（沪深300）：按主曲线日期对齐，无数据则不画
+  const benchCurve = result.benchmark_curve ?? [];
+  const hasBench = benchCurve.length > 0;
+  const benchByDay = new Map(benchCurve.map((p) => [p.dt.slice(0, 10), p.value]));
+  const benchValues = dates.map((d) => benchByDay.get(d) ?? null);
+  const benchName = result.benchmark ?? "沪深300";
+
   const option = {
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "cross" },
     },
-    legend: { data: ["资金曲线", "回撤"], top: 0, textStyle: { fontSize: 11 } },
+    legend: {
+      data: hasBench ? ["资金曲线", benchName, "回撤"] : ["资金曲线", "回撤"],
+      top: 0,
+      textStyle: { fontSize: 11 },
+    },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
     grid: [
       { left: 60, right: 20, top: 30, height: "55%" },
@@ -162,6 +177,19 @@ function EquityChart({
           symbolKeepAspect: true,
         },
       },
+      ...(hasBench
+        ? [{
+            name: benchName,
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: benchValues,
+            smooth: true,
+            symbol: "none",
+            connectNulls: true,
+            lineStyle: { color: "#94a3b8", width: 1.5, type: "dashed" },
+          }]
+        : []),
       {
         name: "回撤",
         type: "line",
@@ -503,6 +531,27 @@ export default function Backtest() {
                 <Col span={8}>
                   <MetricCard label="交易次数" value={result.trade_count} />
                 </Col>
+                {hasBenchmark(result) && (
+                  <>
+                    <Col span={8}>
+                      <MetricCard
+                        label="超额收益"
+                        value={((result.excess_return ?? 0) * 100).toFixed(2)}
+                        suffix="%"
+                      />
+                    </Col>
+                    <Col span={8}>
+                      <MetricCard
+                        label="Alpha(年化)"
+                        value={((result.alpha ?? 0) * 100).toFixed(2)}
+                        suffix="%"
+                      />
+                    </Col>
+                    <Col span={8}>
+                      <MetricCard label="Beta" value={(result.beta ?? 0).toFixed(3)} />
+                    </Col>
+                  </>
+                )}
               </Row>
 
               <Card

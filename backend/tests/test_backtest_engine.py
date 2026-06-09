@@ -13,6 +13,7 @@ import pytest
 from app.core.backtest_engine import (
     PendingOrder,
     Trade,
+    _benchmark_metrics,
     _limit_pct,
     _match_orders,
     _metrics,
@@ -149,10 +150,68 @@ def test_metrics_handles_no_closed_trades():
     assert m["profit_factor"] in (9999.0, 0.0)
 
 
+# ── 基准对比（benchmark / Alpha-Beta）──────────────────────────────────
+
+
+def test_metrics_without_benchmark_has_no_benchmark_fields():
+    """不传 benchmark_close（默认）：结果不含任何基准字段，向后兼容。"""
+    dates = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 101.0, 102.0, 103.0], index=dates)
+    m = _metrics(equity, trades=[], init_capital=100.0)
+    assert "benchmark" not in m
+    assert "alpha" not in m and "beta" not in m
+
+
+def test_benchmark_metrics_flat_benchmark():
+    """基准完全走平：基准收益 0，超额 = 策略总收益，beta = 0；曲线对齐且字段齐全。
+
+    equity 用 UTC、benchmark 用 Asia/Shanghai，验证跨时区按自然日对齐不错位。
+    """
+    eq_dates = pd.date_range("2025-01-01", periods=5, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 102.0, 104.0, 103.0, 110.0], index=eq_dates)
+
+    bench_dates = pd.date_range("2025-01-01", periods=5, freq="D", tz="Asia/Shanghai")
+    benchmark = pd.Series([3000.0] * 5, index=bench_dates)  # 完全走平
+
+    b = _benchmark_metrics(equity, benchmark, init_capital=100.0)
+
+    assert b["benchmark"] == "沪深300"
+    assert b["benchmark_return"] == pytest.approx(0.0, abs=1e-9)
+    assert b["excess_return"] == pytest.approx(0.10, rel=1e-3)  # 策略总收益 10%
+    assert b["beta"] == 0.0  # 基准方差为 0 → beta 取 0
+    assert len(b["benchmark_curve"]) == 5
+    # 归一化基准曲线起点 = 策略起始资金
+    assert b["benchmark_curve"][0]["value"] == pytest.approx(100.0)
+
+
+def test_benchmark_metrics_correlated_positive_beta():
+    """基准与策略同向波动 → beta > 0，且含信息比率字段。"""
+    eq_dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    equity = pd.Series([100, 102, 101, 105, 104, 108], index=eq_dates, dtype=float)
+    bench_dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="Asia/Shanghai")
+    benchmark = pd.Series([3000, 3060, 3030, 3150, 3120, 3240], index=bench_dates, dtype=float)
+
+    b = _benchmark_metrics(equity, benchmark, init_capital=100.0)
+    assert b["beta"] > 0
+    assert "information_ratio" in b
+
+
+def test_metrics_with_benchmark_merges_fields():
+    """_metrics 传 benchmark_close：结果合并基准字段。"""
+    eq_dates = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 101.0, 102.0, 103.0], index=eq_dates)
+    bench_dates = pd.date_range("2025-01-01", periods=4, freq="D", tz="Asia/Shanghai")
+    benchmark = pd.Series([3000.0, 3010.0, 3005.0, 3020.0], index=bench_dates)
+
+    m = _metrics(equity, trades=[], init_capital=100.0, benchmark_close=benchmark)
+    assert "benchmark" in m and "alpha" in m and "beta" in m
+    assert "benchmark_curve" in m and len(m["benchmark_curve"]) == 4
+
+
 # ── run() 端到端（S3：跨 session 访问 detached 对象回归）──────────────────
 
 
-def test_run_end_to_end_persists_done(sync_db, sample_bars_arctic):
+def test_run_end_to_end_persists_done(sync_db, sample_bars_arctic, monkeypatch):
     """整条 run() 跑通并落库 done。
 
     回归：修复前 run() 在第一个 session commit 后（job 已 detach）继续访问
@@ -162,6 +221,12 @@ def test_run_end_to_end_persists_done(sync_db, sample_bars_arctic):
 
     from app.core.backtest_engine import run
     from app.db.models.backtest import BacktestJob
+
+    # 基准下载在测试环境不联网：stub 成空 Series（基准跳过，不影响主回测落库）
+    monkeypatch.setattr(
+        "app.core.backtest_engine._load_index_close",
+        lambda *a, **k: pd.Series(dtype=float),
+    )
 
     symbol = sample_bars_arctic  # "sh600000"
     with sync_db() as db:

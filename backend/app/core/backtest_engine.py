@@ -154,6 +154,50 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
     return bars
 
 
+# ── 基准指数（回测对比） ──────────────────────────────────────────────
+
+_DEFAULT_BENCHMARK = "000300"   # 沪深300
+_BENCHMARK_NAME = "沪深300"
+
+
+def _load_index_close(index_code: str, start: str, end: str) -> pd.Series:
+    """加载基准指数收盘价序列（ArcticDB ``index_1d`` 缓存；缺失或未覆盖区间则 lazy 下载）。
+
+    基准是可选增强，任何失败都返回空 Series，绝不能拖垮主回测。
+    """
+    try:
+        from app.db.arctic import get_library
+
+        lib = get_library("index_1d")
+        df = None
+        need_download = index_code not in lib.list_symbols()
+        if not need_download:
+            df = lib.read(index_code).data
+            tz = df.index.tz
+            s_ts = pd.Timestamp(start, tz=tz) if tz is not None else pd.Timestamp(start)
+            e_ts = pd.Timestamp(end, tz=tz) if tz is not None else pd.Timestamp(end)
+            # 库内数据未完整覆盖请求区间 → 重新下载覆盖
+            if df.empty or df.index.min() > s_ts or df.index.max() < e_ts:
+                need_download = True
+        if need_download:
+            from app.data.provider import get_provider
+
+            df = get_provider().fetch_index_daily(index_code, start, end)
+            lib.write(index_code, df)
+            logger.info("benchmark index {} downloaded: {} rows", index_code, len(df))
+
+        tz = df.index.tz
+        s_ts = pd.Timestamp(start, tz=tz) if tz is not None else pd.Timestamp(start)
+        e_ts = pd.Timestamp(end, tz=tz) if tz is not None else pd.Timestamp(end)
+        df = df[(df.index >= s_ts) & (df.index <= e_ts)]
+        if "close" not in df.columns or df.empty:
+            return pd.Series(dtype=float)
+        return df["close"]
+    except Exception as exc:
+        logger.warning("load benchmark index {} failed (skip benchmark): {}", index_code, exc)
+        return pd.Series(dtype=float)
+
+
 # ── 撮合 ──────────────────────────────────────────────────────────────
 
 def _limit_pct(symbol: str) -> float:
@@ -276,7 +320,12 @@ def _settle(trades: list[Trade], bars: list, init_capital: float) -> pd.Series:
     return pd.Series(equity_values, index=pd.DatetimeIndex(equity_dates))
 
 
-def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dict:
+def _metrics(
+    equity: pd.Series,
+    trades: list[Trade],
+    init_capital: float,
+    benchmark_close: pd.Series | None = None,
+) -> dict:
     rets = equity.pct_change().dropna()
     total_return = float(equity.iloc[-1] / init_capital - 1)
     days = (equity.index[-1] - equity.index[0]).days
@@ -305,7 +354,7 @@ def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dic
         for dt, v in zip(equity.index, equity.values, strict=False)
     ]
 
-    return {
+    out = {
         "total_return": round(total_return, 4),
         "annual_return": round(annual_return, 4),
         "sharpe": round(sharpe, 4),
@@ -317,6 +366,66 @@ def _metrics(equity: pd.Series, trades: list[Trade], init_capital: float) -> dic
         "init_capital": init_capital,
         "final_equity": round(float(equity.iloc[-1]), 2),
         "equity_curve": equity_curve,
+    }
+    if benchmark_close is not None and not benchmark_close.empty:
+        out.update(_benchmark_metrics(equity, benchmark_close, init_capital))
+    return out
+
+
+def _benchmark_metrics(equity: pd.Series, benchmark_close: pd.Series, init_capital: float) -> dict:
+    """对齐基准到策略交易日，算 Alpha / Beta / 超额收益 / 信息比率 + 归一化基准曲线。
+
+    两边时区语义不同（equity 的 index 被标成 UTC、基准是 Asia/Shanghai），
+    统一抹掉 tz 并按自然日对齐，避免错位；基准缺口前向填充（指数极少停牌）。
+    """
+    if benchmark_close is None or benchmark_close.empty or len(equity) < 2:
+        return {}
+
+    eq = equity.copy()
+    eq.index = pd.DatetimeIndex(eq.index).tz_localize(None).normalize()
+    eq = eq[~eq.index.duplicated(keep="last")]
+
+    bench = benchmark_close.copy()
+    bench.index = pd.DatetimeIndex(bench.index).tz_localize(None).normalize()
+    bench = bench[~bench.index.duplicated(keep="last")]
+    bench = bench.reindex(eq.index).ffill().bfill()
+    if bench.isna().any() or len(bench) < 2 or float(bench.iloc[0]) == 0:
+        return {}
+
+    init = float(eq.iloc[0]) or init_capital
+    bench_norm = bench / float(bench.iloc[0]) * init
+
+    total_return = float(eq.iloc[-1] / init - 1)
+    bench_return = float(bench.iloc[-1] / bench.iloc[0] - 1)
+
+    sr = eq.pct_change().dropna()
+    br = bench.pct_change().dropna()
+    common = sr.index.intersection(br.index)
+    sr = sr.reindex(common)
+    br = br.reindex(common)
+
+    var_b = float(br.var())
+    beta = float(np.cov(sr, br)[0, 1] / var_b) if var_b > 0 and len(common) > 1 else 0.0
+    alpha = float((sr.mean() - beta * br.mean()) * 252)
+
+    active = sr - br
+    tracking_error = float(active.std() * np.sqrt(252))
+    information_ratio = (
+        float(active.mean() * 252 / tracking_error) if tracking_error > 0 else 0.0
+    )
+
+    bench_curve = [
+        {"dt": str(d.date()), "value": round(float(v), 2)}
+        for d, v in zip(bench_norm.index, bench_norm.values, strict=False)
+    ]
+    return {
+        "benchmark": _BENCHMARK_NAME,
+        "benchmark_return": round(bench_return, 4),
+        "excess_return": round(total_return - bench_return, 4),
+        "alpha": round(alpha, 4),
+        "beta": round(beta, 4),
+        "information_ratio": round(information_ratio, 4),
+        "benchmark_curve": bench_curve,
     }
 
 
@@ -330,6 +439,7 @@ def _simulate(
     init_capital: float,
     commission_rate: float,
     slippage: float,
+    benchmark_close: pd.Series | None = None,
 ) -> tuple[dict, list[Trade]]:
     """纯回测：实例化策略 → 逐 bar 撮合（next bar 开盘价）→ 算指标。
 
@@ -367,7 +477,7 @@ def _simulate(
         all_trades.extend(new_trades)
 
     equity = _settle(all_trades, bars, init_capital)
-    result = _metrics(equity, all_trades, init_capital)
+    result = _metrics(equity, all_trades, init_capital, benchmark_close)
     return result, all_trades
 
 
@@ -459,10 +569,14 @@ def run(job_id: int) -> dict:
 
         logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
 
+        # 基准（沪深300）：lazy 加载并缓存到 ArcticDB，失败返回空 Series 不影响主回测
+        benchmark_close = _load_index_close(_DEFAULT_BENCHMARK, start_date, end_date)
+
         # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
         result, all_trades = _simulate(
             bars, symbol, class_name, params,
             init_capital, commission_rate, slippage,
+            benchmark_close=benchmark_close,
         )
 
         # 5. 落库

@@ -112,6 +112,14 @@ export interface BacktestResult {
   init_capital: number;
   final_equity: number;
   equity_curve: EquityPoint[];
+  // 基准对比（沪深300）：无基准数据时整组字段缺省
+  benchmark?: string;
+  benchmark_return?: number;
+  excess_return?: number;
+  alpha?: number;
+  beta?: number;
+  information_ratio?: number;
+  benchmark_curve?: EquityPoint[];
 }
 
 export interface BacktestStatus {

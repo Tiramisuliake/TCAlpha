@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added — 回测基准对比（Alpha / Beta vs 沪深300）
+- `data/provider.py`：新增 `fetch_index_daily()`（AKShare `index_zh_a_hist`）拉指数日 K，写进 `DataProvider` 契约
+- `core/backtest_engine.py`：回测自动对比**沪深300**基准 —— 新增 **Alpha / Beta / 超额收益 / 信息比率 / 基准收益** 指标（`_benchmark_metrics`）；基准指数日 K 经 `_load_index_close` lazy 下载并缓存到 ArcticDB `index_1d` 库；按自然日跨时区对齐，任何失败都跳过基准、绝不拖垮主回测
+- 前端回测页：资金曲线叠加基准线（灰色虚线），指标区在有基准时追加 超额收益 / Alpha / Beta 三张卡片
+- 测试：基准指标计算单测（跨时区对齐 / 平基准 beta=0 / 正相关 beta>0 / 向后兼容无基准字段）
+
 ## [0.8.0] — 2026-06-08
 
 > 量化能力大扩充：策略库扩到 5 类，回测引擎进化（网格扫参 + 多策略对比 + A 股撮合约束 + AI 归因），新增**选股器**与**盯盘驾驶舱**两大业务模块，统一数据获取层 **DataProvider**，并补齐 GitHub Actions CI。

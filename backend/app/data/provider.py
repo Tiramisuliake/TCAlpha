@@ -72,6 +72,7 @@ class DataProvider(Protocol):
     def fetch_market_spot(self) -> pd.DataFrame: ...
     def fetch_symbol_list(self) -> list[dict]: ...
     def fetch_daily(self, symbol: str, start: str, end: str) -> pd.DataFrame: ...
+    def fetch_index_daily(self, index_code: str, start: str, end: str) -> pd.DataFrame: ...
     def fetch_minute_kline(
         self, symbol: str, period: int, start: str | None = None, end: str | None = None
     ) -> pd.DataFrame: ...
@@ -154,6 +155,42 @@ class AkshareProvider:
             raise ValueError(f"NaN in close price for {symbol}")
         if not df.index.is_monotonic_increasing:
             raise ValueError(f"index not monotonic for {symbol}")
+        return df
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    def fetch_index_daily(self, index_code: str, start: str, end: str) -> pd.DataFrame:
+        """指数日 K，DatetimeIndex(Asia/Shanghai)。index_code 如 '000300'（沪深300）。
+
+        指数无复权概念，取原始 OHLCV；列对齐个股 _DAILY_COLS 便于回测基准复用。
+        """
+        import akshare as ak
+
+        wait_for_akshare()
+        df = ak.index_zh_a_hist(
+            symbol=index_code,
+            period="daily",
+            start_date=start.replace("-", ""),
+            end_date=end.replace("-", ""),
+        )
+        if df is None or df.empty:
+            raise ValueError(f"empty index data for {index_code} [{start}~{end}]")
+
+        df.columns = [c.strip() for c in df.columns]
+        df = df.rename(columns={
+            "日期": "dt", "开盘": "open", "收盘": "close",
+            "最高": "high", "最低": "low", "成交量": "volume", "成交额": "amount",
+        })
+        df["dt"] = pd.to_datetime(df["dt"]).dt.tz_localize("Asia/Shanghai")
+        df = df.set_index("dt").sort_index()
+        for col in _DAILY_COLS:
+            if col not in df.columns:
+                df[col] = 0.0
+        df = df[_DAILY_COLS].astype(float)
+
+        if df["close"].isna().any():
+            raise ValueError(f"NaN in close price for index {index_code}")
+        if not df.index.is_monotonic_increasing:
+            raise ValueError(f"index not monotonic for index {index_code}")
         return df
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))

@@ -44,6 +44,9 @@ def _load_strategy_classes() -> None:
     if STRATEGY_CLASSES:
         return
     from app.strategies.examples.boll import BollStrategy
+    from app.strategies.examples.dmi import DmiStrategy
+    from app.strategies.examples.grid import GridStrategy
+    from app.strategies.examples.kdj import KdjStrategy
     from app.strategies.examples.ma_cross import MaCrossStrategy
     from app.strategies.examples.macd import MacdStrategy
     from app.strategies.examples.rsi import RsiStrategy
@@ -53,6 +56,9 @@ def _load_strategy_classes() -> None:
     STRATEGY_CLASSES["RsiStrategy"] = RsiStrategy
     STRATEGY_CLASSES["BollStrategy"] = BollStrategy
     STRATEGY_CLASSES["TurtleStrategy"] = TurtleStrategy
+    STRATEGY_CLASSES["KdjStrategy"] = KdjStrategy
+    STRATEGY_CLASSES["GridStrategy"] = GridStrategy
+    STRATEGY_CLASSES["DmiStrategy"] = DmiStrategy
 
 
 def get_strategy_class(class_name: str) -> type:

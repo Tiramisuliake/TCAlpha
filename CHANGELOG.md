@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.4] — 2026-06-10
+
+> 策略库扩充：5 → 8 类，新增 KDJ（超买超卖）、网格交易（震荡市）、DMI/ADX（趋势强度过滤），补齐震荡 / 网格两个空白类型。前端零改动（参数表单按 params_schema 动态渲染）。
+
+### Added — 策略库扩充（KDJ / 网格 / DMI）
+- `strategies/examples/kdj.py`：**KDJ 随机指标**（只做多）—— A 股口径手工递推（RSV + 1/3 平滑，talib STOCH 口径不同故自算），K/D 存 State 持久化重启续算不漂移；低位金叉开多、高位死叉平多
+- `strategies/examples/grid.py`：**网格交易**（震荡市）—— 首根 bar 锚定基准价，每跌 grid_pct 一格买 100 股、涨回一格卖 100 股，max_grids 限仓；当前格数由 `pos // 100` 推导，涨跌停 / 停牌未成交时不与真实仓位漂移
+- `strategies/examples/dmi.py`：**DMI/ADX 趋势过滤**（只做多）—— +DI > -DI 且 ADX ≥ 阈值开多、-DI 反超平多；条件取「状态」而非「交叉沿」（交叉瞬间 ADX 往往尚未达标），ADX 闸门过滤震荡市假信号
+- `core/backtest_engine.py`：3 类注册进 `STRATEGY_CLASSES`，回测 / 扫参 / 对比 / 策略管理全链路即刻可用
+- 测试：注册检查扩到 8 类 + KDJ 金叉死叉触发 / K-D 值域 + 网格确定性买卖路径 / max_grids 限仓 + DMI 趋势开平（+11 用例，共 112 passed）
+
 ## [0.8.3] — 2026-06-10
 
 > 交易明细深化：成交配对为「回合」（进场→出场），给出持仓周期 / 单笔收益率 / MAE/MFE / 单笔期望，前端新增盈亏分布直方图 + 持仓周期×收益散点。延续零迁移（结果存 JSON 列）。

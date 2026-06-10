@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.2] — 2026-06-10
+
+> 回测绩效深化：风险标量（Calmar / 年化波动率 / 最大回撤区间 / 连胜连亏）+ 月度收益热力图 + 滚动夏普/Beta + 相对强弱曲线。延续基准对比，零迁移（结果存 JSON 列）。
+
+### Added — 回测绩效与基准分析深化
+- `core/backtest_engine.py`：新增 `_drawdown_interval`（峰/谷/修复/持续天数）、`_streaks`（最长连胜/连亏）、`_monthly_returns`、`_rolling_sharpe`；`_metrics` 追加 Calmar / 年化波动率 / 平均盈亏 / 月度收益 / 滚动夏普
+- `_benchmark_metrics`：追加滚动 Beta（60 日窗口）+ 相对强弱（策略归一 / 基准归一比值）
+- 前端 `components/BacktestAnalysis.tsx`：风险指标卡 + 月度收益热力图（年×月，红涨绿跌）+ 滚动夏普/Beta 双轴 + 相对强弱曲线；接入回测结果面板
+- `types`：`BacktestResult` 追加绩效深化可选字段（向后兼容）
+- 测试：回撤区间 / 连胜连亏 / 月度 / 滚动夏普 / Calmar / 滚动 Beta / 相对强弱（+10 用例，共 29 passed）
+
 ## [0.8.1] — 2026-06-10
 
 > 回测基准对比：策略收益自动 vs 指数基准，给出 Alpha / Beta / 超额收益 / 信息比率；基准可配置（沪深300 / 中证500 / 创业板指 / 上证50）。

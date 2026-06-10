@@ -21,6 +21,7 @@ def _trend_bars(make_bar, n: int = 160, amp: float = 5.0) -> list:
     [
         "MaCrossStrategy", "MacdStrategy", "RsiStrategy", "BollStrategy",
         "TurtleStrategy", "KdjStrategy", "GridStrategy", "DmiStrategy",
+        "AtrStopStrategy", "MaVolStrategy",
     ],
 )
 def test_strategy_registered(cls_name):
@@ -49,6 +50,8 @@ def test_list_strategy_classes_exposes_minmax():
         ("KdjStrategy", {"period": 9, "buy_below": 30.0, "sell_above": 70.0}),
         ("DmiStrategy", {"period": 14, "adx_threshold": 25.0}),
         ("GridStrategy", {"grid_pct": 0.05, "max_grids": 5}),
+        ("AtrStopStrategy", {"entry_window": 20, "atr_period": 14, "atr_mult": 3.0}),
+        ("MaVolStrategy", {"fast": 5, "slow": 20, "vol_window": 20, "vol_ratio": 1.5}),
     ],
 )
 def test_strategy_on_bar_runs(make_bar, cls_name, params):
@@ -189,6 +192,101 @@ def test_dmi_opens_in_trend_and_closes_on_reversal(make_bar):
                 s.state.pos -= sig[2]
     assert opens > 0
     assert closes > 0
+
+
+def test_atr_stop_opens_on_breakout_closes_on_stop(make_bar):
+    """ATR 吊灯：平缓 → 强上涨突破开多 → 急跌触发跟踪止损平多。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("AtrStopStrategy")(
+        "sh600519", {"entry_window": 20, "atr_period": 14, "atr_mult": 3.0}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    opens = closes = 0
+    for i in range(105):
+        if i < 55:
+            c = 100 + math.sin(i * 0.3)        # 平缓震荡
+        elif i < 86:
+            c = 100 + (i - 55) * 1.5           # 强上涨（突破入场，止损线随高点上移）
+        else:
+            c = 146.5 - (i - 86) * 3.0         # 急跌（跌破吊灯止损）
+        s.on_bar(make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c))
+        sig = s._pending_signal
+        if sig:
+            if sig[1] == "open":
+                opens += 1
+                s.state.pos += sig[2]
+            else:
+                closes += 1
+                s.state.pos -= sig[2]
+    assert opens > 0   # 突破开多
+    assert closes > 0  # 止损平多
+
+
+def test_atr_stop_line_monotonic_while_holding(make_bar):
+    """持仓期间吊灯止损线只升不降（锁浮盈）。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("AtrStopStrategy")(
+        "sh600519", {"entry_window": 20, "atr_period": 14, "atr_mult": 3.0}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    stops: list[float] = []
+    for i in range(90):
+        c = 100 + math.sin(i * 0.3) if i < 55 else 100 + (i - 55) * 1.5
+        s.on_bar(make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c))
+        sig = s._pending_signal
+        if sig and sig[1] == "open":
+            s.state.pos += sig[2]
+        if s.state.pos > 0:
+            stops.append(s.state.stop_line)
+    assert len(stops) > 5
+    assert all(b >= a for a, b in zip(stops, stops[1:], strict=False))
+
+
+def _ma_vol_prices() -> list[tuple[float, float]]:
+    """(close, volume) 序列：缓跌(量平) → 放量上涨(金叉) → 缩量下跌(死叉)。"""
+    path: list[tuple[float, float]] = []
+    for i in range(55):
+        path.append((100 - i * 0.1, 1_000_000))       # 缓跌，fast < slow
+    for i in range(16):
+        path.append((94.5 + (i + 1) * 1.0, 3_000_000))  # 放量上涨 → 放量金叉
+    for i in range(20):
+        path.append((110.5 - (i + 1) * 1.0, 1_000_000))  # 缩量回落 → 死叉
+    return path
+
+
+def test_ma_vol_opens_on_volume_confirmed_cross(make_bar):
+    """放量金叉 → 开多；随后死叉 → 平多。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("MaVolStrategy")(
+        "sh600000", {"fast": 5, "slow": 20, "vol_window": 20, "vol_ratio": 1.5}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = [
+        make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c, volume=v)
+        for i, (c, v) in enumerate(_ma_vol_prices())
+    ]
+    opens, closes = _drive(s, bars)
+    assert opens > 0
+    assert closes > 0
+
+
+def test_ma_vol_skips_cross_without_volume(make_bar):
+    """同样的价格路径但量能全程走平：金叉不放量 → 全程不开仓。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("MaVolStrategy")(
+        "sh600000", {"fast": 5, "slow": 20, "vol_window": 20, "vol_ratio": 1.5}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = [
+        make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c, volume=1_000_000)
+        for i, (c, _) in enumerate(_ma_vol_prices())
+    ]
+    opens, _ = _drive(s, bars)
+    assert opens == 0
 
 
 def test_turtle_breakout_open_and_close(make_bar):

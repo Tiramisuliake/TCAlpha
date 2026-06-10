@@ -2,14 +2,16 @@
 
 ## [0.8.4] — 2026-06-10
 
-> 策略库扩充：5 → 8 类，新增 KDJ（超买超卖）、网格交易（震荡市）、DMI/ADX（趋势强度过滤），补齐震荡 / 网格两个空白类型。前端零改动（参数表单按 params_schema 动态渲染）。
+> 策略库扩充：5 → 10 类，新增 KDJ（超买超卖）、网格交易（震荡市）、DMI/ADX（趋势强度过滤）、ATR 吊灯止损（跟踪止损范式）、双均线+量能过滤（放量确认），补齐震荡 / 网格 / 止损三个空白范式。前端零改动（参数表单按 params_schema 动态渲染）。
 
-### Added — 策略库扩充（KDJ / 网格 / DMI）
+### Added — 策略库扩充（KDJ / 网格 / DMI / ATR 止损 / 量能均线）
 - `strategies/examples/kdj.py`：**KDJ 随机指标**（只做多）—— A 股口径手工递推（RSV + 1/3 平滑，talib STOCH 口径不同故自算），K/D 存 State 持久化重启续算不漂移；低位金叉开多、高位死叉平多
 - `strategies/examples/grid.py`：**网格交易**（震荡市）—— 首根 bar 锚定基准价，每跌 grid_pct 一格买 100 股、涨回一格卖 100 股，max_grids 限仓；当前格数由 `pos // 100` 推导，涨跌停 / 停牌未成交时不与真实仓位漂移
 - `strategies/examples/dmi.py`：**DMI/ADX 趋势过滤**（只做多）—— +DI > -DI 且 ADX ≥ 阈值开多、-DI 反超平多；条件取「状态」而非「交叉沿」（交叉瞬间 ADX 往往尚未达标），ADX 闸门过滤震荡市假信号
-- `core/backtest_engine.py`：3 类注册进 `STRATEGY_CLASSES`，回测 / 扫参 / 对比 / 策略管理全链路即刻可用
-- 测试：注册检查扩到 8 类 + KDJ 金叉死叉触发 / K-D 值域 + 网格确定性买卖路径 / max_grids 限仓 + DMI 趋势开平（+11 用例，共 112 passed）
+- `strategies/examples/atr_stop.py`：**ATR 吊灯止损**（只做多）—— 突破前 N 日高入场；持仓期止损线 = 持仓最高价 - atr_mult×ATR **单调上移**锁浮盈，收盘跌破即离场；引入「跟踪止损」出场范式（现有策略均为信号出场）
+- `strategies/examples/ma_vol.py`：**双均线 + 量能过滤**（只做多）—— 金叉且当根量 ≥ vol_ratio×前 N 日均量（均量不含当根，放量不抬自家基准）才开多，无量金叉提示"疑似假突破"观望；死叉平多不设量能门槛
+- `core/backtest_engine.py`：5 类注册进 `STRATEGY_CLASSES`，回测 / 扫参 / 对比 / 策略管理全链路即刻可用
+- 测试：注册检查扩到 10 类 + KDJ 金叉死叉触发 / K-D 值域 + 网格确定性买卖路径 / max_grids 限仓 + DMI 趋势开平 + ATR 止损触发 / 止损线单调性 + 量能过滤正反用例（+19 用例，共 120 passed）
 
 ## [0.8.3] — 2026-06-10
 

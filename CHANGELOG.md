@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.1] — 2026-06-10
+
+> 回测基准对比：策略收益自动 vs 指数基准，给出 Alpha / Beta / 超额收益 / 信息比率；基准可配置（沪深300 / 中证500 / 创业板指 / 上证50）。
 
 ### Added — 回测基准对比（Alpha / Beta / 超额收益 vs 指数基准）
 - `data/provider.py`：新增 `fetch_index_daily()`（AKShare `index_zh_a_hist`）拉指数日 K，写进 `DataProvider` 契约

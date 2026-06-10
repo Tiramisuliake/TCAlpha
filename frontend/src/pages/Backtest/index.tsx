@@ -31,6 +31,7 @@ import { PermButton } from "@/components/PermButton";
 import { BacktestCompare } from "@/components/BacktestCompare";
 import { ParamSweep } from "@/components/ParamSweep";
 import { BacktestAnalysis } from "@/components/BacktestAnalysis";
+import { TradeAnalysis } from "@/components/TradeAnalysis";
 import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -585,6 +586,8 @@ export default function Backtest() {
               </Card>
 
               <BacktestAnalysis result={result} />
+
+              <TradeAnalysis result={result} />
 
               <Card title="成交明细" size="small">
                 <Table<BacktestTrade>

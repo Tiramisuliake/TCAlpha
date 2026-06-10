@@ -408,12 +408,69 @@ def _rolling_sharpe(rets: pd.Series, window: int = 60) -> list[dict]:
     ]
 
 
+def _round_trips(trades: list[Trade], bars: list | None = None) -> list[dict]:
+    """把时序 open/close 成交配对为「回合」：进场 → 出场（分批平仓拆成多个回合）。
+
+    持仓均价跟踪逻辑与 _settle 一致（加权摊薄，清仓归零），pnl 直接复用
+    _settle 已填好的 Trade.pnl。MAE/MFE 为持仓期间相对持仓均价的最大不利 /
+    有利偏移（需要 bars 提供期间高低价；缺 bars 或日期对不上时为 None）。
+    """
+    idx_of: dict[datetime, int] = (
+        {b.datetime: i for i, b in enumerate(bars)} if bars else {}
+    )
+
+    rts: list[dict] = []
+    pos = 0
+    avg_price = 0.0
+    entry_dt: datetime | None = None
+
+    for t in trades:
+        if t.offset == "open":
+            if pos == 0:
+                entry_dt = t.dt
+            total_cost = avg_price * pos + t.price * t.volume
+            pos += t.volume
+            avg_price = total_cost / pos if pos > 0 else 0.0
+            continue
+
+        # close：配一个回合
+        if pos <= 0 or entry_dt is None:
+            continue
+        cost = avg_price * t.volume
+        ret = float(t.pnl) / cost if t.pnl is not None and cost > 0 else None
+
+        mae = mfe = None
+        if bars and avg_price > 0 and entry_dt in idx_of and t.dt in idx_of:
+            window = bars[idx_of[entry_dt]: idx_of[t.dt] + 1]
+            mae = round(min(b.low_price for b in window) / avg_price - 1, 4)
+            mfe = round(max(b.high_price for b in window) / avg_price - 1, 4)
+
+        rts.append({
+            "entry_dt": str(entry_dt.date()),
+            "exit_dt": str(t.dt.date()),
+            "holding_days": (t.dt - entry_dt).days,
+            "entry_price": round(avg_price, 4),
+            "exit_price": round(t.price, 4),
+            "volume": t.volume,
+            "pnl": round(float(t.pnl), 2) if t.pnl is not None else None,
+            "return_pct": round(ret, 4) if ret is not None else None,
+            "mae": mae,
+            "mfe": mfe,
+        })
+        pos -= t.volume
+        if pos == 0:
+            avg_price = 0.0
+            entry_dt = None
+    return rts
+
+
 def _metrics(
     equity: pd.Series,
     trades: list[Trade],
     init_capital: float,
     benchmark_close: pd.Series | None = None,
     benchmark_name: str = "基准",
+    bars: list | None = None,
 ) -> dict:
     rets = equity.pct_change().dropna()
     total_return = float(equity.iloc[-1] / init_capital - 1)
@@ -445,6 +502,16 @@ def _metrics(
     volatility = float(rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
     calmar = float(annual_return / abs(max_dd)) if max_dd < 0 else 0.0
 
+    # 交易级分析：回合配对 + 持仓周期 + MAE/MFE + 单笔期望
+    round_trips = _round_trips(trades, bars)
+    holding = [r["holding_days"] for r in round_trips]
+    win_holding = [r["holding_days"] for r in round_trips if (r["pnl"] or 0) > 0]
+    lose_holding = [r["holding_days"] for r in round_trips if (r["pnl"] or 0) < 0]
+    maes = [r["mae"] for r in round_trips if r["mae"] is not None]
+    mfes = [r["mfe"] for r in round_trips if r["mfe"] is not None]
+    # 单笔期望盈亏（元）：胜率×平均盈利 + 败率×平均亏损（avg_loss 为负）
+    expectancy = win_rate * avg_win + (1 - win_rate) * avg_loss
+
     # 资金曲线（按日期 → ISO 字符串，前端用）
     equity_curve = [
         {"dt": str(dt.date() if hasattr(dt, "date") else dt), "value": float(v)}
@@ -473,6 +540,14 @@ def _metrics(
         **_drawdown_interval(equity),
         "monthly_returns": _monthly_returns(equity, init_capital),
         "rolling_sharpe": _rolling_sharpe(rets),
+        # ── 交易明细深化（v0.8.3）：回合 + 持仓周期 + MAE/MFE + 期望 ──
+        "round_trips": round_trips,
+        "avg_holding_days": round(float(np.mean(holding)), 1) if holding else 0.0,
+        "win_holding_days": round(float(np.mean(win_holding)), 1) if win_holding else 0.0,
+        "lose_holding_days": round(float(np.mean(lose_holding)), 1) if lose_holding else 0.0,
+        "avg_mae": round(float(np.mean(maes)), 4) if maes else None,
+        "avg_mfe": round(float(np.mean(mfes)), 4) if mfes else None,
+        "expectancy": round(expectancy, 2),
     }
     if benchmark_close is not None and not benchmark_close.empty:
         out.update(_benchmark_metrics(equity, benchmark_close, init_capital, benchmark_name))
@@ -610,7 +685,7 @@ def _simulate(
         all_trades.extend(new_trades)
 
     equity = _settle(all_trades, bars, init_capital)
-    result = _metrics(equity, all_trades, init_capital, benchmark_close, benchmark_name)
+    result = _metrics(equity, all_trades, init_capital, benchmark_close, benchmark_name, bars=bars)
     return result, all_trades
 
 

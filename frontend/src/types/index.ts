@@ -106,6 +106,20 @@ export interface MonthlyReturn {
   value: number;
 }
 
+/** 交易回合：一次进场 → 出场的完整周期（分批平仓拆成多个回合）。 */
+export interface RoundTrip {
+  entry_dt: string;
+  exit_dt: string;
+  holding_days: number;
+  entry_price: number;
+  exit_price: number;
+  volume: number;
+  pnl: number | null;
+  return_pct: number | null;
+  mae: number | null; // 持仓期间最大不利偏移（相对入场均价，负数）
+  mfe: number | null; // 持仓期间最大有利偏移
+}
+
 export interface BacktestResult {
   total_return: number;
   annual_return: number;
@@ -141,6 +155,14 @@ export interface BacktestResult {
   rolling_sharpe?: EquityPoint[];
   rolling_beta?: EquityPoint[];
   relative_strength?: EquityPoint[];
+  // 交易明细深化（v0.8.3）：回合 + 持仓周期 + MAE/MFE + 单笔期望
+  round_trips?: RoundTrip[];
+  avg_holding_days?: number;
+  win_holding_days?: number;
+  lose_holding_days?: number;
+  avg_mae?: number | null;
+  avg_mfe?: number | null;
+  expectancy?: number;
 }
 
 export interface BacktestStatus {

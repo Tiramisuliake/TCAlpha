@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.3] — 2026-06-10
+
+> 交易明细深化：成交配对为「回合」（进场→出场），给出持仓周期 / 单笔收益率 / MAE/MFE / 单笔期望，前端新增盈亏分布直方图 + 持仓周期×收益散点。延续零迁移（结果存 JSON 列）。
+
+### Added — 交易级分析（回合配对 + MAE/MFE + 期望）
+- `core/backtest_engine.py`：新增 `_round_trips(trades, bars)` 把时序 open/close 成交配对为回合（分批平仓拆多回合），均价跟踪与 `_settle` 一致；每回合含 entry/exit 日期、持仓天数、单笔收益率、**MAE/MFE**（持仓期间相对入场均价的最大不利/有利偏移，需 bars 高低价）
+- `_metrics` 加 `bars` 可选参数，追加 `round_trips` / `avg_holding_days` / `win_holding_days` / `lose_holding_days` / `avg_mae` / `avg_mfe` / `expectancy`（单笔期望 = 胜率×平均盈利 + 败率×平均亏损）；`_simulate` 透传 bars
+- 前端 `components/TradeAnalysis.tsx`：单笔期望 / 平均持仓（盈亏分拆）/ MAE / MFE 指标卡 + **单笔收益率分布直方图**（红盈绿亏）+ **持仓周期×收益散点**（盈亏双系列）；接入回测结果面板
+- `types`：新增 `RoundTrip` 接口，`BacktestResult` 追加交易级可选字段（向后兼容，旧回测不渲染）
+- 测试：单回合配对 / 分批平仓拆回合 / MAE-MFE 计算 / 孤儿平仓跳过 / expectancy 公式 / 无交易向后兼容（+6 用例，共 35 passed）
+
 ## [0.8.2] — 2026-06-10
 
 > 回测绩效深化：风险标量（Calmar / 年化波动率 / 最大回撤区间 / 连胜连亏）+ 月度收益热力图 + 滚动夏普/Beta + 相对强弱曲线。延续基准对比，零迁移（结果存 JSON 列）。

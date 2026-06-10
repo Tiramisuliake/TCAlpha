@@ -21,6 +21,7 @@ from app.core.backtest_engine import (
     _metrics,
     _monthly_returns,
     _rolling_sharpe,
+    _round_trips,
     _settle,
     _streaks,
     run_sweep,
@@ -466,6 +467,117 @@ def test_benchmark_relative_strength_outperform_flat():
     assert b["rolling_beta"] == []  # < 60 个交易日
     assert len(b["relative_strength"]) == 5
     assert b["relative_strength"][-1]["value"] > 1.0
+
+
+# ── 交易明细深化（v0.8.3）：回合配对 / MAE/MFE / 期望 ─────────────────────
+
+
+def _open_t(dt: datetime, price: float, vol: int) -> Trade:
+    return Trade(dt=dt, direction="long", offset="open", price=price, volume=vol, commission=0.0)
+
+
+def _close_t(dt: datetime, price: float, vol: int, pnl: float) -> Trade:
+    return Trade(dt=dt, direction="long", offset="close", price=price, volume=vol, commission=0.0, pnl=pnl)
+
+
+def test_round_trips_single_cycle():
+    """单回合：开多 @10 → 3 天后平 @12，entry/exit/天数/收益率全对。"""
+    d0 = datetime(2025, 1, 1, tzinfo=UTC)
+    d3 = datetime(2025, 1, 4, tzinfo=UTC)
+    trades = [_open_t(d0, 10.0, 100), _close_t(d3, 12.0, 100, pnl=200.0)]
+
+    rts = _round_trips(trades)
+
+    assert len(rts) == 1
+    rt = rts[0]
+    assert rt["entry_dt"] == "2025-01-01"
+    assert rt["exit_dt"] == "2025-01-04"
+    assert rt["holding_days"] == 3
+    assert rt["entry_price"] == pytest.approx(10.0)
+    assert rt["exit_price"] == pytest.approx(12.0)
+    assert rt["pnl"] == pytest.approx(200.0)
+    assert rt["return_pct"] == pytest.approx(200.0 / (10.0 * 100), abs=1e-4)
+    # 无 bars → MAE/MFE 缺省
+    assert rt["mae"] is None and rt["mfe"] is None
+
+
+def test_round_trips_partial_close_splits_two_trips():
+    """开 200 股、分两批平 → 拆成 2 个回合，共享同一进场日。"""
+    d0 = datetime(2025, 1, 1, tzinfo=UTC)
+    d2 = datetime(2025, 1, 3, tzinfo=UTC)
+    d4 = datetime(2025, 1, 5, tzinfo=UTC)
+    trades = [
+        _open_t(d0, 10.0, 200),
+        _close_t(d2, 12.0, 100, pnl=200.0),
+        _close_t(d4, 11.0, 100, pnl=100.0),
+    ]
+
+    rts = _round_trips(trades)
+
+    assert len(rts) == 2
+    assert rts[0]["entry_dt"] == rts[1]["entry_dt"] == "2025-01-01"
+    assert rts[0]["holding_days"] == 2
+    assert rts[1]["holding_days"] == 4
+    assert rts[0]["volume"] == rts[1]["volume"] == 100
+
+
+def test_round_trips_mae_mfe_from_bars(make_bar):
+    """带 bars：持仓期间最低 9 / 最高 12，入场均价 10 → MAE=-10%、MFE=+20%。"""
+    d = [datetime(2025, 1, 1 + i, tzinfo=UTC) for i in range(3)]
+    bars = [
+        make_bar(d[0], open_=10.0, high=10.5, low=9.8, close=10.2),
+        make_bar(d[1], open_=10.2, high=12.0, low=9.0, close=11.0),
+        make_bar(d[2], open_=11.0, high=11.5, low=10.8, close=11.2),
+    ]
+    trades = [_open_t(d[0], 10.0, 100), _close_t(d[2], 11.0, 100, pnl=100.0)]
+
+    rts = _round_trips(trades, bars)
+
+    assert len(rts) == 1
+    assert rts[0]["mae"] == pytest.approx(9.0 / 10.0 - 1, abs=1e-4)   # -0.10
+    assert rts[0]["mfe"] == pytest.approx(12.0 / 10.0 - 1, abs=1e-4)  # +0.20
+
+
+def test_round_trips_orphan_close_skipped():
+    """无持仓时出现 close（异常数据）→ 跳过不配对。"""
+    d0 = datetime(2025, 1, 1, tzinfo=UTC)
+    rts = _round_trips([_close_t(d0, 10.0, 100, pnl=0.0)])
+    assert rts == []
+
+
+def test_metrics_includes_trade_analysis_fields():
+    """_metrics 追加交易级字段：round_trips / 持仓天数 / MAE/MFE / expectancy。"""
+    dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 102.0, 105.0, 103.0, 108.0, 110.0], index=dates)
+    trades = [
+        _open_t(dates[0].to_pydatetime(), 10.0, 100),
+        _close_t(dates[2].to_pydatetime(), 11.0, 100, pnl=100.0),
+        _open_t(dates[3].to_pydatetime(), 11.0, 100),
+        _close_t(dates[5].to_pydatetime(), 10.5, 100, pnl=-50.0),
+    ]
+
+    m = _metrics(equity, trades, init_capital=100.0)
+
+    assert len(m["round_trips"]) == 2
+    # 两回合各持仓 2 天
+    assert m["avg_holding_days"] == pytest.approx(2.0)
+    assert m["win_holding_days"] == pytest.approx(2.0)
+    assert m["lose_holding_days"] == pytest.approx(2.0)
+    # 期望 = 0.5×100 + 0.5×(-50) = 25
+    assert m["expectancy"] == pytest.approx(25.0)
+    # 未传 bars → MAE/MFE 退化为 None
+    assert m["avg_mae"] is None and m["avg_mfe"] is None
+
+
+def test_metrics_trade_analysis_backward_compat_no_trades():
+    """无平仓交易：round_trips 空、持仓天数 0、expectancy 0，字段仍存在。"""
+    dates = pd.date_range("2025-01-01", periods=3, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 101.0, 102.0], index=dates)
+    m = _metrics(equity, trades=[], init_capital=100.0)
+    assert m["round_trips"] == []
+    assert m["avg_holding_days"] == 0.0
+    assert m["expectancy"] == 0.0
+    assert m["avg_mae"] is None
 
 
 def test_benchmark_rolling_beta_non_empty_long_series():

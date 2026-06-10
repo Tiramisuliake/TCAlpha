@@ -30,6 +30,7 @@ import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import { BacktestCompare } from "@/components/BacktestCompare";
 import { ParamSweep } from "@/components/ParamSweep";
+import { BacktestAnalysis } from "@/components/BacktestAnalysis";
 import type { BacktestResult, BacktestStatus, BacktestTrade, EquityPoint } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -582,6 +583,8 @@ export default function Backtest() {
               >
                 <EquityChart result={result} trades={trades} />
               </Card>
+
+              <BacktestAnalysis result={result} />
 
               <Card title="成交明细" size="small">
                 <Table<BacktestTrade>

@@ -329,6 +329,85 @@ def _settle(trades: list[Trade], bars: list, init_capital: float) -> pd.Series:
     return pd.Series(equity_values, index=pd.DatetimeIndex(equity_dates))
 
 
+def _drawdown_interval(equity: pd.Series) -> dict:
+    """最大回撤区间：峰值日 → 谷底日 → 修复日（首次回到峰值）+ 峰→谷持续天数。
+
+    无回撤（资金单调不降）时四项均退化为 None / 0。修复日为 None 表示截止回测
+    结束仍未回到前高（still underwater）。
+    """
+    empty = {"max_dd_start": None, "max_dd_end": None, "max_dd_recovery": None, "max_dd_days": 0}
+    if len(equity) < 2:
+        return empty
+    cum_max = equity.cummax()
+    drawdown = (equity - cum_max) / cum_max
+    trough_idx = drawdown.idxmin()
+    if float(drawdown.loc[trough_idx]) >= 0:
+        return empty
+
+    peak_value = float(cum_max.loc[trough_idx])
+    pre = equity.loc[:trough_idx]
+    peak_idx = pre[pre >= peak_value].index[0]
+    post = equity.loc[trough_idx:]
+    recovered = post[post >= peak_value]
+    recovery_idx = recovered.index[0] if len(recovered) else None
+
+    def _d(x: Any) -> str | None:
+        if x is None:
+            return None
+        return str(x.date()) if hasattr(x, "date") else str(x)
+
+    return {
+        "max_dd_start": _d(peak_idx),
+        "max_dd_end": _d(trough_idx),
+        "max_dd_recovery": _d(recovery_idx),
+        "max_dd_days": int((trough_idx - peak_idx).days),
+    }
+
+
+def _streaks(trades: list[Trade]) -> tuple[int, int]:
+    """最长连胜 / 连亏（按平仓盈亏的时间顺序，trades 已是时序追加）。"""
+    max_win = max_lose = cur_win = cur_lose = 0
+    for t in trades:
+        if t.pnl is None:
+            continue
+        if t.pnl > 0:
+            cur_win, cur_lose = cur_win + 1, 0
+            max_win = max(max_win, cur_win)
+        elif t.pnl < 0:
+            cur_lose, cur_win = cur_lose + 1, 0
+            max_lose = max(max_lose, cur_lose)
+    return max_win, max_lose
+
+
+def _monthly_returns(equity: pd.Series, init_capital: float) -> list[dict]:
+    """月度收益序列（按月末资金 pct_change；首月以 init_capital 为基）。"""
+    if len(equity) < 2:
+        return []
+    eq = equity.copy()
+    eq.index = pd.DatetimeIndex(eq.index).tz_localize(None)
+    m = eq.resample("ME").last()
+    if m.empty:
+        return []
+    prev = m.shift(1)
+    prev.iloc[0] = init_capital
+    mret = (m / prev - 1).replace([np.inf, -np.inf], np.nan).dropna()
+    return [{"month": d.strftime("%Y-%m"), "value": round(float(v), 4)} for d, v in mret.items()]
+
+
+def _rolling_sharpe(rets: pd.Series, window: int = 60) -> list[dict]:
+    """滚动年化夏普（默认 60 交易日窗口）。序列短于窗口则返回空。"""
+    if len(rets) < window:
+        return []
+    mean = rets.rolling(window).mean()
+    std = rets.rolling(window).std()
+    rs = (mean / std * np.sqrt(252)).replace([np.inf, -np.inf], np.nan).dropna()
+    idx = pd.DatetimeIndex(rs.index).tz_localize(None)
+    return [
+        {"dt": str(d.date()), "value": round(float(v), 4)}
+        for d, v in zip(idx, rs.values, strict=False)
+    ]
+
+
 def _metrics(
     equity: pd.Series,
     trades: list[Trade],
@@ -351,12 +430,20 @@ def _metrics(
 
     closed_pnls = [float(t.pnl) for t in trades if t.pnl is not None]
     wins = [pnl for pnl in closed_pnls if pnl > 0]
+    losses = [pnl for pnl in closed_pnls if pnl < 0]
     win_rate = len(wins) / len(closed_pnls) if closed_pnls else 0.0
-    losing_pnl = sum(pnl for pnl in closed_pnls if pnl < 0)
+    losing_pnl = sum(losses)
     profit_factor = (
         sum(wins) / abs(losing_pnl)
         if losing_pnl < 0 else float("inf")
     )
+    avg_win = float(np.mean(wins)) if wins else 0.0
+    avg_loss = float(np.mean(losses)) if losses else 0.0
+    max_win_streak, max_lose_streak = _streaks(trades)
+
+    # 风险：年化波动率 + Calmar（年化收益 / |最大回撤|）
+    volatility = float(rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
+    calmar = float(annual_return / abs(max_dd)) if max_dd < 0 else 0.0
 
     # 资金曲线（按日期 → ISO 字符串，前端用）
     equity_curve = [
@@ -376,6 +463,16 @@ def _metrics(
         "init_capital": init_capital,
         "final_equity": round(float(equity.iloc[-1]), 2),
         "equity_curve": equity_curve,
+        # ── 绩效深化（v0.8.x）：风险标量 + 收益分布 ──
+        "calmar": round(calmar, 4),
+        "volatility": round(volatility, 4),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "max_win_streak": max_win_streak,
+        "max_lose_streak": max_lose_streak,
+        **_drawdown_interval(equity),
+        "monthly_returns": _monthly_returns(equity, init_capital),
+        "rolling_sharpe": _rolling_sharpe(rets),
     }
     if benchmark_close is not None and not benchmark_close.empty:
         out.update(_benchmark_metrics(equity, benchmark_close, init_capital, benchmark_name))
@@ -426,6 +523,27 @@ def _benchmark_metrics(
         float(active.mean() * 252 / tracking_error) if tracking_error > 0 else 0.0
     )
 
+    # 滚动 Beta（60 交易日窗口）：cov(策略,基准)/var(基准)
+    window = 60
+    rolling_beta: list[dict] = []
+    if len(common) >= window:
+        cov = sr.rolling(window).cov(br)
+        var = br.rolling(window).var().replace(0, np.nan)
+        rb = (cov / var).replace([np.inf, -np.inf], np.nan).dropna()
+        rb_idx = pd.DatetimeIndex(rb.index).tz_localize(None)
+        rolling_beta = [
+            {"dt": str(d.date()), "value": round(float(v), 4)}
+            for d, v in zip(rb_idx, rb.values, strict=False)
+        ]
+
+    # 相对强弱：策略归一 / 基准归一（>1 跑赢基准，<1 跑输）
+    rel = (eq / float(eq.iloc[0])) / (bench / float(bench.iloc[0]))
+    rel = rel.replace([np.inf, -np.inf], np.nan).dropna()
+    relative_strength = [
+        {"dt": str(d.date()), "value": round(float(v), 4)}
+        for d, v in zip(rel.index, rel.values, strict=False)
+    ]
+
     bench_curve = [
         {"dt": str(d.date()), "value": round(float(v), 2)}
         for d, v in zip(bench_norm.index, bench_norm.values, strict=False)
@@ -438,6 +556,8 @@ def _benchmark_metrics(
         "beta": round(beta, 4),
         "information_ratio": round(information_ratio, 4),
         "benchmark_curve": bench_curve,
+        "rolling_beta": rolling_beta,
+        "relative_strength": relative_strength,
     }
 
 

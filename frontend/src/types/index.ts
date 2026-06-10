@@ -101,6 +101,11 @@ export interface EquityPoint {
   value: number;
 }
 
+export interface MonthlyReturn {
+  month: string; // YYYY-MM
+  value: number;
+}
+
 export interface BacktestResult {
   total_return: number;
   annual_return: number;
@@ -121,6 +126,21 @@ export interface BacktestResult {
   beta?: number;
   information_ratio?: number;
   benchmark_curve?: EquityPoint[];
+  // 绩效深化（v0.8.x）：风险标量 + 收益分布 + 滚动/相对强弱
+  calmar?: number;
+  volatility?: number;
+  avg_win?: number;
+  avg_loss?: number;
+  max_win_streak?: number;
+  max_lose_streak?: number;
+  max_dd_start?: string | null;
+  max_dd_end?: string | null;
+  max_dd_recovery?: string | null;
+  max_dd_days?: number;
+  monthly_returns?: MonthlyReturn[];
+  rolling_sharpe?: EquityPoint[];
+  rolling_beta?: EquityPoint[];
+  relative_strength?: EquityPoint[];
 }
 
 export interface BacktestStatus {

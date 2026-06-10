@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -14,12 +15,24 @@ from app.core.backtest_engine import (
     PendingOrder,
     Trade,
     _benchmark_metrics,
+    _drawdown_interval,
     _limit_pct,
     _match_orders,
     _metrics,
+    _monthly_returns,
+    _rolling_sharpe,
     _settle,
+    _streaks,
     run_sweep,
 )
+
+
+def _mk_trade(pnl: float) -> Trade:
+    """构造一个带盈亏的平仓 Trade（仅用于 streak 测试，其余字段占位）。"""
+    return Trade(
+        dt=datetime(2025, 1, 1, tzinfo=UTC), direction="long", offset="close",
+        price=10.0, volume=100, commission=0.0, pnl=pnl,
+    )
 
 # ── _match_orders ─────────────────────────────────────────────────────
 
@@ -349,3 +362,125 @@ def test_run_sweep_grid(fake_arctic, sample_bars_arctic):
     assert res["param_keys"] == ["fast", "slow"]
     assert res["best"] is not None
     assert "sharpe" in res["best"]["metrics"]
+
+
+# ── 绩效深化：风险标量 / 回撤区间 / 连胜连亏 / 月度 / 滚动 ────────────────
+
+
+def test_metrics_includes_deepened_fields():
+    """_metrics 输出含全部深化字段（向后兼容地追加）。"""
+    dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 102.0, 105.0, 103.0, 108.0, 110.0], index=dates)
+    m = _metrics(equity, trades=[], init_capital=100.0)
+    for k in (
+        "calmar", "volatility", "avg_win", "avg_loss",
+        "max_win_streak", "max_lose_streak",
+        "max_dd_start", "max_dd_end", "max_dd_recovery", "max_dd_days",
+        "monthly_returns", "rolling_sharpe",
+    ):
+        assert k in m, f"missing deepened field: {k}"
+
+
+def test_drawdown_interval_peak_trough_recovery():
+    """峰 100(d0) → 谷 90(d2) → 修复回 100(d4)：起止/修复/天数都对。"""
+    dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    equity = pd.Series([100, 95, 90, 95, 100, 101], index=dates, dtype=float)
+    d = _drawdown_interval(equity)
+    assert d["max_dd_start"] == "2025-01-01"
+    assert d["max_dd_end"] == "2025-01-03"
+    assert d["max_dd_recovery"] == "2025-01-05"
+    assert d["max_dd_days"] == 2
+
+
+def test_drawdown_interval_no_drawdown():
+    """单调上涨 → 无回撤，四项全退化。"""
+    dates = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    equity = pd.Series([100, 101, 102, 103], index=dates, dtype=float)
+    d = _drawdown_interval(equity)
+    assert d == {
+        "max_dd_start": None, "max_dd_end": None,
+        "max_dd_recovery": None, "max_dd_days": 0,
+    }
+
+
+def test_drawdown_interval_still_underwater():
+    """截止结束仍未回到前高 → recovery 为 None。"""
+    dates = pd.date_range("2025-01-01", periods=4, freq="D", tz="UTC")
+    equity = pd.Series([100, 90, 85, 88], index=dates, dtype=float)
+    d = _drawdown_interval(equity)
+    assert d["max_dd_start"] == "2025-01-01"
+    assert d["max_dd_end"] == "2025-01-03"
+    assert d["max_dd_recovery"] is None
+
+
+def test_streaks_win_and_lose():
+    """连胜 2、连亏 3。"""
+    trades = [_mk_trade(p) for p in (10, 5, -3, -2, -1, 4)]
+    max_win, max_lose = _streaks(trades)
+    assert max_win == 2
+    assert max_lose == 3
+
+
+def test_monthly_returns_spans_three_months():
+    """跨 1-3 月、资金递增 → 3 个月度收益且均为正，首月以 init 为基。"""
+    dates = pd.date_range("2025-01-01", "2025-03-31", freq="D", tz="UTC")
+    equity = pd.Series(np.arange(100, 100 + len(dates), dtype=float), index=dates)
+    mr = _monthly_returns(equity, init_capital=100.0)
+    assert len(mr) == 3
+    assert mr[0]["month"] == "2025-01"
+    assert all(p["value"] > 0 for p in mr)
+
+
+def test_rolling_sharpe_window():
+    """短于窗口 → 空；长于窗口 → 长度 = N - window + 1。"""
+    short = pd.Series([0.01, 0.02], index=pd.date_range("2025-01-01", periods=2, tz="UTC"))
+    assert _rolling_sharpe(short, window=60) == []
+
+    dates = pd.date_range("2025-01-01", periods=80, freq="D", tz="UTC")
+    rets = pd.Series(np.tile([0.01, -0.005], 40), index=dates)  # 交替→滚动 std 恒非零
+    rs = _rolling_sharpe(rets, window=60)
+    assert len(rs) == 80 - 60 + 1
+    assert all("dt" in p and "value" in p for p in rs)
+
+
+def test_calmar_positive_for_profitable_with_drawdown():
+    """有回撤的盈利曲线 → Calmar > 0。"""
+    dates = pd.date_range("2025-01-01", periods=6, freq="D", tz="UTC")
+    equity = pd.Series([100, 102, 105, 103, 108, 110], index=dates, dtype=float)
+    m = _metrics(equity, trades=[], init_capital=100.0)
+    assert m["max_drawdown"] < 0
+    assert m["calmar"] > 0
+
+
+# ── 基准深化：滚动 Beta + 相对强弱 ─────────────────────────────────────
+
+
+def test_benchmark_relative_strength_outperform_flat():
+    """基准走平、策略上涨 → 相对强弱末值 > 1；样本不足 60 → 滚动 Beta 为空。"""
+    eq_dates = pd.date_range("2025-01-01", periods=5, freq="D", tz="UTC")
+    equity = pd.Series([100.0, 102.0, 104.0, 103.0, 110.0], index=eq_dates)
+    bench_dates = pd.date_range("2025-01-01", periods=5, freq="D", tz="Asia/Shanghai")
+    benchmark = pd.Series([3000.0] * 5, index=bench_dates)
+
+    b = _benchmark_metrics(equity, benchmark, init_capital=100.0, benchmark_name="沪深300")
+    assert b["rolling_beta"] == []  # < 60 个交易日
+    assert len(b["relative_strength"]) == 5
+    assert b["relative_strength"][-1]["value"] > 1.0
+
+
+def test_benchmark_rolling_beta_non_empty_long_series():
+    """≥60 交易日、策略与基准相关 → 滚动 Beta 非空，相对强弱逐日对齐。"""
+    n = 70
+    eq_dates = pd.date_range("2025-01-01", periods=n, freq="D", tz="UTC")
+    bench_dates = pd.date_range("2025-01-01", periods=n, freq="D", tz="Asia/Shanghai")
+    rng = np.random.RandomState(1)
+    br = rng.normal(0.0005, 0.01, n)
+    noise = rng.normal(0.0, 0.005, n)
+    bench_prices = 3000.0 * np.cumprod(1 + br)
+    eq_prices = 100.0 * np.cumprod(1 + (0.8 * br + noise))
+    equity = pd.Series(eq_prices, index=eq_dates)
+    benchmark = pd.Series(bench_prices, index=bench_dates)
+
+    b = _benchmark_metrics(equity, benchmark, init_capital=100.0)
+    assert len(b["rolling_beta"]) > 0
+    assert len(b["relative_strength"]) == n

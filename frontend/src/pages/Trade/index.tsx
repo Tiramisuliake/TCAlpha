@@ -10,6 +10,7 @@ import {
   Segmented,
   Select,
   Space,
+  Statistic,
   Table,
   Tag,
   message,
@@ -19,9 +20,11 @@ import { ReloadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelOrder,
+  getAccount,
   listOrders,
   listPositions,
   placeOrder,
+  resetAccount,
 } from "@/api/sim";
 import { getSymbols } from "@/api/market";
 import type {
@@ -128,7 +131,7 @@ function OrderForm({
         市价单提交
       </PermButton>
       <div className="text-xs text-slate-400 mt-2">
-        ⚠️ 模拟交易：按当前实时报价立即成交，无资金校验。A 股不支持裸卖空，仅可买入开仓 / 卖出平仓（多头）。
+        ⚠️ 模拟交易：按当前实时报价立即成交，开仓有资金校验（余额不足拒单）。A 股不支持裸卖空，仅可买入开仓 / 卖出平仓（多头）。
       </div>
     </Form>
   );
@@ -166,6 +169,12 @@ export default function TradePage() {
     staleTime: 10_000,
   });
 
+  const accountQuery = useQuery({
+    queryKey: ["sim", "account"],
+    queryFn: getAccount,
+    staleTime: 10_000,
+  });
+
   const placeMut = useMutation({
     mutationFn: placeOrder,
     onSuccess: (order) => {
@@ -176,6 +185,15 @@ export default function TradePage() {
       );
       qc.invalidateQueries({ queryKey: ["sim", "orders"] });
       qc.invalidateQueries({ queryKey: ["sim", "positions"] });
+      qc.invalidateQueries({ queryKey: ["sim", "account"] });
+    },
+  });
+
+  const resetMut = useMutation({
+    mutationFn: resetAccount,
+    onSuccess: (acct) => {
+      message.success(`账户已重置，现金 ${acct.balance.toLocaleString()} 元`);
+      qc.invalidateQueries({ queryKey: ["sim", "account"] });
     },
   });
 
@@ -198,6 +216,7 @@ export default function TradePage() {
     () => {
       qc.invalidateQueries({ queryKey: ["sim", "orders"] });
       qc.invalidateQueries({ queryKey: ["sim", "positions"] });
+      qc.invalidateQueries({ queryKey: ["sim", "account"] });
     },
     { enabled: !!userId }
   );
@@ -212,6 +231,12 @@ export default function TradePage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [qc]);
 
+  const account = accountQuery.data;
+  const costBySymbol = useMemo(
+    () => new Map((account?.positions ?? []).map((p) => [p.symbol, p])),
+    [account]
+  );
+
   const positionCols: ColumnsType<PositionSummary> = [
     { title: "股票", dataIndex: "symbol", key: "symbol" },
     {
@@ -224,6 +249,24 @@ export default function TradePage() {
           {v > 0 ? `+${v}` : v}
         </span>
       ),
+    },
+    {
+      title: "成本均价",
+      key: "avg_price",
+      align: "right",
+      render: (_: unknown, row) => {
+        const p = costBySymbol.get(row.symbol);
+        return p ? <span className="num">{p.avg_price.toFixed(2)}</span> : "-";
+      },
+    },
+    {
+      title: "持仓成本",
+      key: "cost",
+      align: "right",
+      render: (_: unknown, row) => {
+        const p = costBySymbol.get(row.symbol);
+        return p ? <span className="num">{p.cost.toLocaleString()}</span> : "-";
+      },
     },
   ];
 
@@ -323,8 +366,59 @@ export default function TradePage() {
           </Card>
         </Col>
 
-        {/* 右：持仓 + 订单 */}
+        {/* 右：账户 + 持仓 + 订单 */}
         <Col xs={24} lg={17} className="flex flex-col">
+          <Card
+            title="资金账户（成本口径）"
+            size="small"
+            className="mb-3"
+            extra={
+              <PermButton
+                perm="sim.order.place"
+                size="small"
+                danger
+                onClick={() =>
+                  Modal.confirm({
+                    title: "重置模拟账户？",
+                    content: `现金将回到初始资金 ${(account?.init_capital ?? 0).toLocaleString()} 元（订单流水保留）`,
+                    okText: "重置",
+                    okType: "danger",
+                    cancelText: "取消",
+                    onOk: () => resetMut.mutate(),
+                  })
+                }
+              >
+                重置账户
+              </PermButton>
+            }
+          >
+            <Row gutter={[8, 8]}>
+              <Col span={6}>
+                <Statistic title="可用现金" value={account?.balance ?? 0} precision={2} valueStyle={{ fontSize: 18 }} />
+              </Col>
+              <Col span={6}>
+                <Statistic title="持仓成本" value={account?.position_cost ?? 0} precision={2} valueStyle={{ fontSize: 18 }} />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="总资产（成本）"
+                  value={account?.total_asset ?? 0}
+                  precision={2}
+                  valueStyle={{
+                    fontSize: 18,
+                    color:
+                      account && account.total_asset >= account.init_capital
+                        ? "#ef4444"
+                        : "#10b981",
+                  }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic title="初始资金" value={account?.init_capital ?? 0} precision={0} valueStyle={{ fontSize: 18 }} />
+              </Col>
+            </Row>
+          </Card>
+
           <Card
             title="当前持仓"
             size="small"

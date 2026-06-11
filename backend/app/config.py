@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     # 交易网关类型（Phase 9）：sim 模拟盘；实盘网关接入后可切 qmt 等
     gateway_type: str = "sim"
+    # 模拟资金账户初始资金（懒创建 / 重置时使用）
+    sim_init_capital: float = 1_000_000.0
 
     # CORS
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

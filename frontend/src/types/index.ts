@@ -295,6 +295,23 @@ export interface PositionSummary {
   net_position: number;
 }
 
+/** 模拟账户持仓单行（成本口径）。 */
+export interface AccountPosition {
+  symbol: string;
+  volume: number;
+  avg_price: number;
+  cost: number;
+}
+
+/** 模拟资金账户快照：现金 + 持仓成本（不做实时市值）。 */
+export interface AccountOut {
+  balance: number;
+  init_capital: number;
+  position_cost: number;
+  total_asset: number;
+  positions: AccountPosition[];
+}
+
 export interface PlaceOrderRequest {
   symbol: string;
   direction: "long" | "short";

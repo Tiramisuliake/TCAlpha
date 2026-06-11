@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.sim import (
+    AccountOut,
     PlaceOrderRequest,
     PositionOut,
     PositionSummary,
@@ -72,6 +73,32 @@ async def cancel_order(
     if res is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "order not found")
     return res
+
+
+@router.get(
+    "/account",
+    response_model=AccountOut,
+    dependencies=[Depends(require_permission("sim.order.read"))],
+)
+async def get_account(
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """资金账户快照：现金 / 持仓成本 / 总资产（成本口径）。"""
+    return await sim_svc.get_account(db, user_id)
+
+
+@router.post(
+    "/account/reset",
+    response_model=AccountOut,
+    dependencies=[Depends(require_permission("sim.order.place"))],
+)
+async def reset_account(
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """重置账户现金到初始资金（订单流水保留）。"""
+    return await sim_svc.reset_account(db, user_id)
 
 
 @router.get(

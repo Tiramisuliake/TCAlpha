@@ -44,6 +44,25 @@ class PlaceOrderRequest(BaseModel):
     volume: int = Field(..., gt=0, description="数量，会向下取整到 100 股")
 
 
+class AccountPosition(BaseModel):
+    """持仓单行（成本口径）。"""
+
+    symbol: str
+    volume: int
+    avg_price: float
+    cost: float
+
+
+class AccountOut(BaseModel):
+    """模拟资金账户快照：现金 + 持仓成本（不做实时市值）。"""
+
+    balance: float
+    init_capital: float
+    position_cost: float
+    total_asset: float  # balance + position_cost（成本口径）
+    positions: list[AccountPosition] = []
+
+
 class StrategySignal(BaseModel):
     strategy_id: int
     symbol: str

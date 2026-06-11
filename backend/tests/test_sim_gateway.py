@@ -69,6 +69,57 @@ def test_match_fills_at_next_bar_open(gateway, make_bar):
     assert last["filled_volume"] == 100
 
 
+# ── 资金账户（v0.8.6）────────────────────────────────────────────────────
+
+
+def test_account_lazy_created_with_default_balance(gateway):
+    """账户懒创建：首次访问即按 settings.sim_init_capital 建账。"""
+    assert gateway.get_balance() == pytest.approx(1_000_000.0)
+
+
+def test_open_fill_deducts_cash(gateway, make_bar):
+    """开仓成交扣款：现金 -= 成交价×量×(1+手续费率)。"""
+    gateway.send_order("sh600000", "long", "open", price=10.0, volume=100)
+    gateway.match(_bar(make_bar, open_=10.5))
+
+    expected = 1_000_000.0 - 10.5 * 100 * (1 + SimGateway.COMMISSION_RATE)
+    assert gateway.get_balance() == pytest.approx(expected)
+
+
+def test_close_fill_credits_cash_with_stamp_duty(gateway, make_bar):
+    """平仓成交入账：现金 += 成交价×量×(1-手续费率-印花税)。"""
+    gateway.send_order("sh600000", "long", "open", 10.0, 100)
+    gateway.match(_bar(make_bar, open_=10.0))
+    after_open = gateway.get_balance()
+
+    gateway.send_order("sh600000", "long", "close", 11.0, 100)
+    gateway.match(_bar(make_bar, open_=11.0))
+
+    expected = after_open + 11.0 * 100 * (1 - SimGateway.COMMISSION_RATE - SimGateway.STAMP_DUTY)
+    assert gateway.get_balance() == pytest.approx(expected)
+
+
+def test_send_order_rejected_when_insufficient_balance(gateway, make_bar):
+    """委托价×量超出余额 → 下单即 rejected，余额不动，撮合不理会。"""
+    gateway.send_order("sh600000", "long", "open", price=99_999.0, volume=200)
+
+    assert gateway._published[-1]["status"] == "rejected"
+    assert gateway.get_balance() == pytest.approx(1_000_000.0)
+    assert gateway.match(_bar(make_bar, open_=10.0)) == []
+    assert gateway.get_position("sh600000") == 0
+
+
+def test_match_rejects_when_price_moved_beyond_balance(gateway, make_bar):
+    """委托时资金够、撮合时开盘价大涨导致不够 → 撮合时拒单，余额不动。"""
+    # 委托价 10 × 90000 股 ≈ 90 万（通过预校验），开盘跳到 12 → 需 108 万 > 100 万
+    gateway.send_order("sh600000", "long", "open", price=10.0, volume=90_000)
+    filled = gateway.match(_bar(make_bar, open_=12.0))
+
+    assert filled == []
+    assert gateway._published[-1]["status"] == "rejected"
+    assert gateway.get_balance() == pytest.approx(1_000_000.0)
+
+
 def test_position_net_long_short_offset(gateway, make_bar):
     """聚合持仓：开多 +、平多 -、开空 -、平空 +。"""
     bar = _bar(make_bar, open_=10.0)

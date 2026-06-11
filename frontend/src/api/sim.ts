@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { PlaceOrderRequest, PositionSummary, SimOrder } from "@/types";
+import type { AccountOut, PlaceOrderRequest, PositionSummary, SimOrder } from "@/types";
 
 export const listOrders = (strategyId?: number, limit = 50) =>
   api
@@ -14,6 +14,12 @@ export const cancelOrder = (orderId: number) =>
 
 export const listPositions = () =>
   api.get<PositionSummary[]>("/sim/positions").then((r) => r.data);
+
+export const getAccount = () =>
+  api.get<AccountOut>("/sim/account").then((r) => r.data);
+
+export const resetAccount = () =>
+  api.post<AccountOut>("/sim/account/reset").then((r) => r.data);
 
 export const getPosition = (symbol: string) =>
   api

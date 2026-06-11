@@ -10,6 +10,8 @@ from app.schemas.watchlist import WatchlistCreate, WatchlistOut
 
 
 async def list_items(db: AsyncSession, user_id: int) -> list[WatchlistOut]:
+    """自选列表。刻意不接 data_scope：自选股是个人配置而非业务产出，
+    跨用户可见无监控价值（Phase 8 设计决定，notify 规则同理且含 webhook 密钥）。"""
     stmt = (
         select(Watchlist)
         .where(Watchlist.user_id == user_id)

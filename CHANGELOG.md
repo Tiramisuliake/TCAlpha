@@ -2,7 +2,20 @@
 
 ## [0.8.6] — 2026-06-11
 
-> 两块：**实盘 Gateway 抽象**（Phase 9 起步，BaseGateway 契约 + 工厂 + 配置切换）；**配对交易回测**（价差 z-score 统计套利，引擎首次支持做空腿——模拟语义）。
+> 四块：**实盘 Gateway 抽象**（Phase 9 起步）；**配对交易回测**（价差 z-score 统计套利，模拟做空腿）；**模拟资金账户**（撮合扣款 / 余额拒单，模拟盘第一次"花真钱"）；**Phase 8 数据权限收尾**（scope 全链路对齐）。另：复权核查通过——日 K / 分钟 K 下载均为前复权（qfq），回测数据正确性无问题。
+
+### Added — 模拟资金账户（SimGateway 资金约束）
+- `db/models/account.py`：`sim_accounts` 表（user_id 唯一 / balance / init_capital）+ 迁移 `d4845eee9740`；账户懒创建，初始资金走新配置 `SIM_INIT_CAPITAL`（默认 100 万）
+- `SimGateway`：开仓单**委托时按委托价预校验**余额（不足直接 rejected）；撮合成交时**按实际价复核**——委托后价格上行导致资金不够同样拒单；开仓扣 现金+手续费、平仓入 现金-手续费-印花税
+- `services/sim.place_market_order`（手工市价单）同样接入：开仓验余额扣款、平仓入账，两条下单路径资金口径一致
+- 新 API：`GET /api/sim/account`（现金 / 持仓成本 / 总资产·成本口径 / 持仓明细含加权均价）+ `POST /api/sim/account/reset`（现金回初始资金，流水保留审计）
+- 前端 Trade 页：资金账户卡（可用现金 / 持仓成本 / 总资产红绿着色 / 重置按钮带确认）+ 持仓表新增成本均价 / 持仓成本列；订单成交与 WS 推送联动刷新账户；修正"无资金校验"过时提示
+- 测试：账户懒创建 / 开仓扣款 / 平仓入账含印花税 / 委托即拒 / 撮合时价格上行拒单（+5 用例）
+
+### Changed — Phase 8 数据权限收尾
+- 盘点结论：`effective_scope` 已覆盖 backtest / sweep / sim orders / strategy 四处；本轮补齐 **ai_alerts**（管理员 / data_scope=all 可跨用户看告警）
+- **设计决定**：watchlist 自选与 notify 规则刻意保持 self-only——个人配置非业务产出，且 notify 规则含 webhook 密钥，跨用户可见有泄密风险（已写入 docstring）
+- 测试：API 层接线测试（super→all / 普通 self→self 透传到 service）+ 原 effective_scope 纯函数用例（共 +2 用例，全量 151 passed）
 
 ### Added — 实盘 Gateway 抽象（Phase 9 起步）
 - `core/gateway.py` 重写：原占位 Protocol → **BaseGateway ABC** —— `send_order` / `cancel_order` / `get_position` 为抽象契约；`connect` / `disconnect` / `subscribe` / `match` 为默认 no-op 可选钩子（模拟盘无会话概念、撮合由 runtime 驱动；实盘网关覆写为券商会话与推送注册，撮合在券商侧）

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth_deps import require_permission
+from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.ai_alert import AiAlertOut
 from app.services import ai_alerts as alerts_svc
@@ -18,16 +18,17 @@ router = APIRouter()
     dependencies=[Depends(require_permission("ai.watch"))],
 )
 async def list_alerts(
+    user: CurrentUser,
     level: str | None = None,
     symbol: str | None = None,
     only_unacked: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
-    user_id: int = CurrentUserId,
     db: AsyncSession = DB,
 ):
     return await alerts_svc.list_alerts(
-        db, user_id,
+        db, user.id,
         level=level, symbol=symbol, only_unacked=only_unacked, limit=limit,
+        scope=effective_scope(user),
     )
 
 

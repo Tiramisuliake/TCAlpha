@@ -16,8 +16,12 @@ async def list_alerts(
     symbol: str | None = None,
     only_unacked: bool = False,
     limit: int = 100,
+    scope: str = "self",
 ) -> list[AiAlertOut]:
-    stmt = select(AiAlert).where(AiAlert.user_id == user_id)
+    """告警列表。scope='all'（super / data_scope=all）跨用户可见，否则仅本人。"""
+    stmt = select(AiAlert)
+    if scope != "all":
+        stmt = stmt.where(AiAlert.user_id == user_id)
     if level:
         stmt = stmt.where(AiAlert.level == level)
     if symbol:

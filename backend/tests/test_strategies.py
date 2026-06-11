@@ -21,7 +21,7 @@ def _trend_bars(make_bar, n: int = 160, amp: float = 5.0) -> list:
     [
         "MaCrossStrategy", "MacdStrategy", "RsiStrategy", "BollStrategy",
         "TurtleStrategy", "KdjStrategy", "GridStrategy", "DmiStrategy",
-        "AtrStopStrategy", "MaVolStrategy",
+        "AtrStopStrategy", "MaVolStrategy", "PullbackStrategy", "BollSqueezeStrategy",
     ],
 )
 def test_strategy_registered(cls_name):
@@ -52,6 +52,8 @@ def test_list_strategy_classes_exposes_minmax():
         ("GridStrategy", {"grid_pct": 0.05, "max_grids": 5}),
         ("AtrStopStrategy", {"entry_window": 20, "atr_period": 14, "atr_mult": 3.0}),
         ("MaVolStrategy", {"fast": 5, "slow": 20, "vol_window": 20, "vol_ratio": 1.5}),
+        ("PullbackStrategy", {"trend_window": 30, "pull_window": 10}),
+        ("BollSqueezeStrategy", {"period": 20, "dev": 2.0, "squeeze_th": 0.10}),
     ],
 )
 def test_strategy_on_bar_runs(make_bar, cls_name, params):
@@ -284,6 +286,85 @@ def test_ma_vol_skips_cross_without_volume(make_bar):
     bars = [
         make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c, volume=1_000_000)
         for i, (c, _) in enumerate(_ma_vol_prices())
+    ]
+    opens, _ = _drive(s, bars)
+    assert opens == 0
+
+
+def test_pullback_buys_dip_in_uptrend_sells_on_trend_break(make_bar):
+    """趋势回踩：上行带回调的行情触发回踩买入，末段暴跌破趋势线平多。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("PullbackStrategy")(
+        "sh600000", {"trend_window": 30, "pull_window": 10}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = []
+    for i in range(200):
+        c = 100 + 0.4 * i + 4 * math.sin(i / 6.0)  # 上行 + 周期性回调
+        bars.append(make_bar(base + timedelta(days=i), open_=c, high=c + 0.5, low=c - 1.5, close=c))
+    last = 100 + 0.4 * 199 + 4 * math.sin(199 / 6.0)
+    for j in range(30):
+        c = last - (j + 1) * 2.0  # 暴跌破趋势线
+        bars.append(make_bar(base + timedelta(days=200 + j), open_=c, high=c + 0.5, low=c - 1.5, close=c))
+
+    opens, closes = _drive(s, bars)
+    assert opens > 0
+    assert closes > 0
+
+
+def test_pullback_never_buys_in_downtrend(make_bar):
+    """趋势闸门：单边下跌（收盘恒在趋势线下方）→ 全程不开仓。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("PullbackStrategy")(
+        "sh600000", {"trend_window": 30, "pull_window": 10}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = [
+        make_bar(base + timedelta(days=i), open_=c, high=c + 0.5, low=c - 1.5, close=c)
+        for i, c in ((i, 200 - i * 0.8) for i in range(180))
+    ]
+    opens, _ = _drive(s, bars)
+    assert opens == 0
+
+
+def _squeeze_path(noise: float = 0.15) -> list[float]:
+    """横盘 60 根（±noise 决定带宽）→ 向上突破 → 回落跌破中轨。"""
+    closes = [100 + noise * ((-1) ** i) for i in range(60)]
+    closes += [103.0, 104.0, 104.5]                          # 突破上轨
+    closes += [104.0 - (j + 1) * 1.5 for j in range(6)]      # 回落跌破中轨
+    return closes
+
+
+def test_boll_squeeze_breakout_opens_then_mid_break_closes(make_bar):
+    """收口后突破上轨开多一次，跌破中轨平多一次。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("BollSqueezeStrategy")(
+        "sh600000", {"period": 20, "dev": 2.0, "squeeze_th": 0.10}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = [
+        make_bar(base + timedelta(days=i), open_=c, high=c + 0.1, low=c - 0.1, close=c)
+        for i, c in enumerate(_squeeze_path())
+    ]
+    opens, closes = _drive(s, bars)
+    assert opens == 1
+    assert closes == 1
+
+
+def test_boll_squeeze_gate_blocks_breakout_without_squeeze(make_bar):
+    """挤压闸门：横盘噪声大（带宽 ~4% > 阈值 1%）→ 同样突破上轨也不开仓。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("BollSqueezeStrategy")(
+        "sh600000", {"period": 20, "dev": 2.0, "squeeze_th": 0.01}
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    bars = [
+        make_bar(base + timedelta(days=i), open_=c, high=c + 0.1, low=c - 0.1, close=c)
+        for i, c in enumerate(_squeeze_path(noise=1.0))
     ]
     opens, _ = _drive(s, bars)
     assert opens == 0

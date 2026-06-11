@@ -45,12 +45,14 @@ def _load_strategy_classes() -> None:
         return
     from app.strategies.examples.atr_stop import AtrStopStrategy
     from app.strategies.examples.boll import BollStrategy
+    from app.strategies.examples.boll_squeeze import BollSqueezeStrategy
     from app.strategies.examples.dmi import DmiStrategy
     from app.strategies.examples.grid import GridStrategy
     from app.strategies.examples.kdj import KdjStrategy
     from app.strategies.examples.ma_cross import MaCrossStrategy
     from app.strategies.examples.ma_vol import MaVolStrategy
     from app.strategies.examples.macd import MacdStrategy
+    from app.strategies.examples.pullback import PullbackStrategy
     from app.strategies.examples.rsi import RsiStrategy
     from app.strategies.examples.turtle import TurtleStrategy
     STRATEGY_CLASSES["MaCrossStrategy"] = MaCrossStrategy
@@ -63,6 +65,8 @@ def _load_strategy_classes() -> None:
     STRATEGY_CLASSES["DmiStrategy"] = DmiStrategy
     STRATEGY_CLASSES["AtrStopStrategy"] = AtrStopStrategy
     STRATEGY_CLASSES["MaVolStrategy"] = MaVolStrategy
+    STRATEGY_CLASSES["PullbackStrategy"] = PullbackStrategy
+    STRATEGY_CLASSES["BollSqueezeStrategy"] = BollSqueezeStrategy
 
 
 def get_strategy_class(class_name: str) -> type:

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.6] — 2026-06-11
+
+> 两块：**实盘 Gateway 抽象**（Phase 9 起步，BaseGateway 契约 + 工厂 + 配置切换）；**配对交易回测**（价差 z-score 统计套利，引擎首次支持做空腿——模拟语义）。
+
+### Added — 实盘 Gateway 抽象（Phase 9 起步）
+- `core/gateway.py` 重写：原占位 Protocol → **BaseGateway ABC** —— `send_order` / `cancel_order` / `get_position` 为抽象契约；`connect` / `disconnect` / `subscribe` / `match` 为默认 no-op 可选钩子（模拟盘无会话概念、撮合由 runtime 驱动；实盘网关覆写为券商会话与推送注册，撮合在券商侧）
+- `create_gateway` 工厂：按 `settings.gateway_type`（新增配置，默认 `sim`）实例化，实盘网关（QMT / xtquant 等）接入时注册新类型即可，**业务层零改动**
+- `SimGateway` 继承 BaseGateway（签名本就吻合，零行为变化）；`runtime.py` 改走工厂，不再直接实例化 SimGateway
+- 测试：继承关系 / 工厂默认与显式覆盖 / 未知类型报错 / match 默认 no-op（+5 用例）
+
+### Added — 配对交易回测（统计套利，模拟做空腿）
+- `core/backtest_engine.py`：新增 `run_pair(symbol_a, symbol_b, window, entry_z, exit_z)` —— 价差 = ln(A) - ln(B)，滚动 z-score；z > entry_z 空 A 多 B、z < -entry_z 多 A 空 B（多弱空强各半仓名义），|z| < exit_z 价差回归双腿平仓；收盘信号次日开盘 ± 滑点撮合。**做空为模拟语义**（融券简化：卖空收现金、负债按现价 mark-to-market、全额名义无杠杆），实盘券源 / 保证金 / 费率不建模
+- `_round_trips` 泛化：按 **(symbol, direction) 分腿独立配对** —— 单标的退化为原行为，轮动多 symbol、配对多空交织均配对正确；空头腿 MAE/MFE 语义取反；回合记录新增 symbol / direction 字段
+- `run()` 按 `class_name=PairTradingBacktest` 分支，A/B 标的与 z 参数存 params JSON（零迁移）；结果带 `pair_zscore` / `pair_symbols` / 窗口与阈值
+- 前端：回测页新增「配对交易」Segmented —— `components/PairBacktest.tsx`（A/B 标的 + z 窗口/开平阈值 → 指标卡 + 资金曲线 + **z-score 曲线带开平仓标线** + 双腿成交明细：买入/卖空/卖出/买回四态标签）
+- 测试：价差发散回归盈利（双腿四笔成交）/ 无发散零交易 / 缺标的报错 / 分腿回合独立配对（空头收益率）/ run() e2e 落库两标的两方向（+6 用例，共 144 passed）
+
 ## [0.8.5] — 2026-06-11
 
 > 三块：策略库 10 → 12 类（趋势回踩 + 布林收口突破）；回测引擎首次支持**多标的**——动量轮动回测（零迁移，复用 BacktestJob）；扫参寻优接入绩效深化指标 + 参数地图选轴切片。

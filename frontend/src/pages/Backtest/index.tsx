@@ -33,6 +33,7 @@ import { BacktestAnalysis } from "@/components/BacktestAnalysis";
 import { TradeAnalysis } from "@/components/TradeAnalysis";
 import { EquityChart } from "@/components/EquityChart";
 import { RotationBacktest } from "@/components/RotationBacktest";
+import { PairBacktest } from "@/components/PairBacktest";
 import type { BacktestResult, BacktestStatus, BacktestTrade } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -68,7 +69,7 @@ export default function Backtest() {
   const [form] = Form.useForm();
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [pollingEnabled, setPollingEnabled] = useState(false);
-  const [mode, setMode] = useState<"single" | "compare" | "sweep" | "rotation">("single");
+  const [mode, setMode] = useState<"single" | "compare" | "sweep" | "rotation" | "pair">("single");
   const [sp] = useSearchParams();
 
   // 选股页「去回测」跳转：预填 symbol
@@ -239,12 +240,13 @@ export default function Backtest() {
     <PageScaffold>
       <Segmented
         value={mode}
-        onChange={(v) => setMode(v as "single" | "compare" | "sweep" | "rotation")}
+        onChange={(v) => setMode(v as "single" | "compare" | "sweep" | "rotation" | "pair")}
         options={[
           { label: "单次回测", value: "single" },
           { label: "策略对比", value: "compare" },
           { label: "参数寻优", value: "sweep" },
           { label: "轮动回测", value: "rotation" },
+          { label: "配对交易", value: "pair" },
         ]}
         className="self-start"
       />
@@ -254,6 +256,8 @@ export default function Backtest() {
         <ParamSweep symbolOptions={symbolOptions} />
       ) : mode === "rotation" ? (
         <RotationBacktest symbolOptions={symbolOptions} />
+      ) : mode === "pair" ? (
+        <PairBacktest symbolOptions={symbolOptions} />
       ) : (
       <Row gutter={[16, 16]} className="flex-1 min-h-0">
         {/* 左：提交表单 */}

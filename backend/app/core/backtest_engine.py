@@ -424,41 +424,49 @@ def _rolling_sharpe(rets: pd.Series, window: int = 60) -> list[dict]:
 
 
 def _round_trips(trades: list[Trade], bars: list | None = None) -> list[dict]:
-    """把时序 open/close 成交配对为「回合」：进场 → 出场（分批平仓拆成多个回合）。
+    """把时序 open/close 成交配对为「回合」，按 (symbol, direction) 分腿独立跟踪。
 
-    持仓均价跟踪逻辑与 _settle 一致（加权摊薄，清仓归零），pnl 直接复用
-    _settle 已填好的 Trade.pnl。MAE/MFE 为持仓期间相对持仓均价的最大不利 /
-    有利偏移（需要 bars 提供期间高低价；缺 bars 或日期对不上时为 None）。
+    单标的只做多时退化为原行为；轮动（多 symbol 串行）与配对（多空两腿
+    交织）同样配对正确。持仓均价跟踪与 _settle 一致（加权摊薄，清仓归零），
+    pnl 直接复用已填好的 Trade.pnl。MAE/MFE 需要 bars 提供持仓期间高低价
+    （仅单标的回测传入）；空头腿语义取反：期间最高价为最不利、最低价为最有利。
     """
     idx_of: dict[datetime, int] = (
         {b.datetime: i for i, b in enumerate(bars)} if bars else {}
     )
 
+    legs: dict[tuple[str, str], dict] = {}
     rts: list[dict] = []
-    pos = 0
-    avg_price = 0.0
-    entry_dt: datetime | None = None
 
     for t in trades:
+        leg = legs.setdefault((t.symbol, t.direction), {"pos": 0, "avg": 0.0, "entry_dt": None})
         if t.offset == "open":
-            if pos == 0:
-                entry_dt = t.dt
-            total_cost = avg_price * pos + t.price * t.volume
-            pos += t.volume
-            avg_price = total_cost / pos if pos > 0 else 0.0
+            if leg["pos"] == 0:
+                leg["entry_dt"] = t.dt
+            total_cost = leg["avg"] * leg["pos"] + t.price * t.volume
+            leg["pos"] += t.volume
+            leg["avg"] = total_cost / leg["pos"] if leg["pos"] > 0 else 0.0
             continue
 
-        # close：配一个回合
-        if pos <= 0 or entry_dt is None:
+        # close：在本腿内配一个回合
+        if leg["pos"] <= 0 or leg["entry_dt"] is None:
             continue
+        avg_price: float = leg["avg"]
+        entry_dt: datetime = leg["entry_dt"]
         cost = avg_price * t.volume
         ret = float(t.pnl) / cost if t.pnl is not None and cost > 0 else None
 
         mae = mfe = None
         if bars and avg_price > 0 and entry_dt in idx_of and t.dt in idx_of:
             window = bars[idx_of[entry_dt]: idx_of[t.dt] + 1]
-            mae = round(min(b.low_price for b in window) / avg_price - 1, 4)
-            mfe = round(max(b.high_price for b in window) / avg_price - 1, 4)
+            lo = min(b.low_price for b in window)
+            hi = max(b.high_price for b in window)
+            if t.direction == "long":
+                mae = round(lo / avg_price - 1, 4)
+                mfe = round(hi / avg_price - 1, 4)
+            else:
+                mae = round(1 - hi / avg_price, 4)
+                mfe = round(1 - lo / avg_price, 4)
 
         rts.append({
             "entry_dt": str(entry_dt.date()),
@@ -471,11 +479,13 @@ def _round_trips(trades: list[Trade], bars: list | None = None) -> list[dict]:
             "return_pct": round(ret, 4) if ret is not None else None,
             "mae": mae,
             "mfe": mfe,
+            "symbol": t.symbol,
+            "direction": t.direction,
         })
-        pos -= t.volume
-        if pos == 0:
-            avg_price = 0.0
-            entry_dt = None
+        leg["pos"] -= t.volume
+        if leg["pos"] == 0:
+            leg["avg"] = 0.0
+            leg["entry_dt"] = None
     return rts
 
 
@@ -894,6 +904,143 @@ def run_rotation(
     return result, trades
 
 
+# ── 配对交易（v0.8.6，统计套利，含模拟做空腿） ─────────────────────────
+
+PAIR_CLASS = "PairTradingBacktest"  # run() 按此 class_name 走配对分支
+
+
+def run_pair(
+    symbol_a: str,
+    symbol_b: str,
+    start: str,
+    end: str,
+    init_capital: float,
+    commission_rate: float,
+    slippage: float,
+    window: int = 60,
+    entry_z: float = 2.0,
+    exit_z: float = 0.5,
+    benchmark_close: pd.Series | None = None,
+    benchmark_name: str = "基准",
+) -> tuple[dict, list[Trade]]:
+    """配对交易：价差 = ln(A) - ln(B)，滚动 window 日均值/标准差算 z-score。
+
+    z > entry_z → 空 A 多 B（A 相对走强过头）；z < -entry_z → 多 A 空 B；
+    |z| < exit_z（价差回归）→ 双腿平仓。多空各半仓名义，信号收盘算、
+    次日开盘 ± 滑点撮合（无未来函数）。
+
+    做空为模拟语义（融券简化）：卖空收现金、负债按现价 mark-to-market、
+    全额名义无杠杆；A 股实盘融券的券源 / 保证金 / 费率约束此处不建模。
+    """
+    from app.utils.symbol import normalize
+
+    sym_a, sym_b = normalize(symbol_a), normalize(symbol_b)
+    open_df, close_df = _load_aligned_frames([sym_a, sym_b], start, end)
+    n = len(close_df)
+    if close_df.empty or sym_a not in close_df.columns or sym_b not in close_df.columns:
+        raise RuntimeError(f"pair requires both symbols in arctic: {sym_a}, {sym_b}")
+    if n < window + 2:
+        raise RuntimeError(f"insufficient bars for pair: {n} (need > window {window})")
+
+    dates = close_df.index
+    dates_utc = dates.tz_localize(UTC)
+    spread = np.log(close_df[sym_a]) - np.log(close_df[sym_b])
+    z = (spread - spread.rolling(window).mean()) / spread.rolling(window).std()
+
+    cash = init_capital
+    side = 0  # 0 空仓 / +1 多A空B / -1 空A多B
+    long_sym = short_sym = ""
+    long_vol = short_vol = 0
+    long_avg = short_avg = 0.0
+    trades: list[Trade] = []
+    equity_vals: list[float] = []
+    pending: int | None = None  # 次日开盘要切换到的 side
+
+    def _open_pair(i: int, new_side: int) -> None:
+        nonlocal cash, side, long_sym, short_sym, long_vol, short_vol, long_avg, short_avg
+        dt = dates_utc[i].to_pydatetime()
+        lsym, ssym = (sym_a, sym_b) if new_side == 1 else (sym_b, sym_a)
+        notional = cash / 2
+        lp = float(open_df.iloc[i][lsym]) + slippage
+        sp = float(open_df.iloc[i][ssym]) - slippage
+        lvol = int(notional // (lp * 100)) * 100
+        svol = int(notional // (sp * 100)) * 100
+        if lvol <= 0 or svol <= 0:
+            return  # 资金不足以双腿成对开仓，放弃本次信号
+        lcomm = lp * lvol * commission_rate
+        scomm = sp * svol * commission_rate + sp * svol * 0.001  # 卖空=卖出，含印花税
+        cash -= lp * lvol + lcomm
+        cash += sp * svol - scomm
+        trades.append(Trade(dt=dt, direction="long", offset="open", price=lp,
+                            volume=lvol, commission=lcomm, symbol=lsym))
+        trades.append(Trade(dt=dt, direction="short", offset="open", price=sp,
+                            volume=svol, commission=scomm, symbol=ssym))
+        long_sym, short_sym = lsym, ssym
+        long_vol, short_vol = lvol, svol
+        long_avg, short_avg = lp, sp
+        side = new_side
+
+    def _close_pair(i: int) -> None:
+        nonlocal cash, side, long_sym, short_sym, long_vol, short_vol, long_avg, short_avg
+        dt = dates_utc[i].to_pydatetime()
+        lp = float(open_df.iloc[i][long_sym]) - slippage
+        sp = float(open_df.iloc[i][short_sym]) + slippage
+        lcomm = lp * long_vol * commission_rate + lp * long_vol * 0.001  # 多头平仓=卖出，含印花税
+        scomm = sp * short_vol * commission_rate
+        cash += lp * long_vol - lcomm
+        cash -= sp * short_vol + scomm
+        trades.append(Trade(dt=dt, direction="long", offset="close", price=lp,
+                            volume=long_vol, commission=lcomm,
+                            pnl=(lp - long_avg) * long_vol - lcomm, symbol=long_sym))
+        trades.append(Trade(dt=dt, direction="short", offset="close", price=sp,
+                            volume=short_vol, commission=scomm,
+                            pnl=(short_avg - sp) * short_vol - scomm, symbol=short_sym))
+        side = 0
+        long_sym = short_sym = ""
+        long_vol = short_vol = 0
+        long_avg = short_avg = 0.0
+
+    for i in range(n):
+        # 1) 执行昨日收盘决定的调仓（今日开盘撮合）
+        if pending is not None:
+            if side != 0:
+                _close_pair(i)
+            if pending != 0:
+                _open_pair(i, pending)
+            pending = None
+
+        # 2) 收盘 mark-to-market：现金 + 多头市值 - 空头负债
+        mv = 0.0
+        if side != 0:
+            mv += long_vol * float(close_df.iloc[i][long_sym])
+            mv -= short_vol * float(close_df.iloc[i][short_sym])
+        equity_vals.append(cash + mv)
+
+        # 3) 收盘算 z，定次日动作
+        zi = float(z.iloc[i]) if pd.notna(z.iloc[i]) else None
+        if zi is None or i >= n - 1:
+            continue
+        if side == 0:
+            if zi > entry_z:
+                pending = -1   # A 强过头 → 空 A 多 B
+            elif zi < -entry_z:
+                pending = 1
+        elif abs(zi) < exit_z:
+            pending = 0
+
+    equity = pd.Series(equity_vals, index=dates_utc)
+    result = _metrics(equity, trades, init_capital, benchmark_close, benchmark_name)
+    result["pair_symbols"] = [sym_a, sym_b]
+    result["pair_zscore"] = [
+        {"dt": str(d.date()), "value": round(float(v), 3)}
+        for d, v in z.items() if pd.notna(v)
+    ]
+    result["pair_window"] = window
+    result["pair_entry_z"] = entry_z
+    result["pair_exit_z"] = exit_z
+    return result, trades
+
+
 # ── 主入口 ────────────────────────────────────────────────────────────
 
 def run(job_id: int) -> dict:
@@ -936,6 +1083,22 @@ def run(job_id: int) -> dict:
                 init_capital, commission_rate, slippage,
                 lookback=int(rot.get("lookback", 60)),
                 rebalance_days=int(rot.get("rebalance_days", 20)),
+                benchmark_close=benchmark_close,
+                benchmark_name=_benchmark_name(benchmark),
+            )
+        elif class_name == PAIR_CLASS:
+            # 配对交易：A/B 标的与 z-score 参数存 params JSON（零迁移）
+            pr = params or {}
+            symbol_a, symbol_b = pr.get("symbol_a"), pr.get("symbol_b")
+            if not symbol_a or not symbol_b:
+                raise RuntimeError("pair trading requires symbol_a and symbol_b")
+            logger.info("pair job={} {} vs {}", job_id, symbol_a, symbol_b)
+            result, all_trades = run_pair(
+                symbol_a, symbol_b, start_date, end_date,
+                init_capital, commission_rate, slippage,
+                window=int(pr.get("window", 60)),
+                entry_z=float(pr.get("entry_z", 2.0)),
+                exit_z=float(pr.get("exit_z", 0.5)),
                 benchmark_close=benchmark_close,
                 benchmark_name=_benchmark_name(benchmark),
             )

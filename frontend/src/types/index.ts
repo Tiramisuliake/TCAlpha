@@ -118,6 +118,8 @@ export interface RoundTrip {
   return_pct: number | null;
   mae: number | null; // 持仓期间最大不利偏移（相对入场均价，负数）
   mfe: number | null; // 持仓期间最大有利偏移
+  symbol?: string;    // 多标的回测（轮动/配对）时标记腿
+  direction?: string; // long / short（配对含空头腿）
 }
 
 export interface BacktestResult {
@@ -168,6 +170,12 @@ export interface BacktestResult {
   rotation_holdings?: RotationHolding[];
   rotation_lookback?: number;
   rotation_rebalance_days?: number;
+  // 配对交易（v0.8.6）：仅 class_name=PairTradingBacktest 的结果携带
+  pair_symbols?: string[];
+  pair_zscore?: EquityPoint[];
+  pair_window?: number;
+  pair_entry_z?: number;
+  pair_exit_z?: number;
 }
 
 /** 轮动调仓记录：dt 调仓执行日，symbol 为空串表示空仓。 */

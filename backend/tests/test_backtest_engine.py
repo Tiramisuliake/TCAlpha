@@ -24,6 +24,7 @@ from app.core.backtest_engine import (
     _round_trips,
     _settle,
     _streaks,
+    run_pair,
     run_rotation,
     run_sweep,
 )
@@ -632,6 +633,151 @@ def test_run_end_to_end_rotation(sync_db, fake_arctic, monkeypatch):
         assert job.result["rotation_symbols"] == ["sh600001", "sz000002"]
         rows = db.query(BacktestTrade).filter_by(job_id=job_id).all()
         assert rows and all(r.symbol == "sh600001" for r in rows)
+
+
+# ── 配对交易（v0.8.6）────────────────────────────────────────────────────
+
+
+def _df_from_closes(closes: np.ndarray) -> pd.DataFrame:
+    dates = pd.bdate_range(end="2025-12-31", periods=len(closes), freq="B").tz_localize(
+        "Asia/Shanghai"
+    )
+    df = pd.DataFrame(index=dates)
+    df["close"] = closes
+    df["open"] = closes  # 简化：开=收，便于断言成交价
+    df["high"] = closes * 1.002
+    df["low"] = closes * 0.998
+    df["volume"] = 1e6
+    df["amount"] = df["close"] * df["volume"]
+    return df[["open", "high", "low", "close", "volume", "amount"]].astype(float)
+
+
+def _seed_pair(fake_arctic, amp: float = 0.15, n: int = 200) -> None:
+    """协整对：B 走平，A = B·exp(价差)；价差在 [100,116) 区间跳升 amp 后回归。"""
+    from app.db.arctic import get_library
+
+    noise = np.array([0.005 * ((-1) ** i) for i in range(n)])  # 微噪声，避免 std=0
+    spread = noise.copy()
+    if amp > 0:
+        spread[100:116] += amp
+    b = np.full(n, 100.0)
+    a = b * np.exp(spread)
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _df_from_closes(a))
+    lib.write("sz000002", _df_from_closes(b))
+
+
+def test_run_pair_diverge_and_revert_profits(fake_arctic):
+    """价差跳升 → 空 A 多 B；回归 → 平仓盈利。多空两腿成交齐全。"""
+    _seed_pair(fake_arctic, amp=0.15)
+    result, trades = run_pair(
+        "sh600001", "sz000002", "2025-01-01", "2025-12-31",
+        1_000_000.0, 0.0003, 0.01,
+        window=30, entry_z=2.0, exit_z=0.5,
+    )
+
+    assert len(trades) == 4  # 双腿开 + 双腿平
+    by_key = {(t.symbol, t.direction, t.offset) for t in trades}
+    assert ("sh600001", "short", "open") in by_key   # A 强过头 → 空 A
+    assert ("sz000002", "long", "open") in by_key    # 多 B
+    assert ("sh600001", "short", "close") in by_key
+    assert ("sz000002", "long", "close") in by_key
+    assert result["total_return"] > 0                # 价差回归收割
+    assert result["pair_symbols"] == ["sh600001", "sz000002"]
+    assert result["pair_zscore"]                     # z 序列非空
+    assert result["trade_count"] == 2                # 两腿各一笔平仓
+
+
+def test_run_pair_no_divergence_no_trades(fake_arctic):
+    """价差无发散（仅微噪声）→ 全程不触发，零交易。"""
+    _seed_pair(fake_arctic, amp=0.0)
+    result, trades = run_pair(
+        "sh600001", "sz000002", "2025-01-01", "2025-12-31",
+        1_000_000.0, 0.0003, 0.01,
+        window=30, entry_z=2.0, exit_z=0.5,
+    )
+    assert trades == []
+    assert result["trade_count"] == 0
+    assert result["total_return"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_run_pair_missing_symbol_raises(fake_arctic):
+    _seed_pair(fake_arctic)
+    with pytest.raises(RuntimeError, match="both symbols"):
+        run_pair(
+            "sh600001", "sh999999", "2025-01-01", "2025-12-31",
+            1_000_000.0, 0.0003, 0.01, window=30,
+        )
+
+
+def test_round_trips_pairs_legs_independently():
+    """多空两腿交织的成交：按 (symbol, direction) 独立配对，互不串腿。"""
+    d = [datetime(2025, 1, 1 + i, tzinfo=UTC) for i in range(6)]
+    trades = [
+        Trade(dt=d[0], direction="long", offset="open", price=10.0, volume=100,
+              commission=0.0, symbol="sh600001"),
+        Trade(dt=d[0], direction="short", offset="open", price=20.0, volume=100,
+              commission=0.0, symbol="sz000002"),
+        Trade(dt=d[3], direction="short", offset="close", price=18.0, volume=100,
+              commission=0.0, pnl=200.0, symbol="sz000002"),
+        Trade(dt=d[5], direction="long", offset="close", price=11.0, volume=100,
+              commission=0.0, pnl=100.0, symbol="sh600001"),
+    ]
+    rts = _round_trips(trades)
+
+    assert len(rts) == 2
+    short_rt = next(r for r in rts if r["direction"] == "short")
+    long_rt = next(r for r in rts if r["direction"] == "long")
+    assert short_rt["symbol"] == "sz000002" and short_rt["holding_days"] == 3
+    assert long_rt["symbol"] == "sh600001" and long_rt["holding_days"] == 5
+    assert short_rt["pnl"] == pytest.approx(200.0)
+    # 空头收益率 = pnl / (entry_price × volume)
+    assert short_rt["return_pct"] == pytest.approx(200.0 / (20.0 * 100), abs=1e-4)
+
+
+def test_run_end_to_end_pair(sync_db, fake_arctic, monkeypatch):
+    """run() 走配对分支：落库 done + 成交带两标的两方向 + 结果带 pair 字段。"""
+    from datetime import date
+
+    from app.core.backtest_engine import run
+    from app.db.models.backtest import BacktestJob, BacktestTrade
+
+    _seed_pair(fake_arctic, amp=0.15)
+    monkeypatch.setattr(
+        "app.core.backtest_engine._load_index_close",
+        lambda *a, **k: pd.Series(dtype=float),
+    )
+
+    with sync_db() as db:
+        job = BacktestJob(
+            user_id=1,
+            name="pair",
+            class_name="PairTradingBacktest",
+            symbol="sh600001",
+            params={
+                "symbol_a": "sh600001", "symbol_b": "sz000002",
+                "window": 30, "entry_z": 2.0, "exit_z": 0.5,
+            },
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            init_capital=1_000_000.0,
+            commission_rate=0.0003,
+            slippage=0.01,
+            status="pending",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    result = run(job_id)
+
+    assert result["pair_symbols"] == ["sh600001", "sz000002"]
+    with sync_db() as db:
+        job = db.get(BacktestJob, job_id)
+        assert job.status == "done"
+        rows = db.query(BacktestTrade).filter_by(job_id=job_id).all()
+        assert {r.symbol for r in rows} == {"sh600001", "sz000002"}
+        assert {r.direction for r in rows} == {"long", "short"}
 
 
 # ── 交易明细深化（v0.8.3）：回合配对 / MAE/MFE / 期望 ─────────────────────

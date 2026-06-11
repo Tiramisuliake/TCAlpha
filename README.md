@@ -2,7 +2,7 @@
 
 > 基于 AKShare 的 A 股量化分析、回测与模拟交易 Web 平台 · 含 RBAC 鉴权 + AI 助手 + 实时行情 WS。
 
-**当前版本**: v0.8.5 — 策略库扩到 12 类（趋势回踩 / 布林收口突破）+ 多标的动量轮动回测 + 扫参寻优参数地图
+**当前版本**: v0.8.6 — 实盘 Gateway 抽象（Phase 9 起步）+ 配对交易回测（模拟做空腿）+ 模拟资金账户 + Phase 8 数据权限收尾
 
 ## 技术栈
 
@@ -98,8 +98,8 @@ make notify                   # 通知分发 worker（飞书推送）
   - 选股器：多因子打分（动量 / 估值 / 换手）+ 选股闭环（加自选 / 去回测 / 建策略）
   - 盯盘驾驶舱：自选实时报价 + AI 告警聚合
   - 统一数据层 DataProvider + 数据同步水位表 + GitHub Actions CI
-- [ ] Phase 8（进行中）：数据权限落地 —— `data_scope` 已支持 `all` 跨用户可见；`self` / `dept` 待完善
-- [ ] Phase 9：实盘 Gateway 接入 + 多账户
+- [x] **Phase 8：数据权限落地** —— `effective_scope` 全链路（backtest / sweep / sim / strategy / ai_alerts）；`dept` 无部门模型退化为 `self`；自选 / 通知规则刻意 self-only（个人配置 + webhook 密钥安全）
+- [ ] Phase 9（进行中）：实盘 Gateway 接入 + 多账户 —— v0.8.6 已落地 BaseGateway 契约 + 工厂 + 配置切换 + 模拟资金账户；实盘网关（QMT/xtquant）待环境就绪后接入
 
 ## 鉴权速览（v0.7.x）
 

@@ -24,6 +24,7 @@ from app.core.backtest_engine import (
     _round_trips,
     _settle,
     _streaks,
+    run_rotation,
     run_sweep,
 )
 
@@ -365,6 +366,23 @@ def test_run_sweep_grid(fake_arctic, sample_bars_arctic):
     assert "sharpe" in res["best"]["metrics"]
 
 
+def test_run_sweep_supports_deepened_targets(fake_arctic, sample_bars_arctic):
+    """寻优目标接入绩效深化指标：结果行带 calmar/expectancy 且可按 calmar 排序。"""
+    res = run_sweep(
+        "sh600000", "MaCrossStrategy",
+        {"fast": [5, 10], "slow": [20]},
+        "2025-01-01", "2026-01-01",
+        1_000_000.0, 0.0003, 0.01, "calmar",
+    )
+    assert res["target"] == "calmar"
+    for row in res["results"]:
+        assert "calmar" in row["metrics"]
+        assert "expectancy" in row["metrics"]
+    # 已按 calmar 降序
+    vals = [r["metrics"]["calmar"] for r in res["results"]]
+    assert vals == sorted(vals, reverse=True)
+
+
 # ── 绩效深化：风险标量 / 回撤区间 / 连胜连亏 / 月度 / 滚动 ────────────────
 
 
@@ -467,6 +485,153 @@ def test_benchmark_relative_strength_outperform_flat():
     assert b["rolling_beta"] == []  # < 60 个交易日
     assert len(b["relative_strength"]) == 5
     assert b["relative_strength"][-1]["value"] > 1.0
+
+
+# ── 多标的动量轮动（v0.8.5）──────────────────────────────────────────────
+
+
+def _trend_df(daily_ret: float, n: int = 250, base: float = 100.0) -> pd.DataFrame:
+    """合成日 K：恒定日收益率 daily_ret 的几何走势。"""
+    dates = pd.bdate_range(end="2025-12-31", periods=n, freq="B").tz_localize("Asia/Shanghai")
+    closes = base * np.cumprod(np.full(n, 1 + daily_ret))
+    df = pd.DataFrame(index=dates)
+    df["close"] = closes
+    df["open"] = closes * 0.999
+    df["high"] = closes * 1.005
+    df["low"] = closes * 0.995
+    df["volume"] = 1e6
+    df["amount"] = df["close"] * df["volume"]
+    return df[["open", "high", "low", "close", "volume", "amount"]].astype(float)
+
+
+def _seed_rotation_symbols(fake_arctic, specs: dict[str, float]) -> None:
+    from app.db.arctic import get_library
+
+    lib = get_library("bar_1d")
+    for sym, ret in specs.items():
+        lib.write(sym, _trend_df(ret))
+
+
+def test_run_rotation_holds_strongest_symbol(fake_arctic):
+    """升/跌/平三标的：轮动应始终持有上涨标的，整体盈利，成交带 symbol。"""
+    _seed_rotation_symbols(
+        fake_arctic, {"sh600001": 0.005, "sz000002": -0.005, "sh600003": 0.0}
+    )
+    result, trades = run_rotation(
+        ["sh600001", "sz000002", "sh600003"],
+        "2025-01-01", "2025-12-31",
+        1_000_000.0, 0.0003, 0.01,
+        lookback=20, rebalance_days=10,
+    )
+
+    held = {h["symbol"] for h in result["rotation_holdings"] if h["symbol"]}
+    assert held == {"sh600001"}            # 只持有过最强标的
+    assert result["total_return"] > 0      # 持有上涨标的 → 盈利
+    assert result["rotation_symbols"] == ["sh600001", "sz000002", "sh600003"]
+    assert trades and all(t.symbol == "sh600001" for t in trades)
+    assert len(result["equity_curve"]) == 250
+
+
+def test_run_rotation_goes_flat_when_all_negative(fake_arctic):
+    """绝对动量过滤：三标的全跌 → 全程空仓，资金原地不动。"""
+    _seed_rotation_symbols(
+        fake_arctic, {"sh600001": -0.003, "sz000002": -0.005, "sh600003": -0.004}
+    )
+    result, trades = run_rotation(
+        ["sh600001", "sz000002", "sh600003"],
+        "2025-01-01", "2025-12-31",
+        1_000_000.0, 0.0003, 0.01,
+        lookback=20, rebalance_days=10,
+    )
+    assert trades == []
+    assert result["trade_count"] == 0
+    assert result["total_return"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_run_rotation_switches_on_momentum_flip(fake_arctic):
+    """动量反转换仓：前强后弱 vs 前弱后强 → 持仓从 A 切到 B，至少两段持仓。"""
+    from app.db.arctic import get_library
+
+    n = 250
+    dates = pd.bdate_range(end="2025-12-31", periods=n, freq="B").tz_localize("Asia/Shanghai")
+
+    def _piecewise(first: float, second: float) -> pd.DataFrame:
+        rets = np.where(np.arange(n) < n // 2, first, second)
+        closes = 100 * np.cumprod(1 + rets)
+        df = pd.DataFrame(index=dates)
+        df["close"] = closes
+        df["open"] = closes * 0.999
+        df["high"] = closes * 1.005
+        df["low"] = closes * 0.995
+        df["volume"] = 1e6
+        df["amount"] = df["close"] * df["volume"]
+        return df[["open", "high", "low", "close", "volume", "amount"]].astype(float)
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _piecewise(0.006, -0.004))  # 前半强后半弱
+    lib.write("sz000002", _piecewise(-0.002, 0.006))  # 前半弱后半强
+
+    result, _ = run_rotation(
+        ["sh600001", "sz000002"],
+        "2025-01-01", "2025-12-31",
+        1_000_000.0, 0.0003, 0.01,
+        lookback=20, rebalance_days=10,
+    )
+    held_seq = [h["symbol"] for h in result["rotation_holdings"] if h["symbol"]]
+    assert "sh600001" in held_seq and "sz000002" in held_seq
+    # 切换后不再切回（B 后半程动量恒强）
+    assert held_seq[-1] == "sz000002"
+
+
+def test_run_rotation_insufficient_symbols_or_bars(fake_arctic):
+    """标的都不在库里 → 抛 insufficient。"""
+    with pytest.raises(RuntimeError, match="insufficient"):
+        run_rotation(
+            ["sh999999"], "2025-01-01", "2025-12-31",
+            1_000_000.0, 0.0003, 0.01, lookback=20, rebalance_days=10,
+        )
+
+
+def test_run_end_to_end_rotation(sync_db, fake_arctic, monkeypatch):
+    """run() 走轮动分支：落库 done + 成交记录带各自 symbol。"""
+    from datetime import date
+
+    from app.core.backtest_engine import run
+    from app.db.models.backtest import BacktestJob, BacktestTrade
+
+    _seed_rotation_symbols(fake_arctic, {"sh600001": 0.005, "sz000002": -0.005})
+    monkeypatch.setattr(
+        "app.core.backtest_engine._load_index_close",
+        lambda *a, **k: pd.Series(dtype=float),
+    )
+
+    with sync_db() as db:
+        job = BacktestJob(
+            user_id=1,
+            name="rot",
+            class_name="RotationBacktest",
+            symbol="sh600001",
+            params={"symbols": ["sh600001", "sz000002"], "lookback": 20, "rebalance_days": 10},
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            init_capital=1_000_000.0,
+            commission_rate=0.0003,
+            slippage=0.01,
+            status="pending",
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    result = run(job_id)
+
+    assert result["rotation_holdings"]
+    with sync_db() as db:
+        job = db.get(BacktestJob, job_id)
+        assert job.status == "done"
+        assert job.result["rotation_symbols"] == ["sh600001", "sz000002"]
+        rows = db.query(BacktestTrade).filter_by(job_id=job_id).all()
+        assert rows and all(r.symbol == "sh600001" for r in rows)
 
 
 # ── 交易明细深化（v0.8.3）：回合配对 / MAE/MFE / 期望 ─────────────────────

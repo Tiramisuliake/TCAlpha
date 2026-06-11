@@ -2,7 +2,19 @@
 
 ## [0.8.5] — 2026-06-11
 
-> 策略库继续扩充：10 → 12 类，新增趋势回踩（趋势中买回调）与布林收口突破（波动率挤压后爆发），补齐「低吸」与「波动率收缩」两个范式。前端零改动。
+> 三块：策略库 10 → 12 类（趋势回踩 + 布林收口突破）；回测引擎首次支持**多标的**——动量轮动回测（零迁移，复用 BacktestJob）；扫参寻优接入绩效深化指标 + 参数地图选轴切片。
+
+### Added — 多标的动量轮动回测
+- `core/backtest_engine.py`：新增 `run_rotation(symbols, lookback, rebalance_days, ...)` —— 多标的日 K 对齐到交易日并集（收盘 ffill、开盘用收盘兜底），每 rebalance_days 个交易日按过去 lookback 日收益率排名**全仓持有最强标的**，动量全负则空仓（绝对动量过滤，熊市离场）；信号收盘算、次日开盘 ± 滑点撮合（无未来函数），买入一手取整、卖出含印花税
+- `run()` 按 `class_name=RotationBacktest` 分支走轮动（不进策略注册表，不影响实时 runtime）；标的列表与轮动参数存 `params` JSON，**零迁移**；`Trade` 加 `symbol` 字段，成交落库带各自标的
+- 结果追加 `rotation_symbols` / `rotation_holdings`（调仓时间线）/ `rotation_lookback` / `rotation_rebalance_days`，并继续复用基准对比、绩效深化、交易行为分析全套指标
+- 前端：回测页新增「轮动回测」Segmented —— `components/RotationBacktest.tsx`（标的多选 + 动量窗口/调仓间隔/基准 → 指标卡 + 资金曲线 + 调仓时间线 + 成交明细带标的列 + 绩效/交易分析）；`EquityChart` 从回测页抽为公共组件供单标的/轮动共用
+- 测试：升/跌/平三标的恒持最强 / 全负空仓 / 动量反转换仓 / 标的缺失报错 / run() e2e 落库带 symbol（+5 用例）
+
+### Added — 扫参寻优升级（参数地图）
+- `_SWEEP_METRIC_KEYS` 接入 `calmar` / `expectancy`（v0.8.3 绩效深化指标可作寻优目标）
+- 前端 ParamSweep：目标下拉新增 Calmar / 单笔期望 / 最大回撤(最浅)；**>2 参数时支持选 X/Y 轴绘参数地图**，其余维度自动固定在最优组合取值上切片；结果表新增 Calmar 列
+- 测试：calmar 目标排序 + 结果行带深化指标（+1 用例，共 134 passed）
 
 ### Added — 策略库扩充（趋势回踩 / 布林收口突破）
 - `strategies/examples/pullback.py`：**趋势回踩**（只做多）—— 收盘站上长均线（趋势过滤）且当日最低触及短均线、收盘收回其上（回踩企稳）→ 开多；收盘跌破长均线 → 平多。与追突破相反的「趋势中低吸」范式

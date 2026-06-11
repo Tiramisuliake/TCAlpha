@@ -163,6 +163,17 @@ export interface BacktestResult {
   avg_mae?: number | null;
   avg_mfe?: number | null;
   expectancy?: number;
+  // 多标的动量轮动（v0.8.5）：仅 class_name=RotationBacktest 的结果携带
+  rotation_symbols?: string[];
+  rotation_holdings?: RotationHolding[];
+  rotation_lookback?: number;
+  rotation_rebalance_days?: number;
+}
+
+/** 轮动调仓记录：dt 调仓执行日，symbol 为空串表示空仓。 */
+export interface RotationHolding {
+  dt: string;
+  symbol: string;
 }
 
 export interface BacktestStatus {
@@ -194,6 +205,9 @@ export interface SweepResultRow {
     max_drawdown: number;
     win_rate: number;
     trade_count: number;
+    // v0.8.5 寻优目标接入绩效深化指标（旧扫参结果缺省）
+    calmar?: number;
+    expectancy?: number;
   };
 }
 

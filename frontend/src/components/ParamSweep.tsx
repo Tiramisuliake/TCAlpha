@@ -26,6 +26,9 @@ const TARGETS = [
   { value: "total_return", label: "总收益" },
   { value: "annual_return", label: "年化收益" },
   { value: "win_rate", label: "胜率" },
+  { value: "calmar", label: "Calmar 比率" },
+  { value: "expectancy", label: "单笔期望" },
+  { value: "max_drawdown", label: "最大回撤(最浅)" },
 ];
 
 const MAX_COMBOS = 500;
@@ -130,15 +133,34 @@ export function ParamSweep({
   const result = status?.result ?? null;
   const rows = result?.results ?? [];
 
-  // 热力图：恰好 2 个参数维度时绘制
+  // ── 参数地图：≥2 参数可绘；>2 参数时选 X/Y 轴，其余维度固定在最优值切片 ──
+  const paramKeys = result?.param_keys ?? [];
+  const [axisX, setAxisX] = useState<string>();
+  const [axisY, setAxisY] = useState<string>();
+  useEffect(() => {
+    if (paramKeys.length >= 2) {
+      setAxisX(paramKeys[0]);
+      setAxisY(paramKeys[1]);
+    }
+  }, [jobId, paramKeys.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const heatOption = (() => {
-    if (!result || result.param_keys.length !== 2) return null;
-    const [px, py] = result.param_keys;
-    const xs = [...new Set(result.results.map((r) => r.params[px]))].sort((a, b) => a - b);
-    const ys = [...new Set(result.results.map((r) => r.params[py]))].sort((a, b) => a - b);
+    if (!result || paramKeys.length < 2 || !axisX || !axisY || axisX === axisY) return null;
+    const [px, py] = [axisX, axisY];
+    const others = paramKeys.filter((k) => k !== px && k !== py);
+    // >2 维：其余参数固定在最优组合的取值上（参数地图切片）
+    const slice =
+      others.length === 0 || !result.best
+        ? result.results
+        : result.results.filter((r) =>
+            others.every((k) => r.params[k] === result.best!.params[k])
+          );
+    if (slice.length === 0) return null;
+    const xs = [...new Set(slice.map((r) => r.params[px]))].sort((a, b) => a - b);
+    const ys = [...new Set(slice.map((r) => r.params[py]))].sort((a, b) => a - b);
     const metricOf = (r: SweepResultRow) =>
       (r.metrics as Record<string, number>)[result.target] ?? 0;
-    const data = result.results.map((r) => [
+    const data = slice.map((r) => [
       xs.indexOf(r.params[px]),
       ys.indexOf(r.params[py]),
       +metricOf(r).toFixed(3),
@@ -205,6 +227,14 @@ export function ParamSweep({
       key: "wr",
       align: "right",
       render: (_, r) => <span className="num">{(r.metrics.win_rate * 100).toFixed(1)}%</span>,
+    },
+    {
+      title: "Calmar",
+      key: "calmar",
+      align: "right",
+      render: (_, r) => (
+        <span className="num">{r.metrics.calmar != null ? r.metrics.calmar.toFixed(2) : "-"}</span>
+      ),
     },
     {
       title: "交易数",
@@ -318,9 +348,47 @@ export function ParamSweep({
               </Space>
             </Card>
           )}
-          {heatOption && (
-            <Card size="small" title={`热力图（${result.param_keys.join(" × ")} → ${target}）`}>
-              <ReactECharts option={heatOption} style={{ height: 300 }} notMerge />
+          {paramKeys.length >= 2 && (
+            <Card
+              size="small"
+              title={
+                <Space size="small">
+                  <span>参数地图（</span>
+                  {paramKeys.length > 2 ? (
+                    <>
+                      <Select
+                        size="small"
+                        value={axisX}
+                        onChange={setAxisX}
+                        options={paramKeys.map((k) => ({ value: k, label: k }))}
+                        style={{ width: 110 }}
+                      />
+                      <span>×</span>
+                      <Select
+                        size="small"
+                        value={axisY}
+                        onChange={setAxisY}
+                        options={paramKeys.map((k) => ({ value: k, label: k }))}
+                        style={{ width: 110 }}
+                      />
+                    </>
+                  ) : (
+                    <span>{paramKeys.join(" × ")}</span>
+                  )}
+                  <span>→ {result.target}）</span>
+                  {paramKeys.length > 2 && (
+                    <span className="text-xs text-slate-400 font-normal">
+                      其余参数固定在最优值
+                    </span>
+                  )}
+                </Space>
+              }
+            >
+              {heatOption ? (
+                <ReactECharts option={heatOption} style={{ height: 300 }} notMerge />
+              ) : (
+                <Empty description="X / Y 轴需选择两个不同参数" />
+              )}
             </Card>
           )}
           <Card size="small" title={`全部组合（${result.count}，按 ${target} 降序）`}>

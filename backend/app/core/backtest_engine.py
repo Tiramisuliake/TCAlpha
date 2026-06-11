@@ -33,6 +33,7 @@ class Trade:
     volume: int
     commission: float
     pnl: float | None = None
+    symbol: str = ""  # 多标的（轮动）回测时记录各自标的；单标的为空，落库时回退 job.symbol
 
 
 # ── 策略类注册表 ──────────────────────────────────────────────────────
@@ -710,6 +711,9 @@ _SWEEP_METRIC_KEYS = (
     "max_drawdown",
     "win_rate",
     "trade_count",
+    # v0.8.5：寻优目标接入绩效深化指标
+    "calmar",
+    "expectancy",
 )
 
 
@@ -758,6 +762,138 @@ def run_sweep(
     }
 
 
+# ── 多标的动量轮动（v0.8.5） ──────────────────────────────────────────
+
+ROTATION_CLASS = "RotationBacktest"  # run() 按此 class_name 走轮动分支（不进策略注册表）
+
+
+def _load_aligned_frames(symbols: list[str], start: str, end: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """把多标的日 K 对齐到交易日并集，返回 (开盘价表, 收盘价表)。
+
+    收盘缺口前向填充（停牌延用前收）；开盘缺口用收盘兜底。index 统一抹 tz
+    并归一到自然日，避免多标的时区/时刻不一致导致错位。
+    """
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    lib = get_library("bar_1d")
+    opens: dict[str, pd.Series] = {}
+    closes: dict[str, pd.Series] = {}
+    for sym in symbols:
+        key = normalize(sym)
+        if key not in lib.list_symbols():
+            logger.warning("rotation: symbol {} not in arctic, skipped", key)
+            continue
+        df = lib.read(key).data
+        tz = df.index.tz
+        s_ts = pd.Timestamp(start, tz=tz) if tz is not None else pd.Timestamp(start)
+        e_ts = pd.Timestamp(end, tz=tz) if tz is not None else pd.Timestamp(end)
+        df = df[(df.index >= s_ts) & (df.index <= e_ts)]
+        if df.empty:
+            continue
+        idx = pd.DatetimeIndex(df.index).tz_localize(None).normalize()
+        opens[key] = pd.Series(df["open"].to_numpy(dtype=float), index=idx)
+        closes[key] = pd.Series(df["close"].to_numpy(dtype=float), index=idx)
+
+    if not closes:
+        return pd.DataFrame(), pd.DataFrame()
+    close_df = pd.DataFrame(closes).sort_index().ffill()
+    open_df = pd.DataFrame(opens).sort_index()
+    open_df = open_df.fillna(close_df)
+    return open_df, close_df
+
+
+def run_rotation(
+    symbols: list[str],
+    start: str,
+    end: str,
+    init_capital: float,
+    commission_rate: float,
+    slippage: float,
+    lookback: int = 60,
+    rebalance_days: int = 20,
+    benchmark_close: pd.Series | None = None,
+    benchmark_name: str = "基准",
+) -> tuple[dict, list[Trade]]:
+    """动量轮动：每 rebalance_days 个交易日按过去 lookback 日收益率排名，
+    全仓持有最强标的；动量全为负则空仓（绝对动量过滤，熊市离场）。
+
+    信号在第 t 日收盘计算，第 t+1 日开盘价 ± slippage 撮合（与单标的引擎
+    一致，无未来函数）。买入按一手（100 股）取整，余款留现金；卖出含印花税。
+    返回 (metrics, trades)，trades 各自带 symbol。
+    """
+    open_df, close_df = _load_aligned_frames(symbols, start, end)
+    n = len(close_df)
+    if close_df.empty or n < lookback + 2:
+        raise RuntimeError(f"insufficient bars for rotation: {n} (need > lookback {lookback})")
+
+    dates = close_df.index
+    dates_utc = dates.tz_localize(UTC)
+    momentum = close_df / close_df.shift(lookback) - 1
+
+    cash = init_capital
+    pos = 0
+    holding: str | None = None
+    avg_price = 0.0
+    trades: list[Trade] = []
+    holdings_log: list[dict] = []
+    equity_vals: list[float] = []
+    switch_to: str | None = None
+    switch_pending = False
+
+    for i in range(n):
+        dt = dates_utc[i].to_pydatetime()
+
+        # 1) 执行昨日收盘决定的调仓（今日开盘价撮合）
+        if switch_pending:
+            if holding is not None and pos > 0:
+                price = float(open_df.iloc[i][holding]) - slippage
+                commission = price * pos * commission_rate + price * pos * 0.001  # 含印花税
+                pnl = (price - avg_price) * pos - commission
+                cash += price * pos - commission
+                trades.append(Trade(
+                    dt=dt, direction="long", offset="close", price=price,
+                    volume=pos, commission=commission, pnl=pnl, symbol=holding,
+                ))
+                pos, avg_price, holding = 0, 0.0, None
+            if switch_to is not None:
+                price = float(open_df.iloc[i][switch_to]) + slippage
+                volume = int(cash // (price * 100)) * 100  # 一手取整
+                if volume > 0:
+                    commission = price * volume * commission_rate
+                    cash -= price * volume + commission
+                    trades.append(Trade(
+                        dt=dt, direction="long", offset="open", price=price,
+                        volume=volume, commission=commission, symbol=switch_to,
+                    ))
+                    pos, avg_price, holding = volume, price, switch_to
+            holdings_log.append({"dt": str(dates[i].date()), "symbol": holding or ""})
+            switch_pending, switch_to = False, None
+
+        # 2) 收盘 mark-to-market
+        market_value = pos * float(close_df.iloc[i][holding]) if holding else 0.0
+        equity_vals.append(cash + market_value)
+
+        # 3) 调仓日收盘：算动量、定下期目标（次日开盘执行）
+        if i >= lookback and i % rebalance_days == 0 and i < n - 1:
+            row = momentum.iloc[i].dropna()
+            if not row.empty:
+                best = str(row.idxmax())
+                target = best if float(row.max()) > 0 else None
+            else:
+                target = None
+            if target != holding:
+                switch_pending, switch_to = True, target
+
+    equity = pd.Series(equity_vals, index=dates_utc)
+    result = _metrics(equity, trades, init_capital, benchmark_close, benchmark_name)
+    result["rotation_symbols"] = list(close_df.columns)
+    result["rotation_holdings"] = holdings_log
+    result["rotation_lookback"] = lookback
+    result["rotation_rebalance_days"] = rebalance_days
+    return result, trades
+
+
 # ── 主入口 ────────────────────────────────────────────────────────────
 
 def run(job_id: int) -> dict:
@@ -785,23 +921,39 @@ def run(job_id: int) -> dict:
         db.commit()
 
     try:
-        # 1. 加载 K 线
-        bars = _load_bars(symbol, start_date, end_date)
-        if len(bars) < 2:
-            raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
-
-        logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
-
         # 基准：按 job.benchmark lazy 加载并缓存到 ArcticDB，失败返回空 Series 不影响主回测
         benchmark_close = _load_index_close(benchmark, start_date, end_date)
 
-        # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
-        result, all_trades = _simulate(
-            bars, symbol, class_name, params,
-            init_capital, commission_rate, slippage,
-            benchmark_close=benchmark_close,
-            benchmark_name=_benchmark_name(benchmark),
-        )
+        if class_name == ROTATION_CLASS:
+            # 多标的动量轮动：标的列表与轮动参数存 params JSON（零迁移）
+            rot = params or {}
+            rot_symbols = list(rot.get("symbols") or [])
+            if len(rot_symbols) < 2:
+                raise RuntimeError("rotation requires at least 2 symbols")
+            logger.info("rotation job={} symbols={}", job_id, rot_symbols)
+            result, all_trades = run_rotation(
+                rot_symbols, start_date, end_date,
+                init_capital, commission_rate, slippage,
+                lookback=int(rot.get("lookback", 60)),
+                rebalance_days=int(rot.get("rebalance_days", 20)),
+                benchmark_close=benchmark_close,
+                benchmark_name=_benchmark_name(benchmark),
+            )
+        else:
+            # 1. 加载 K 线
+            bars = _load_bars(symbol, start_date, end_date)
+            if len(bars) < 2:
+                raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
+
+            logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
+
+            # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
+            result, all_trades = _simulate(
+                bars, symbol, class_name, params,
+                init_capital, commission_rate, slippage,
+                benchmark_close=benchmark_close,
+                benchmark_name=_benchmark_name(benchmark),
+            )
 
         # 5. 落库
         with SyncSessionLocal() as db:
@@ -815,7 +967,7 @@ def run(job_id: int) -> dict:
             for t in all_trades:
                 db.add(BacktestTrade(
                     job_id=job_id,
-                    symbol=symbol,
+                    symbol=t.symbol or symbol,
                     direction=t.direction,
                     offset=t.offset,
                     price=t.price,

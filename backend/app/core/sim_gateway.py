@@ -11,12 +11,13 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.gateway import BaseGateway
 from app.core.pubsub import publish_order
 from app.db.models.order import SimOrder
 from app.db.postgres import SyncSessionLocal
 
 
-class SimGateway:
+class SimGateway(BaseGateway):
     name = "SIM"
     COMMISSION_RATE = 0.0003
     STAMP_DUTY = 0.001   # 卖出印花税

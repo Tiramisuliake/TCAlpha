@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # 默认用户（个人版临时占位）
     default_user_id: int = 1
 
+    # 交易网关类型（Phase 9）：sim 模拟盘；实盘网关接入后可切 qmt 等
+    gateway_type: str = "sim"
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

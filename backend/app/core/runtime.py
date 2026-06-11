@@ -18,8 +18,8 @@ from loguru import logger
 
 from app.core.backtest_engine import _load_bars, get_strategy_class
 from app.core.event_bus import publish_event
+from app.core.gateway import create_gateway
 from app.core.pubsub import get_sync_redis, publish_signal, running_key, stop_key
-from app.core.sim_gateway import SimGateway
 from app.db.models.strategy import StrategyConfig
 from app.db.postgres import SyncSessionLocal
 from app.utils.trading_period import now_cn
@@ -65,7 +65,8 @@ class StrategyRuntime:
             strategy = cls(symbol, params)
             strategy.state.pos = 0
 
-            gw = SimGateway(user_id=user_id, strategy_id=self.strategy_id)
+            # 按 settings.gateway_type 选网关（默认 sim），实盘接入后零改动切换
+            gw = create_gateway(user_id=user_id, strategy_id=self.strategy_id)
 
             # 3. 热身：从 ArcticDB 加载历史 bars
             from datetime import timedelta

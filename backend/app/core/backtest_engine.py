@@ -126,16 +126,37 @@ def _field_bounds(finfo: Any) -> tuple[float | None, float | None]:
 
 # ── K 线加载 ──────────────────────────────────────────────────────────
 
-def _load_bars(symbol: str, start: str, end: str) -> list:
-    """从 ArcticDB 读取日 K，转换为 vnpy BarData 列表。"""
+# K 线周期 → 年化 bar 数（A 股 252 交易日 × 日内 240 分钟），夏普/波动率年化用
+_ANNUAL_BARS = {
+    "1d": 252,
+    "60m": 252 * 4,
+    "30m": 252 * 8,
+    "15m": 252 * 16,
+    "5m": 252 * 48,
+    "1m": 252 * 240,
+}
+
+
+def _annual_factor(period: str) -> int:
+    return _ANNUAL_BARS.get(period, 252)
+
+
+def _load_bars(symbol: str, start: str, end: str, period: str = "1d") -> list:
+    """从 ArcticDB ``bar_{period}`` 库读取 K 线，转换为 vnpy BarData 列表。
+
+    period ∈ {1d, 60m, 30m, 15m, 5m, 1m}，与数据下载任务的库命名一致。
+    """
     from vnpy.trader.constant import Exchange, Interval
     from vnpy.trader.object import BarData
 
     from app.db.arctic import get_library
     from app.utils.symbol import normalize
 
+    if period not in _ANNUAL_BARS:
+        raise ValueError(f"unsupported period: {period} (allowed {sorted(_ANNUAL_BARS)})")
+
     sym_key = normalize(symbol)
-    lib = get_library("bar_1d")
+    lib = get_library(f"bar_{period}")
     if sym_key not in lib.list_symbols():
         return []
 
@@ -149,6 +170,7 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
         return []
 
     exchange = Exchange.SSE if symbol.startswith("sh") else Exchange.SZSE
+    interval = Interval.DAILY if period == "1d" else Interval.MINUTE
     bars = []
     for ts, row in df.iterrows():
         bars.append(
@@ -156,7 +178,7 @@ def _load_bars(symbol: str, start: str, end: str) -> list:
                 symbol=sym_key,
                 exchange=exchange,
                 datetime=ts.to_pydatetime().replace(tzinfo=UTC),
-                interval=Interval.DAILY,
+                interval=interval,
                 open_price=float(row["open"]),
                 high_price=float(row["high"]),
                 low_price=float(row["low"]),
@@ -409,13 +431,13 @@ def _monthly_returns(equity: pd.Series, init_capital: float) -> list[dict]:
     return [{"month": d.strftime("%Y-%m"), "value": round(float(v), 4)} for d, v in mret.items()]
 
 
-def _rolling_sharpe(rets: pd.Series, window: int = 60) -> list[dict]:
-    """滚动年化夏普（默认 60 交易日窗口）。序列短于窗口则返回空。"""
+def _rolling_sharpe(rets: pd.Series, window: int = 60, annual_bars: int = 252) -> list[dict]:
+    """滚动年化夏普（默认 60 bar 窗口；annual_bars 按周期年化）。序列短于窗口则返回空。"""
     if len(rets) < window:
         return []
     mean = rets.rolling(window).mean()
     std = rets.rolling(window).std()
-    rs = (mean / std * np.sqrt(252)).replace([np.inf, -np.inf], np.nan).dropna()
+    rs = (mean / std * np.sqrt(annual_bars)).replace([np.inf, -np.inf], np.nan).dropna()
     idx = pd.DatetimeIndex(rs.index).tz_localize(None)
     return [
         {"dt": str(d.date()), "value": round(float(v), 4)}
@@ -496,15 +518,20 @@ def _metrics(
     benchmark_close: pd.Series | None = None,
     benchmark_name: str = "基准",
     bars: list | None = None,
+    annual_bars: int = 252,
 ) -> dict:
+    """annual_bars：每年 bar 数（日线 252，分钟线按 _ANNUAL_BARS），夏普/波动率年化口径。"""
     rets = equity.pct_change().dropna()
     total_return = float(equity.iloc[-1] / init_capital - 1)
     days = (equity.index[-1] - equity.index[0]).days
     annual_return = float((1 + total_return) ** (252 / max(days, 1)) - 1) if days > 0 else 0.0
 
-    sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
+    sharpe = float(rets.mean() / rets.std() * np.sqrt(annual_bars)) if rets.std() > 0 else 0.0
     downside = rets[rets < 0]
-    sortino = float(rets.mean() / downside.std() * np.sqrt(252)) if len(downside) and downside.std() > 0 else 0.0
+    sortino = (
+        float(rets.mean() / downside.std() * np.sqrt(annual_bars))
+        if len(downside) and downside.std() > 0 else 0.0
+    )
 
     cum_max = equity.cummax()
     drawdown = (equity - cum_max) / cum_max
@@ -524,7 +551,7 @@ def _metrics(
     max_win_streak, max_lose_streak = _streaks(trades)
 
     # 风险：年化波动率 + Calmar（年化收益 / |最大回撤|）
-    volatility = float(rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
+    volatility = float(rets.std() * np.sqrt(annual_bars)) if rets.std() > 0 else 0.0
     calmar = float(annual_return / abs(max_dd)) if max_dd < 0 else 0.0
 
     # 交易级分析：回合配对 + 持仓周期 + MAE/MFE + 单笔期望
@@ -564,7 +591,7 @@ def _metrics(
         "max_lose_streak": max_lose_streak,
         **_drawdown_interval(equity),
         "monthly_returns": _monthly_returns(equity, init_capital),
-        "rolling_sharpe": _rolling_sharpe(rets),
+        "rolling_sharpe": _rolling_sharpe(rets, annual_bars=annual_bars),
         # ── 交易明细深化（v0.8.3）：回合 + 持仓周期 + MAE/MFE + 期望 ──
         "round_trips": round_trips,
         "avg_holding_days": round(float(np.mean(holding)), 1) if holding else 0.0,
@@ -673,6 +700,7 @@ def _simulate(
     slippage: float,
     benchmark_close: pd.Series | None = None,
     benchmark_name: str = "基准",
+    annual_bars: int = 252,
 ) -> tuple[dict, list[Trade]]:
     """纯回测：实例化策略 → 逐 bar 撮合（next bar 开盘价）→ 算指标。
 
@@ -710,7 +738,10 @@ def _simulate(
         all_trades.extend(new_trades)
 
     equity = _settle(all_trades, bars, init_capital)
-    result = _metrics(equity, all_trades, init_capital, benchmark_close, benchmark_name, bars=bars)
+    result = _metrics(
+        equity, all_trades, init_capital, benchmark_close, benchmark_name,
+        bars=bars, annual_bars=annual_bars,
+    )
     return result, all_trades
 
 
@@ -737,16 +768,29 @@ def run_sweep(
     commission_rate: float,
     slippage: float,
     target: str = "sharpe",
+    period: str = "1d",
+    oos_split: float | None = None,
 ) -> dict:
     """网格扫参：对 param_grid 的笛卡尔积逐组回测，按 target 降序排序。
 
     K 线只加载一次；每组参数复用 _simulate。返回 {results, best, ...}。
+
+    Walk-Forward 防过拟合：``oos_split``（0~0.6）为验证集占比 —— 按时间把
+    bars 切成训练段（前段，用于寻优排序）+ 验证段（后段，样本外复测）；
+    每行带 ``oos_metrics`` 与 ``decay``（1 - 样本外/训练，越大越过拟合）。
     """
     import itertools
 
-    bars = _load_bars(symbol, start, end)
+    bars = _load_bars(symbol, start, end, period)
     if len(bars) < 2:
         raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
+    annual_bars = _annual_factor(period)
+
+    train_bars, test_bars = bars, None
+    if oos_split and 0 < float(oos_split) <= 0.6:
+        k = int(len(bars) * (1 - float(oos_split)))
+        if k >= 2 and len(bars) - k >= 2:
+            train_bars, test_bars = bars[:k], bars[k:]
 
     keys = list(param_grid.keys())
     combos = list(itertools.product(*[param_grid[k] for k in keys]))
@@ -755,21 +799,39 @@ def run_sweep(
     for combo in combos:
         params = dict(zip(keys, combo, strict=False))
         metrics, _ = _simulate(
-            bars, symbol, class_name, params, init_capital, commission_rate, slippage
+            train_bars, symbol, class_name, params,
+            init_capital, commission_rate, slippage, annual_bars=annual_bars,
         )
-        results.append(
-            {"params": params, "metrics": {k: metrics[k] for k in _SWEEP_METRIC_KEYS}}
-        )
+        row: dict = {"params": params, "metrics": {k: metrics[k] for k in _SWEEP_METRIC_KEYS}}
+        if test_bars is not None:
+            oos, _ = _simulate(
+                test_bars, symbol, class_name, params,
+                init_capital, commission_rate, slippage, annual_bars=annual_bars,
+            )
+            row["oos_metrics"] = {k: oos[k] for k in _SWEEP_METRIC_KEYS}
+            t = row["metrics"].get(target)
+            o = row["oos_metrics"].get(target)
+            row["decay"] = (
+                round(1 - o / t, 4) if t is not None and o is not None and abs(t) > 1e-9 else None
+            )
+        results.append(row)
 
-    # 所有目标指标均"越大越好"（max_drawdown 为负，越接近 0 越大）
+    # 所有目标指标均"越大越好"（max_drawdown 为负，越接近 0 越大）；
+    # 排序始终按训练段指标 —— 用 OOS 排序等于把验证集当训练集用
     results.sort(key=lambda r: r["metrics"].get(target, 0) or 0, reverse=True)
-    return {
+    out = {
         "target": target,
         "param_keys": keys,
         "count": len(results),
         "results": results,
         "best": results[0] if results else None,
+        "period": period,
     }
+    if test_bars is not None:
+        out["oos_split"] = float(oos_split)
+        out["train_bars"] = len(train_bars)
+        out["test_bars"] = len(test_bars)
+    return out
 
 
 # ── 多标的动量轮动（v0.8.5） ──────────────────────────────────────────
@@ -1065,6 +1127,7 @@ def run(job_id: int) -> dict:
         slippage = job.slippage
         init_capital = job.init_capital
         benchmark = job.benchmark or _DEFAULT_BENCHMARK
+        period = getattr(job, "period", None) or "1d"
         db.commit()
 
     try:
@@ -1103,12 +1166,14 @@ def run(job_id: int) -> dict:
                 benchmark_name=_benchmark_name(benchmark),
             )
         else:
-            # 1. 加载 K 线
-            bars = _load_bars(symbol, start_date, end_date)
+            # 1. 加载 K 线（period 选 bar_{period} 库，默认日线）
+            bars = _load_bars(symbol, start_date, end_date, period)
             if len(bars) < 2:
-                raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)}")
+                raise RuntimeError(f"insufficient bars for {symbol}: {len(bars)} [{period}]")
 
-            logger.info("backtest job={} bars={} symbol={}", job_id, len(bars), symbol)
+            logger.info(
+                "backtest job={} bars={} symbol={} period={}", job_id, len(bars), symbol, period
+            )
 
             # 2-4. 实例化策略 → 逐 bar 撮合 → 算指标（核心提取为 _simulate，复用给扫参）
             result, all_trades = _simulate(
@@ -1116,7 +1181,9 @@ def run(job_id: int) -> dict:
                 init_capital, commission_rate, slippage,
                 benchmark_close=benchmark_close,
                 benchmark_name=_benchmark_name(benchmark),
+                annual_bars=_annual_factor(period),
             )
+            result["period"] = period
 
         # 5. 落库
         with SyncSessionLocal() as db:

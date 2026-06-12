@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import CurrentUser, effective_scope, require_permission
@@ -28,6 +29,30 @@ async def list_backtests(
     db: AsyncSession = DB,
 ):
     return await backtest_svc.list_backtests(db, user.id, scope=effective_scope(user))
+
+
+@router.get(
+    "/{job_id}/report",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_permission("backtest.read"))],
+)
+async def export_report(
+    job_id: int,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """导出自包含 HTML 回测报告（离线可看；仅 done 状态可导）。"""
+    html = await backtest_svc.build_report(db, job_id, user_id)
+    if html is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "report unavailable (job not found or not done)"
+        )
+    return HTMLResponse(
+        html,
+        headers={
+            "Content-Disposition": f'attachment; filename="tcalpha_backtest_{job_id}.html"'
+        },
+    )
 
 
 @router.post(

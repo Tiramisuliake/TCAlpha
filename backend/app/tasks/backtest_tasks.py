@@ -62,12 +62,15 @@ def run_param_sweep(self, job_id: int) -> dict:
         init_capital = job.init_capital
         commission_rate = job.commission_rate
         slippage = job.slippage
+        period = getattr(job, "period", None) or "1d"
+        oos_split = getattr(job, "oos_split", None)
         db.commit()
 
     try:
         result = run_sweep(
             symbol, class_name, param_grid, start, end,
             init_capital, commission_rate, slippage, target,
+            period=period, oos_split=oos_split,
         )
         with SyncSessionLocal() as db:
             job = db.get(ParamSweepJob, job_id)

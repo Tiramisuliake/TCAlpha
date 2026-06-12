@@ -94,6 +94,7 @@ export interface BacktestSubmit {
   commission_rate: number;
   slippage: number;
   benchmark?: string; // 对比基准指数代码（默认 000300 沪深300）
+  period?: string; // K 线周期：1d / 60m / 30m / 15m / 5m / 1m（默认 1d）
 }
 
 export interface EquityPoint {
@@ -202,21 +203,28 @@ export interface SweepSubmit {
   init_capital: number;
   commission_rate: number;
   slippage: number;
+  period?: string; // K 线周期（默认 1d）
+  oos_split?: number | null; // Walk-Forward 验证集占比（0.05~0.6，缺省不切分）
+}
+
+export interface SweepMetrics {
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  win_rate: number;
+  trade_count: number;
+  // v0.8.5 寻优目标接入绩效深化指标（旧扫参结果缺省）
+  calmar?: number;
+  expectancy?: number;
 }
 
 export interface SweepResultRow {
   params: Record<string, number>;
-  metrics: {
-    total_return: number;
-    annual_return: number;
-    sharpe: number;
-    max_drawdown: number;
-    win_rate: number;
-    trade_count: number;
-    // v0.8.5 寻优目标接入绩效深化指标（旧扫参结果缺省）
-    calmar?: number;
-    expectancy?: number;
-  };
+  metrics: SweepMetrics;
+  // Walk-Forward（v0.8.7）：样本外复测指标 + 衰减率（1 - 样本外/训练）
+  oos_metrics?: SweepMetrics;
+  decay?: number | null;
 }
 
 export interface SweepResult {
@@ -225,6 +233,10 @@ export interface SweepResult {
   count: number;
   results: SweepResultRow[];
   best: SweepResultRow | null;
+  period?: string;
+  oos_split?: number;
+  train_bars?: number;
+  test_bars?: number;
 }
 
 export interface SweepStatus {

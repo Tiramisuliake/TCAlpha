@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BacktestSubmit(BaseModel):
@@ -18,6 +18,7 @@ class BacktestSubmit(BaseModel):
     commission_rate: float = 0.0003
     slippage: float = 0.01
     benchmark: str = "000300"  # 对比基准指数代码
+    period: str = "1d"  # K 线周期：1d / 60m / 30m / 15m / 5m / 1m
 
 
 class BacktestStatusOut(BaseModel):
@@ -52,6 +53,9 @@ class SweepSubmit(BaseModel):
     init_capital: float = 1_000_000.0
     commission_rate: float = 0.0003
     slippage: float = 0.01
+    period: str = "1d"  # K 线周期
+    # Walk-Forward 验证集占比（0~0.6）：按时间切训练/验证段，None = 不切分
+    oos_split: float | None = Field(default=None, ge=0.05, le=0.6)
 
 
 class SweepStatusOut(BaseModel):

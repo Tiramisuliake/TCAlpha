@@ -30,6 +30,7 @@ async def submit_backtest(
         commission_rate=payload.commission_rate,
         slippage=payload.slippage,
         benchmark=payload.benchmark,
+        period=payload.period,
         status="pending",
     )
     db.add(job)
@@ -88,6 +89,25 @@ async def get_trades(
     return [BacktestTradeOut.model_validate(r) for r in rows]
 
 
+async def build_report(db: AsyncSession, job_id: int, user_id: int) -> str | None:
+    """生成自包含 HTML 回测报告；job 不存在 / 非本人 / 未完成 → None。"""
+    stmt = select(BacktestJob).where(
+        BacktestJob.id == job_id, BacktestJob.user_id == user_id
+    )
+    job = (await db.execute(stmt)).scalar_one_or_none()
+    if not job or job.status != "done" or not job.result:
+        return None
+
+    trades_stmt = (
+        select(BacktestTrade).where(BacktestTrade.job_id == job_id).order_by(BacktestTrade.dt)
+    )
+    trades = (await db.execute(trades_stmt)).scalars().all()
+
+    from app.services.report import build_backtest_report
+
+    return build_backtest_report(job, list(trades))
+
+
 async def submit_sweep(
     db: AsyncSession, user_id: int, payload: SweepSubmit
 ) -> SweepStatusOut:
@@ -104,6 +124,8 @@ async def submit_sweep(
         init_capital=payload.init_capital,
         commission_rate=payload.commission_rate,
         slippage=payload.slippage,
+        period=payload.period,
+        oos_split=payload.oos_split,
         status="pending",
     )
     db.add(job)

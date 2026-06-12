@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.7] — 2026-06-12
+
+> 三块：**回测周期参数**（日线 → 1m~60m 分钟级，年化口径随周期）；**Walk-Forward 防过拟合**（扫参训练/验证切分 + 样本外衰减率）；**回测报告导出**（零依赖自包含 HTML）。另：分钟线下载链路核查——provider / Celery / beat 早已就绪（v0.8.0 DataProvider 时期落地），本轮只补引擎侧。
+
+### Added — 回测周期参数（分钟级回测）
+- `core/backtest_engine.py`：`_load_bars(period)` 按周期选 ArcticDB `bar_{period}` 库（1d/60m/30m/15m/5m/1m，与数据下载任务命名一致）；新增 `_ANNUAL_BARS` 年化因子表——夏普 / Sortino / 波动率 / 滚动夏普按周期年化（5 分钟线 √(252×48)），日线口径不变
+- `BacktestJob.period` / `ParamSweepJob.period` 列 + 迁移 `63655e556d5b`（server_default '1d' 兼容旧行）；schema / service / task 全链路透传
+- 前端：单次回测与参数寻优表单新增 K 线周期下拉（日线默认）
+
+### Added — Walk-Forward 防过拟合（扫参样本外验证）
+- `run_sweep` 新增 `oos_split`（0.05~0.6 验证集占比）：按时间把 K 线切成训练段（寻优排序用）+ 验证段（样本外复测）；每行带 `oos_metrics` 与 `decay`（1 - 样本外/训练，越大越过拟合）；**排序始终按训练段**——用 OOS 排序等于把验证集当训练集用
+- `ParamSweepJob.oos_split` 列（同迁移）；前端寻优表单「验证集 %」输入，结果表条件渲染样本外目标值 / 衰减列（>50% 标红），最优卡训练 vs 样本外对照 + 疑似过拟合提示
+- 测试：年化因子映射 / 夏普 √48 缩放 / bar_5m 库加载与非法周期报错 / oos 切分行字段与训练段排序 / 不传 oos 向后兼容（+6 用例）
+
+### Added — 回测报告导出（自包含 HTML）
+- `services/report.py`：零外部依赖（无 Jinja2 / 无 CDN）——f-string 模板 + **内联 SVG** 资金曲线（含基准虚线）与回撤面积 + 月度收益上色表 + 成交明细（前 200 笔）+ 用户内容 HTML 转义防注入；离线可看、可存档分享
+- `GET /api/backtest/{id}/report`（`backtest.read` + 属主校验，仅 done 可导，attachment 下载头）
+- 前端：回测结果面板「导出报告」按钮（axios blob 带鉴权下载，绕开 window.open 丢 token 问题）
+- 测试：核心区块齐全 / 可选区块缺省不渲染 / XSS 转义（+3 用例，共 159 passed）
+
 ## [0.8.6] — 2026-06-11
 
 > 四块：**实盘 Gateway 抽象**（Phase 9 起步）；**配对交易回测**（价差 z-score 统计套利，模拟做空腿）；**模拟资金账户**（撮合扣款 / 余额拒单，模拟盘第一次"花真钱"）；**Phase 8 数据权限收尾**（scope 全链路对齐）。另：复权核查通过——日 K / 分钟 K 下载均为前复权（qfq），回测数据正确性无问题。

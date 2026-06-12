@@ -13,6 +13,17 @@ export const listBacktests = () =>
 export const getBacktestTrades = (jobId: number) =>
   api.get<BacktestTrade[]>(`/backtest/${jobId}/trades`).then((r) => r.data);
 
+/** 下载自包含 HTML 回测报告（带鉴权走 axios blob，再触发浏览器保存）。 */
+export const downloadReport = async (jobId: number) => {
+  const r = await api.get<Blob>(`/backtest/${jobId}/report`, { responseType: "blob" });
+  const url = URL.createObjectURL(r.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `tcalpha_backtest_${jobId}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 export const submitSweep = (payload: SweepSubmit) =>
   api.post<SweepStatus>("/backtest/sweep/submit", payload).then((r) => r.data);
 

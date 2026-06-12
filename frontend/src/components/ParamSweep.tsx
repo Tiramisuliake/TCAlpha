@@ -53,6 +53,8 @@ export function ParamSweep({
   const [symbol, setSymbol] = useState<string>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [target, setTarget] = useState("sharpe");
+  const [period, setPeriod] = useState("1d");
+  const [oosPct, setOosPct] = useState(0); // Walk-Forward 验证集占比 %（0 = 不切分）
   const [ranges, setRanges] = useState<Record<string, Range>>({});
   const [jobId, setJobId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -122,6 +124,8 @@ export function ParamSweep({
         init_capital: 1_000_000,
         commission_rate: 0.0003,
         slippage: 0.01,
+        period,
+        oos_split: oosPct > 0 ? oosPct / 100 : undefined,
       });
       setJobId(res.job_id);
       message.success(`已提交寻优（${comboCount} 组），计算中…`);
@@ -132,6 +136,7 @@ export function ParamSweep({
 
   const result = status?.result ?? null;
   const rows = result?.results ?? [];
+  const hasOos = rows.some((r) => r.oos_metrics != null);
 
   // ── 参数地图：≥2 参数可绘；>2 参数时选 X/Y 轴，其余维度固定在最优值切片 ──
   const paramKeys = result?.param_keys ?? [];
@@ -159,7 +164,7 @@ export function ParamSweep({
     const xs = [...new Set(slice.map((r) => r.params[px]))].sort((a, b) => a - b);
     const ys = [...new Set(slice.map((r) => r.params[py]))].sort((a, b) => a - b);
     const metricOf = (r: SweepResultRow) =>
-      (r.metrics as Record<string, number>)[result.target] ?? 0;
+      (r.metrics as unknown as Record<string, number>)[result.target] ?? 0;
     const data = slice.map((r) => [
       xs.indexOf(r.params[px]),
       ys.indexOf(r.params[py]),
@@ -236,6 +241,34 @@ export function ParamSweep({
         <span className="num">{r.metrics.calmar != null ? r.metrics.calmar.toFixed(2) : "-"}</span>
       ),
     },
+    ...(hasOos
+      ? ([
+          {
+            title: "样本外目标",
+            key: "oos_target",
+            align: "right" as const,
+            render: (_: unknown, r: SweepResultRow) => {
+              const v = r.oos_metrics
+                ? (r.oos_metrics as unknown as Record<string, number>)[result?.target ?? target]
+                : undefined;
+              return <span className="num">{v != null ? v.toFixed(3) : "-"}</span>;
+            },
+          },
+          {
+            title: "衰减",
+            key: "decay",
+            align: "right" as const,
+            render: (_: unknown, r: SweepResultRow) =>
+              r.decay != null ? (
+                <span className={`num ${r.decay > 0.5 ? "down" : ""}`}>
+                  {(r.decay * 100).toFixed(0)}%
+                </span>
+              ) : (
+                "-"
+              ),
+          },
+        ] as ColumnsType<SweepResultRow>)
+      : []),
     {
       title: "交易数",
       key: "tc",
@@ -266,9 +299,35 @@ export function ParamSweep({
           />
           <RangePicker value={range} onChange={(v) => setRange(v as [Dayjs, Dayjs] | null)} />
           <Select options={TARGETS} value={target} onChange={setTarget} style={{ width: 130 }} />
+          <Select
+            options={[
+              { value: "1d", label: "日线" },
+              { value: "60m", label: "60 分钟" },
+              { value: "30m", label: "30 分钟" },
+              { value: "15m", label: "15 分钟" },
+              { value: "5m", label: "5 分钟" },
+              { value: "1m", label: "1 分钟" },
+            ]}
+            value={period}
+            onChange={setPeriod}
+            style={{ width: 110 }}
+          />
+          <InputNumber
+            addonBefore="验证集"
+            addonAfter="%"
+            value={oosPct}
+            min={0}
+            max={60}
+            step={5}
+            onChange={(v) => setOosPct(v ?? 0)}
+            style={{ width: 170 }}
+          />
           <PermButton perm="backtest.run" type="primary" loading={submitting} onClick={runSweep}>
             开始寻优
           </PermButton>
+          <span className="text-xs text-slate-400">
+            验证集 &gt; 0 启用 Walk-Forward：训练段寻优、验证段样本外复测
+          </span>
         </Space>
 
         {schema && Object.keys(schema).length > 0 ? (
@@ -332,7 +391,7 @@ export function ParamSweep({
       ) : (
         <>
           {result.best && (
-            <Card size="small" title="最优参数">
+            <Card size="small" title="最优参数（按训练段排序）">
               <Space size="large" wrap>
                 <span className="num text-[var(--tc-primary)] font-medium">
                   {Object.entries(result.best.params).map(([k, v]) => `${k}=${v}`).join("  ")}
@@ -346,6 +405,33 @@ export function ParamSweep({
                 </span>
                 <span>回撤 <b className="num down">{(result.best.metrics.max_drawdown * 100).toFixed(2)}%</b></span>
               </Space>
+              {result.best.oos_metrics && (
+                <div className="mt-2 text-sm">
+                  <Space size="large" wrap>
+                    <span className="text-slate-500">
+                      样本外（验证 {result.test_bars ?? "-"} 根 / 训练 {result.train_bars ?? "-"} 根）：
+                    </span>
+                    <span>夏普 <b className="num">{result.best.oos_metrics.sharpe.toFixed(2)}</b></span>
+                    <span>
+                      总收益{" "}
+                      <b className={`num ${result.best.oos_metrics.total_return >= 0 ? "up" : "down"}`}>
+                        {(result.best.oos_metrics.total_return * 100).toFixed(2)}%
+                      </b>
+                    </span>
+                    {result.best.decay != null && (
+                      <span>
+                        衰减{" "}
+                        <b className={`num ${result.best.decay > 0.5 ? "down" : ""}`}>
+                          {(result.best.decay * 100).toFixed(0)}%
+                        </b>
+                        {result.best.decay > 0.5 && (
+                          <span className="text-xs text-red-400 ml-1">疑似过拟合</span>
+                        )}
+                      </span>
+                    )}
+                  </Space>
+                </div>
+              )}
             </Card>
           )}
           {paramKeys.length >= 2 && (

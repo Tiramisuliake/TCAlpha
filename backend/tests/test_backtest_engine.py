@@ -367,6 +367,83 @@ def test_run_sweep_grid(fake_arctic, sample_bars_arctic):
     assert "sharpe" in res["best"]["metrics"]
 
 
+# ── 周期参数 + 年化因子 + Walk-Forward（v0.8.7）─────────────────────────
+
+
+def test_annual_factor_mapping():
+    from app.core.backtest_engine import _annual_factor
+
+    assert _annual_factor("1d") == 252
+    assert _annual_factor("5m") == 252 * 48
+    assert _annual_factor("60m") == 252 * 4
+    assert _annual_factor("unknown") == 252  # 未知周期回退日线口径
+
+
+def test_metrics_sharpe_scales_with_annual_bars():
+    """同一收益序列，annual_bars=252×48 的夏普应是 252 的 √48 倍。"""
+    dates = pd.date_range("2025-01-01", periods=50, freq="D", tz="UTC")
+    equity = pd.Series(
+        100 * np.cumprod(1 + np.tile([0.01, -0.005], 25)), index=dates
+    )
+    m_daily = _metrics(equity, trades=[], init_capital=100.0, annual_bars=252)
+    m_min5 = _metrics(equity, trades=[], init_capital=100.0, annual_bars=252 * 48)
+    assert m_min5["sharpe"] == pytest.approx(m_daily["sharpe"] * np.sqrt(48), rel=1e-3)
+    assert m_min5["volatility"] == pytest.approx(m_daily["volatility"] * np.sqrt(48), rel=1e-3)
+
+
+def test_load_bars_minute_period(fake_arctic):
+    """period=5m 从 bar_5m 库读取；不支持的周期报错。"""
+    from app.core.backtest_engine import _load_bars
+    from app.db.arctic import get_library
+
+    idx = pd.date_range("2025-06-02 09:35", periods=48, freq="5min", tz="Asia/Shanghai")
+    closes = np.linspace(10, 11, 48)
+    df = pd.DataFrame({
+        "open": closes, "high": closes * 1.001, "low": closes * 0.999,
+        "close": closes, "volume": 1e5, "amount": closes * 1e5,
+    }, index=idx)
+    get_library("bar_5m").write("sh600000", df)
+
+    bars = _load_bars("sh600000", "2025-06-01", "2025-06-03", "5m")
+    assert len(bars) == 48
+    assert bars[0].close_price == pytest.approx(10.0)
+
+    with pytest.raises(ValueError, match="unsupported period"):
+        _load_bars("sh600000", "2025-06-01", "2025-06-03", "2h")
+
+
+def test_run_sweep_oos_split_walk_forward(fake_arctic, sample_bars_arctic):
+    """oos_split=0.3：行带 oos_metrics + decay，训练/验证段覆盖全部 bars，仍按训练段排序。"""
+    res = run_sweep(
+        "sh600000", "MaCrossStrategy",
+        {"fast": [5, 10], "slow": [20]},
+        "2025-01-01", "2026-01-01",
+        1_000_000.0, 0.0003, 0.01, "sharpe",
+        oos_split=0.3,
+    )
+    assert res["oos_split"] == pytest.approx(0.3)
+    assert res["train_bars"] + res["test_bars"] == 200  # sample_bars 共 200 根
+    assert res["test_bars"] == 60
+    for row in res["results"]:
+        assert "oos_metrics" in row and "sharpe" in row["oos_metrics"]
+        assert "decay" in row
+    # 排序按训练段 target
+    vals = [r["metrics"]["sharpe"] for r in res["results"]]
+    assert vals == sorted(vals, reverse=True)
+
+
+def test_run_sweep_without_oos_keeps_legacy_shape(fake_arctic, sample_bars_arctic):
+    """不传 oos_split：结果不含 oos 字段，向后兼容。"""
+    res = run_sweep(
+        "sh600000", "MaCrossStrategy",
+        {"fast": [5], "slow": [20]},
+        "2025-01-01", "2026-01-01",
+        1_000_000.0, 0.0003, 0.01, "sharpe",
+    )
+    assert "oos_split" not in res
+    assert "oos_metrics" not in res["results"][0]
+
+
 def test_run_sweep_supports_deepened_targets(fake_arctic, sample_bars_arctic):
     """寻优目标接入绩效深化指标：结果行带 calmar/expectancy 且可按 calmar 排序。"""
     res = run_sweep(

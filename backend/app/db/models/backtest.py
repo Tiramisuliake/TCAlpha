@@ -25,6 +25,8 @@ class BacktestJob(Base):
     slippage: Mapped[float] = mapped_column(Float, default=0.01)
     # 对比基准指数代码（000300 沪深300 / 000905 中证500 / 399006 创业板指 / 000016 上证50）
     benchmark: Mapped[str] = mapped_column(String(16), default="000300", server_default="000300")
+    # K 线周期（1d / 60m / 30m / 15m / 5m / 1m），对应 ArcticDB bar_{period} 库
+    period: Mapped[str] = mapped_column(String(8), default="1d", server_default="1d")
 
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/running/done/failed
     celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -66,6 +68,10 @@ class ParamSweepJob(Base):
     init_capital: Mapped[float] = mapped_column(Float, default=1_000_000.0)
     commission_rate: Mapped[float] = mapped_column(Float, default=0.0003)
     slippage: Mapped[float] = mapped_column(Float, default=0.01)
+    # K 线周期（同 BacktestJob.period）
+    period: Mapped[str] = mapped_column(String(8), default="1d", server_default="1d")
+    # Walk-Forward 验证集占比（0~0.6，None = 不切分）
+    oos_split: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/running/done/failed
     celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

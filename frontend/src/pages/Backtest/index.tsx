@@ -15,12 +15,12 @@ import {
   Tag,
   message,
 } from "antd";
-import { ExperimentOutlined, RobotOutlined } from "@ant-design/icons";
+import { ExperimentOutlined, FileTextOutlined, RobotOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useSearchParams } from "react-router";
-import { getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
+import { downloadReport, getBacktestStatus, getBacktestTrades, listBacktests, submitBacktest } from "@/api/backtest";
 import { getSymbols } from "@/api/market";
 import { getStrategyClasses } from "@/api/strategy";
 import { streamBacktestAnalysis } from "@/api/ai";
@@ -49,6 +49,16 @@ const BENCHMARK_OPTIONS = [
   { value: "000905", label: "中证500" },
   { value: "399006", label: "创业板指" },
   { value: "000016", label: "上证50" },
+];
+
+// K 线周期（与后端 _ANNUAL_BARS / ArcticDB bar_{period} 库对齐）
+const PERIOD_OPTIONS = [
+  { value: "1d", label: "日线" },
+  { value: "60m", label: "60 分钟" },
+  { value: "30m", label: "30 分钟" },
+  { value: "15m", label: "15 分钟" },
+  { value: "5m", label: "5 分钟" },
+  { value: "1m", label: "1 分钟" },
 ];
 
 function hasBenchmark(r: BacktestResult): boolean {
@@ -141,6 +151,7 @@ export default function Backtest() {
       commission_rate: (values.commission_rate as number ?? 0.03) / 100,
       slippage: values.slippage as number ?? 0.01,
       benchmark: (values.benchmark as string) ?? "000300",
+      period: (values.period as string) ?? "1d",
     });
   }
 
@@ -287,9 +298,18 @@ export default function Backtest() {
               <Form.Item label="初始资金" name="init_capital" initialValue={1000000}>
                 <InputNumber min={10000} step={100000} className="!w-full" />
               </Form.Item>
-              <Form.Item label="对比基准" name="benchmark" initialValue="000300">
-                <Select options={BENCHMARK_OPTIONS} />
-              </Form.Item>
+              <Row gutter={8}>
+                <Col span={12}>
+                  <Form.Item label="K 线周期" name="period" initialValue="1d">
+                    <Select options={PERIOD_OPTIONS} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="对比基准" name="benchmark" initialValue="000300">
+                    <Select options={BENCHMARK_OPTIONS} />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Row gutter={8}>
                 <Col span={12}>
                   <Form.Item label="手续费%" name="commission_rate" initialValue={0.03}>
@@ -358,7 +378,14 @@ export default function Backtest() {
             </Card>
           ) : result ? (
             <div className="flex-1 flex flex-col gap-4 min-h-0">
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <PermButton
+                  perm="backtest.read"
+                  icon={<FileTextOutlined />}
+                  onClick={() => selectedJobId && downloadReport(selectedJobId)}
+                >
+                  导出报告
+                </PermButton>
                 <PermButton perm="ai.chat" icon={<RobotOutlined />} onClick={openAiAnalysis}>
                   AI 归因
                 </PermButton>

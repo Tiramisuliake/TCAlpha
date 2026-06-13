@@ -22,6 +22,7 @@ def _trend_bars(make_bar, n: int = 160, amp: float = 5.0) -> list:
         "MaCrossStrategy", "MacdStrategy", "RsiStrategy", "BollStrategy",
         "TurtleStrategy", "KdjStrategy", "GridStrategy", "DmiStrategy",
         "AtrStopStrategy", "MaVolStrategy", "PullbackStrategy", "BollSqueezeStrategy",
+        "CciStrategy", "VwapBiasStrategy", "PyramidTurtleStrategy",
     ],
 )
 def test_strategy_registered(cls_name):
@@ -54,6 +55,9 @@ def test_list_strategy_classes_exposes_minmax():
         ("MaVolStrategy", {"fast": 5, "slow": 20, "vol_window": 20, "vol_ratio": 1.5}),
         ("PullbackStrategy", {"trend_window": 30, "pull_window": 10}),
         ("BollSqueezeStrategy", {"period": 20, "dev": 2.0, "squeeze_th": 0.10}),
+        ("CciStrategy", {"period": 20, "oversold": -100.0, "overbought": 100.0}),
+        ("VwapBiasStrategy", {"period": 20, "bias_pct": 0.05}),
+        ("PyramidTurtleStrategy", {"entry_window": 20, "exit_window": 10, "max_units": 4}),
     ],
 )
 def test_strategy_on_bar_runs(make_bar, cls_name, params):
@@ -368,6 +372,70 @@ def test_boll_squeeze_gate_blocks_breakout_without_squeeze(make_bar):
     ]
     opens, _ = _drive(s, bars)
     assert opens == 0
+
+
+def test_cci_cross_open_and_close(make_bar):
+    """CCI：强波动正弦下，超卖上穿开多、超买下穿平多各至少触发一次。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("CciStrategy")(
+        "sh600000", {"period": 20, "oversold": -100.0, "overbought": 100.0}
+    )
+    opens, closes = _drive(s, _trend_bars(make_bar, n=240, amp=6.0))
+    assert opens > 0
+    assert closes > 0
+
+
+def test_vwap_bias_buys_on_undershoot_sells_on_recovery(make_bar):
+    """VWAP 偏离：上行后急跌至 VWAP 下方 5% 买入，反弹回 VWAP 上方卖出。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("VwapBiasStrategy")("sh600000", {"period": 20, "bias_pct": 0.05})
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    prices = (
+        [100.0] * 55                              # 横盘垫高 VWAP + 满足 ArrayManager 预热
+        + [100 - i * 2.0 for i in range(1, 16)]   # 急跌至 70，穿破 VWAP×0.95
+        + [70 + i * 3.0 for i in range(1, 21)]    # 强反弹回 VWAP 上方
+    )
+    opens, closes = _drive(
+        s,
+        [make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c)
+         for i, c in enumerate(prices)],
+    )
+    assert opens > 0
+    assert closes > 0
+
+
+def test_pyramid_turtle_adds_up_to_max_then_full_close(make_bar):
+    """金字塔：持续上涨加仓至 max_units 封顶，随后暴跌跌破下轨一次性全平归零。"""
+    from app.core.backtest_engine import get_strategy_class
+
+    s = get_strategy_class("PyramidTurtleStrategy")(
+        "sh600519",
+        {"entry_window": 20, "exit_window": 10, "atr_period": 14, "add_step": 0.5, "max_units": 4},
+    )
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    max_pos = 0
+    bars = []
+    for i in range(120):
+        if i < 30:
+            c = 100 + math.sin(i * 0.3)       # 平缓蓄势
+        elif i < 95:
+            c = 100 + (i - 30) * 2.0          # 持续强上涨 → 突破 + 多次加仓
+        else:
+            c = 230 - (i - 95) * 8.0          # 暴跌跌破下轨
+        bars.append(make_bar(base + timedelta(days=i), open_=c, high=c * 1.01, low=c * 0.99, close=c))
+
+    for b in bars:
+        s.on_bar(b)
+        sig = s._pending_signal
+        if sig:
+            _, offset, vol = sig
+            s.state.pos += vol if offset == "open" else -vol
+            max_pos = max(max_pos, s.state.pos)
+
+    assert max_pos == 4 * 100   # 加仓封顶在 max_units
+    assert s.state.pos == 0     # 跌破下轨后全平
 
 
 def test_turtle_breakout_open_and_close(make_bar):

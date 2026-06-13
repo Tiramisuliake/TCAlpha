@@ -47,6 +47,7 @@ def _load_strategy_classes() -> None:
     from app.strategies.examples.atr_stop import AtrStopStrategy
     from app.strategies.examples.boll import BollStrategy
     from app.strategies.examples.boll_squeeze import BollSqueezeStrategy
+    from app.strategies.examples.cci import CciStrategy
     from app.strategies.examples.dmi import DmiStrategy
     from app.strategies.examples.grid import GridStrategy
     from app.strategies.examples.kdj import KdjStrategy
@@ -54,8 +55,10 @@ def _load_strategy_classes() -> None:
     from app.strategies.examples.ma_vol import MaVolStrategy
     from app.strategies.examples.macd import MacdStrategy
     from app.strategies.examples.pullback import PullbackStrategy
+    from app.strategies.examples.pyramid_turtle import PyramidTurtleStrategy
     from app.strategies.examples.rsi import RsiStrategy
     from app.strategies.examples.turtle import TurtleStrategy
+    from app.strategies.examples.vwap_bias import VwapBiasStrategy
     STRATEGY_CLASSES["MaCrossStrategy"] = MaCrossStrategy
     STRATEGY_CLASSES["MacdStrategy"] = MacdStrategy
     STRATEGY_CLASSES["RsiStrategy"] = RsiStrategy
@@ -68,6 +71,9 @@ def _load_strategy_classes() -> None:
     STRATEGY_CLASSES["MaVolStrategy"] = MaVolStrategy
     STRATEGY_CLASSES["PullbackStrategy"] = PullbackStrategy
     STRATEGY_CLASSES["BollSqueezeStrategy"] = BollSqueezeStrategy
+    STRATEGY_CLASSES["CciStrategy"] = CciStrategy
+    STRATEGY_CLASSES["VwapBiasStrategy"] = VwapBiasStrategy
+    STRATEGY_CLASSES["PyramidTurtleStrategy"] = PyramidTurtleStrategy
 
 
 def get_strategy_class(class_name: str) -> type:

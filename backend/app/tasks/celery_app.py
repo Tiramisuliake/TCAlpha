@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.tasks.backtest_tasks",
         "app.tasks.strategy_tasks",
         "app.tasks.ai_tasks",
+        "app.tasks.screen_tasks",
     ],
 )
 
@@ -63,5 +64,11 @@ celery_app.conf.beat_schedule = {
     "push-quote-snapshot-1min": {
         "task": "app.tasks.data_tasks.push_quote_snapshot",
         "schedule": crontab(minute="*", hour="9-11,13-14"),
+    },
+    # 短线选股：交易日收盘后（15:05）自动扫描放量突破并推送命中
+    "short-term-scan-close": {
+        "task": "app.tasks.screen_tasks.scan_short_term_daily",
+        "schedule": crontab(hour=15, minute=5, day_of_week="1-5"),
+        "kwargs": {"pattern": "volume_breakout", "top": 10},
     },
 }

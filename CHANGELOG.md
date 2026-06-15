@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.10] — 2026-06-12
+
+> 每日收盘自动短线选股 + 飞书推送：交易日 15:05 beat 自动跑短线技术选股，命中经事件总线广播，用户在通知中心勾选即收飞书。复用 beat + 事件总线 + 通知基建，零新依赖、零迁移、零前端改动。
+
+### Added — 每日收盘短线选股推送
+- `tasks/screen_tasks.py`：`scan_short_term_daily` —— 工作日判断（收盘后非交易时段，用 `now_cn().weekday()` + cron `day_of_week=1-5` 双保险）→ 调 `scan_short_term` → 命中拼精简 payload（形态 / 命中数 / TOP3 / 日期，适配飞书卡片前 6 字段平铺）→ `publish_event("screen.short_term")` 广播；**无命中不推送**（减噪）、无历史 K 线则 skip
+- `celery_app.py`：include `screen_tasks` + beat cron 交易日 15:05（默认放量突破，top 10）
+- `schemas/notify.py`：`KNOWN_EVENT_TYPES` 加 `screen.short_term`，用户在通知中心可勾选订阅（前端从 `/event-types` 动态拉取，无需改前端）
+- 测试：命中→推送且 payload 含摘要 / 空命中不推送 / 无数据 skip / 周末 skip（+4 用例，共 178 passed）
+
 ## [0.8.9] — 2026-06-12
 
 > 短线技术选股：在截面快照选股之外，新增基于历史日 K 量价形态的短线买点扫描（放量突破 / 均线多头 / 回踩企稳），命中后按短线动能打分排序。面向短线实盘交易的选股环节。

@@ -23,6 +23,7 @@ KNOWN_EVENT_TYPES: list[dict[str, str]] = [
     {"type": "ai.alert.danger", "desc": "AI 盯盘 - 紧急（Step 3）"},
     {"type": "quote.surge", "desc": "行情急涨/急跌（Step 2）"},
     {"type": "quote.limit_up", "desc": "涨停（Step 2）"},
+    {"type": "screen.short_term", "desc": "短线选股命中（每日收盘自动扫描）"},
 ]
 
 CHANNELS = ["feishu"]  # v0.5.1 only

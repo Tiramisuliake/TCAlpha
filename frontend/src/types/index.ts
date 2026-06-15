@@ -278,12 +278,31 @@ export interface ScreenCandidate {
   pe?: number;
   pb?: number;
   score?: number;
+  // 短线技术选股字段（v0.8.9）
+  vol_ratio?: number;
+  ret5?: number;
+  dist_high?: number;
+  ma5?: number;
+  ma10?: number;
+  ma20?: number;
 }
 
 export interface ScreenResult {
   ready: boolean;
   count: number;
   candidates: ScreenCandidate[];
+}
+
+/** 短线技术选股请求（基于历史日 K 的量价形态）。 */
+export interface ShortTermFilters {
+  pattern: "volume_breakout" | "ma_long" | "pullback";
+  breakout_window?: number;
+  vol_window?: number;
+  vol_ratio_min?: number;
+  price_min?: number;
+  price_max?: number;
+  exclude_st?: boolean;
+  limit?: number;
 }
 
 // ── Sim Trading ───────────────────────────────────────────

@@ -1,7 +1,9 @@
 """选股器 screen 过滤单元测试（mock Redis 快照）。"""
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+import pytest
 
 
 def _fake_snapshot_json() -> str:
@@ -83,3 +85,125 @@ async def test_screen_factor_mode_scores_and_sorts(monkeypatch):
     assert all("score" in c for c in cands)
     scores = [c["score"] for c in cands]
     assert scores == sorted(scores, reverse=True)
+
+
+# ── 短线技术选股（v0.8.9）────────────────────────────────────────────────
+
+
+def _mk_kline(
+    closes: list[float],
+    *,
+    highs: list[float] | None = None,
+    lows: list[float] | None = None,
+    vols: list[float] | None = None,
+) -> pd.DataFrame:
+    n = len(closes)
+    idx = pd.date_range("2024-01-01", periods=n, freq="B", tz="Asia/Shanghai")
+    close = np.array(closes, dtype=float)
+    high = np.array(highs, dtype=float) if highs else close * 1.005
+    low = np.array(lows, dtype=float) if lows else close * 0.995
+    vol = np.array(vols, dtype=float) if vols else np.full(n, 1e6)
+    return pd.DataFrame(
+        {"open": close, "high": high, "low": low, "close": close, "volume": vol,
+         "amount": close * vol},
+        index=idx,
+    )
+
+
+def _flat() -> pd.DataFrame:
+    """横盘窄幅：任何短线形态都不命中。"""
+    return _mk_kline([10.0] * 60, highs=[10.05] * 60, lows=[9.95] * 60)
+
+
+@pytest.fixture
+def _no_names(monkeypatch):
+    """隔离 PG：name map 返回空（不影响 exclude_st，名称非 ST）。"""
+    from app.services import short_term
+
+    monkeypatch.setattr(short_term, "_name_map", lambda syms: {})
+
+
+def test_short_term_volume_breakout(fake_arctic, _no_names):
+    """放量突破：横盘后单日突破前 20 日高 + 量比 3×→命中；横盘票不命中。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _mk_kline(
+        [10.0] * 59 + [11.0],
+        highs=[10.05] * 59 + [11.05],
+        vols=[1e6] * 59 + [3e6],
+    ))
+    lib.write("sz000099", _flat())
+
+    res = scan_short_term({"pattern": "volume_breakout", "vol_ratio_min": 1.5})
+    syms = {c["symbol"] for c in res["candidates"]}
+    assert "sh600001" in syms
+    assert "sz000099" not in syms
+    assert res["ready"] is True
+
+
+def test_short_term_ma_long(fake_arctic, _no_names):
+    """均线多头：持续上涨 MA5>MA10>MA20→命中；横盘票不命中。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    lib.write("sh600002", _mk_kline([9 + i * 0.05 for i in range(60)]))
+    lib.write("sz000099", _flat())
+
+    res = scan_short_term({"pattern": "ma_long"})
+    syms = {c["symbol"] for c in res["candidates"]}
+    assert "sh600002" in syms
+    assert "sz000099" not in syms
+
+
+def test_short_term_pullback(fake_arctic, _no_names):
+    """回踩企稳：上升趋势中今日最低触及 MA10 收回→命中；横盘票不命中。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    closes = [9 + i * 0.05 for i in range(59)] + [11.95]
+    lows = [c * 0.995 for c in closes[:-1]] + [10.0]  # 末根深探至 MA10 下方再收回
+    lib.write("sh600003", _mk_kline(closes, lows=lows))
+    lib.write("sz000099", _flat())
+
+    res = scan_short_term({"pattern": "pullback"})
+    syms = {c["symbol"] for c in res["candidates"]}
+    assert "sh600003" in syms
+    assert "sz000099" not in syms
+
+
+def test_short_term_empty_lib_not_ready(fake_arctic, _no_names):
+    """无历史 K 线 → ready False（提示先下载数据）。"""
+    from app.services.short_term import scan_short_term
+
+    res = scan_short_term({"pattern": "volume_breakout"})
+    assert res["ready"] is False
+    assert res["candidates"] == []
+
+
+def test_short_term_scores_sorted(fake_arctic, _no_names):
+    """多只命中 → candidates 带 score 且降序。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    # 两只放量突破，量比不同 → 动能打分有别
+    lib.write("sh600001", _mk_kline([10.0] * 59 + [11.0], highs=[10.05] * 59 + [11.05], vols=[1e6] * 59 + [3e6]))
+    lib.write("sh600004", _mk_kline([10.0] * 59 + [10.5], highs=[10.05] * 59 + [10.55], vols=[1e6] * 59 + [2e6]))
+
+    res = scan_short_term({"pattern": "volume_breakout"})
+    cands = res["candidates"]
+    assert len(cands) == 2
+    assert all("score" in c for c in cands)
+    scores = [c["score"] for c in cands]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_short_term_unknown_pattern_raises(fake_arctic, _no_names):
+    from app.services.short_term import scan_short_term
+
+    with pytest.raises(ValueError, match="unknown pattern"):
+        scan_short_term({"pattern": "foobar"})

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Button, Card, Empty, InputNumber, Select, Space, Switch, Table, message } from "antd";
+import { Alert, Button, Card, Empty, InputNumber, Segmented, Select, Space, Switch, Table, message } from "antd";
 import { FilterOutlined, StarOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -8,6 +8,7 @@ import type { ColumnsType } from "antd/es/table";
 import { runScreen } from "@/api/screener";
 import { addWatch } from "@/api/watchlist";
 import { PageScaffold } from "@/components/PageScaffold";
+import ShortTerm from "./ShortTerm";
 import type { ScreenCandidate, ScreenFilters } from "@/types";
 
 const SORT_OPTIONS = [
@@ -28,6 +29,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function Screener() {
+  const [mode, setMode] = useState<"fundamental" | "short_term">("fundamental");
   const [filters, setFilters] = useState<ScreenFilters>({
     exclude_st: true,
     sort_by: "amount",
@@ -128,6 +130,19 @@ export default function Screener() {
 
   return (
     <PageScaffold>
+      <Segmented
+        value={mode}
+        onChange={(v) => setMode(v as "fundamental" | "short_term")}
+        options={[
+          { label: "基本面筛选", value: "fundamental" },
+          { label: "短线技术选股", value: "short_term" },
+        ]}
+        className="self-start"
+      />
+      {mode === "short_term" ? (
+        <ShortTerm />
+      ) : (
+      <>
       <Card size="small" title="选股条件（基于全市场实时快照）">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           <Field label="市值(亿) ≥">
@@ -210,6 +225,8 @@ export default function Screener() {
           />
         )}
       </Card>
+      </>
+      )}
     </PageScaffold>
   );
 }

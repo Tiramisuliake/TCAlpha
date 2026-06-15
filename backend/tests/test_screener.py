@@ -207,3 +207,57 @@ def test_short_term_unknown_pattern_raises(fake_arctic, _no_names):
 
     with pytest.raises(ValueError, match="unknown pattern"):
         scan_short_term({"pattern": "foobar"})
+
+
+def _kline_with_tail_limit_ups(boards: int, *, base: float = 10.0) -> pd.DataFrame:
+    """构造尾部 N 连板的主板（10%）日 K：前 40 根横盘，末 N 根逐日精确涨停。"""
+    closes = [base] * 40
+    last = base
+    for _ in range(boards):
+        last = round(last * 1.1, 2)  # 主板涨停：昨收 ×1.1 两位小数
+        closes.append(last)
+    # high=close（一字/收于涨停），low 略低，volume 恒定
+    return _mk_kline(closes, highs=closes, lows=[c * 0.97 for c in closes])
+
+
+def test_short_term_limit_up_counts_boards(fake_arctic, _no_names):
+    """涨停打板：三连板 / 一板 / 普通票 → limit_up 命中两只，boards 计数正确且按高度排序。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _kline_with_tail_limit_ups(3))   # 三连板
+    lib.write("sh600002", _kline_with_tail_limit_ups(1))   # 一板
+    lib.write("sz000099", _flat())                          # 普通横盘
+
+    res = scan_short_term({"pattern": "limit_up", "min_boards": 1})
+    rows = {c["symbol"]: c for c in res["candidates"]}
+    assert set(rows) == {"sh600001", "sh600002"}           # 横盘不命中
+    assert rows["sh600001"]["boards"] == 3
+    assert rows["sh600002"]["boards"] == 1
+    # 连板高度优先排序
+    assert res["candidates"][0]["symbol"] == "sh600001"
+
+
+def test_short_term_min_boards_filter(fake_arctic, _no_names):
+    """min_boards=2：仅连板数 ≥ 2 入选（一板被过滤）。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_short_term
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _kline_with_tail_limit_ups(3))
+    lib.write("sh600002", _kline_with_tail_limit_ups(1))
+
+    res = scan_short_term({"pattern": "limit_up", "min_boards": 2})
+    syms = {c["symbol"] for c in res["candidates"]}
+    assert syms == {"sh600001"}
+
+
+def test_board_limit_pct_by_board():
+    """板块涨跌停比例：主板 10% / 创业板·科创板 20% / 北交所 30%。"""
+    from app.services.short_term import _board_limit_pct
+
+    assert _board_limit_pct("sh600000") == 0.10
+    assert _board_limit_pct("sz300001") == 0.20
+    assert _board_limit_pct("sh688001") == 0.20
+    assert _board_limit_pct("bj830799") == 0.30

@@ -34,10 +34,11 @@ class ScreenResult(BaseModel):
 class ShortTermRequest(BaseModel):
     """短线技术选股请求（基于 ArcticDB 历史日 K 的量价形态）。"""
 
-    pattern: str = "volume_breakout"  # volume_breakout / ma_long / pullback
+    pattern: str = "volume_breakout"  # volume_breakout / ma_long / pullback / limit_up
     breakout_window: int = 20         # 突破窗口（前 N 日新高）
     vol_window: int = 5               # 量比基准窗口
     vol_ratio_min: float = 1.5        # 放量倍数下限（volume_breakout 用）
+    min_boards: int = 1               # 连板下限（limit_up 用，1=今日涨停）
     price_min: float | None = None    # 股价下限（元）
     price_max: float | None = None    # 股价上限（元）
     exclude_st: bool = True

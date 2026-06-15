@@ -18,8 +18,22 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-PATTERNS = ("volume_breakout", "ma_long", "pullback")
+PATTERNS = ("volume_breakout", "ma_long", "pullback", "limit_up")
 _MIN_BARS = 30  # 算 MA20 + 突破窗口所需最少 bar 数
+
+
+def _board_limit_pct(symbol: str) -> float:
+    """A 股板块涨跌停比例：创业板(300/301)/科创板(688) 20%，北交所 30%，主板 10%。
+
+    ST 需股票名判定，扫描层已可 exclude_st；此处按板块比例（不单列 5%）。
+    """
+    s = symbol.lower()
+    raw = s[2:] if s[:2] in ("sh", "sz", "bj") else s
+    if s.startswith("bj") or raw.startswith(("8", "4")):
+        return 0.30
+    if raw.startswith(("300", "301", "688")):
+        return 0.20
+    return 0.10
 
 
 def _name_map(symbols: list[str]) -> dict[str, str]:
@@ -42,7 +56,23 @@ def _name_map(symbols: list[str]) -> dict[str, str]:
         return {}
 
 
-def _tech_snapshot(df: pd.DataFrame, breakout_window: int, vol_window: int) -> dict | None:
+def _count_boards(close: pd.Series, limit_pct: float) -> int:
+    """从最后一根往前数连续涨停天数（价格判定：收盘 ≥ 昨收涨停价）。"""
+    prev = close.shift(1)
+    limit_price = (prev * (1 + limit_pct)).round(2)
+    is_lu = close >= (limit_price - 0.001)
+    boards = 0
+    for ok in reversed(is_lu.tolist()):
+        if ok is True:
+            boards += 1
+        else:
+            break
+    return boards
+
+
+def _tech_snapshot(
+    df: pd.DataFrame, breakout_window: int, vol_window: int, symbol: str = ""
+) -> dict | None:
     """从单只日 K 算短线技术快照；数据不足返回 None。"""
     if len(df) < max(_MIN_BARS, breakout_window + 1, vol_window + 1):
         return None
@@ -72,6 +102,8 @@ def _tech_snapshot(df: pd.DataFrame, breakout_window: int, vol_window: int) -> d
 
     ret5 = last_close / float(close.iloc[-6]) - 1 if float(close.iloc[-6]) > 0 else 0.0
 
+    boards = _count_boards(close, _board_limit_pct(symbol)) if symbol else 0
+
     return {
         "close": round(last_close, 3),
         "ma5": round(ma5, 3),
@@ -82,10 +114,11 @@ def _tech_snapshot(df: pd.DataFrame, breakout_window: int, vol_window: int) -> d
         "dist_high": round(dist_high, 4),
         "ret5": round(ret5, 4),
         "low": last_low,
+        "boards": boards,
     }
 
 
-def _match(pattern: str, s: dict, vol_ratio_min: float) -> bool:
+def _match(pattern: str, s: dict, vol_ratio_min: float, min_boards: int = 1) -> bool:
     """形态判定：传入技术快照，返回是否命中。"""
     if pattern == "volume_breakout":
         # 收盘突破前 N 日最高 + 放量确认
@@ -96,6 +129,9 @@ def _match(pattern: str, s: dict, vol_ratio_min: float) -> bool:
     if pattern == "pullback":
         # 上升趋势（收盘在 MA20 上方）+ 当日回踩 MA10 并收回其上（企稳）
         return s["close"] > s["ma20"] and s["low"] <= s["ma10"] <= s["close"]
+    if pattern == "limit_up":
+        # 涨停打板：当前连板数 ≥ 下限（min_boards=1 即今日涨停）
+        return s.get("boards", 0) >= min_boards
     return False
 
 
@@ -116,6 +152,7 @@ def scan_short_term(filters: dict) -> dict:
     breakout_window = int(filters.get("breakout_window") or 20)
     vol_window = int(filters.get("vol_window") or 5)
     vol_ratio_min = float(filters.get("vol_ratio_min") or 1.5)
+    min_boards = int(filters.get("min_boards") or 1)
     price_min = filters.get("price_min")
     price_max = filters.get("price_max")
     exclude_st = filters.get("exclude_st", True)
@@ -138,7 +175,7 @@ def scan_short_term(filters: dict) -> dict:
             continue
         if df is None or df.empty or "close" not in df.columns:
             continue
-        snap = _tech_snapshot(df, breakout_window, vol_window)
+        snap = _tech_snapshot(df, breakout_window, vol_window, symbol=sym)
         if snap is None:
             continue
         if price_min is not None and snap["close"] < float(price_min):
@@ -148,7 +185,7 @@ def scan_short_term(filters: dict) -> dict:
         name = names.get(sym, "")
         if exclude_st and "ST" in name.upper():
             continue
-        if not _match(pattern, snap, vol_ratio_min):
+        if not _match(pattern, snap, vol_ratio_min, min_boards):
             continue
         hits.append({
             "symbol": sym,
@@ -161,14 +198,19 @@ def scan_short_term(filters: dict) -> dict:
             "ma5": snap["ma5"],
             "ma10": snap["ma10"],
             "ma20": snap["ma20"],
+            "boards": snap["boards"],
         })
 
-    candidates = _score(hits)[:limit]
+    candidates = _score(hits, pattern)[:limit]
     return {"ready": True, "count": len(candidates), "candidates": candidates}
 
 
-def _score(hits: list[dict]) -> list[dict]:
-    """短线动能打分：量比↑ + 近5日涨幅↑ + 距新高接近度↑，组内 min-max 归一化等权。"""
+def _score(hits: list[dict], pattern: str = "volume_breakout") -> list[dict]:
+    """打分排序。
+
+    通用形态：短线动能（量比↑ + 近5日涨幅↑ + 距新高接近度↑）组内 min-max 归一等权。
+    涨停打板（limit_up）：连板高度优先（boards），同板数再看量比 —— 打板看高度。
+    """
     if not hits:
         return []
 
@@ -179,6 +221,11 @@ def _score(hits: list[dict]) -> list[dict]:
             return [0.0] * len(hits)
         n = (vals - lo) / (hi - lo)
         return list(n if ascending else 1 - n)
+
+    if pattern == "limit_up":
+        for h in hits:
+            h["score"] = float(h.get("boards", 0))
+        return sorted(hits, key=lambda h: (h["boards"], h["vol_ratio"]), reverse=True)
 
     s_vol = _norm("vol_ratio", ascending=True)
     s_ret = _norm("ret5", ascending=True)

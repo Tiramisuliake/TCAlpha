@@ -13,12 +13,14 @@ const PATTERN_OPTIONS = [
   { value: "volume_breakout", label: "放量突破" },
   { value: "ma_long", label: "均线多头" },
   { value: "pullback", label: "回踩企稳" },
+  { value: "limit_up", label: "涨停打板" },
 ];
 
 const PATTERN_DESC: Record<string, string> = {
   volume_breakout: "收盘突破前 N 日新高 + 当日放量确认（量比 ≥ 阈值）——短线启动信号",
   ma_long: "MA5 > MA10 > MA20 且收盘站上 MA5——强势多头排列，趋势延续",
   pullback: "上升趋势中当日最低回踩 MA10 并收回其上——短线低吸点",
+  limit_up: "尾部连续涨停（按板块涨停价判定），按连板高度排序——打板情绪龙头",
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -40,6 +42,7 @@ export default function ShortTerm() {
     pattern: "volume_breakout",
     breakout_window: 20,
     vol_ratio_min: 1.5,
+    min_boards: 1,
     exclude_st: true,
     limit: 50,
   });
@@ -105,6 +108,15 @@ export default function ShortTerm() {
           "-"
         ),
     },
+    ...(filters.pattern === "limit_up"
+      ? ([{
+          title: "连板",
+          dataIndex: "boards",
+          align: "right" as const,
+          render: (v: number | null) =>
+            v != null && v > 0 ? <Tag color="red">{v} 板</Tag> : "-",
+        }] as ColumnsType<ScreenCandidate>)
+      : []),
     {
       title: "评分",
       dataIndex: "score",
@@ -156,6 +168,11 @@ export default function ShortTerm() {
           <Field label="量比 ≥（放量突破用）">
             <InputNumber size="small" min={1} step={0.1} value={filters.vol_ratio_min} onChange={(v) => set({ vol_ratio_min: v ?? 1.5 })} />
           </Field>
+          {filters.pattern === "limit_up" && (
+            <Field label="连板下限">
+              <InputNumber size="small" min={1} max={10} value={filters.min_boards ?? 1} onChange={(v) => set({ min_boards: v ?? 1 })} />
+            </Field>
+          )}
           <Field label="股价 ≥">
             <InputNumber size="small" value={filters.price_min} onChange={(v) => set({ price_min: v ?? undefined })} />
           </Field>

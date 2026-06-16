@@ -43,3 +43,28 @@ class ShortTermRequest(BaseModel):
     price_max: float | None = None    # 股价上限（元）
     exclude_st: bool = True
     limit: int = 50
+
+
+class LimitUpPremiumRequest(BaseModel):
+    """涨停次日溢价统计请求（打板复盘）。"""
+
+    symbol: str | None = None  # 单票；None = 全市场（已下载票）
+    lookback: int = 250        # 回看交易日
+
+
+class BoardGroupStat(BaseModel):
+    boards: str       # 1板 / 2板 / 3板+
+    count: int
+    avg_open: float   # 次日平均开盘溢价
+    avg_close: float  # 次日平均收盘溢价
+    win_rate: float   # 次日红盘率
+
+
+class LimitUpPremiumResult(BaseModel):
+    ready: bool
+    count: int
+    avg_open_premium: float = 0.0
+    avg_close_premium: float = 0.0
+    avg_high_premium: float = 0.0
+    next_day_win_rate: float = 0.0
+    by_boards: list[BoardGroupStat] = []

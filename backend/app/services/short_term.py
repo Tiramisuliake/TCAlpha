@@ -233,3 +233,123 @@ def _score(hits: list[dict], pattern: str = "volume_breakout") -> list[dict]:
     for h, a, b, c in zip(hits, s_vol, s_ret, s_high, strict=False):
         h["score"] = round(a + b + c, 4)
     return sorted(hits, key=lambda h: h["score"], reverse=True)
+
+
+# ── 涨停次日溢价统计（打板复盘，v0.8.12）────────────────────────────────
+
+
+def _limit_up_samples(df: pd.DataFrame, symbol: str, lookback: int) -> list[dict]:
+    """扫单只日 K 的历史涨停日，记录每个涨停日「次日」的开盘/收盘/最高溢价 + 当时连板数。
+
+    溢价基准为涨停日收盘价；涨停判定同 _count_boards（按板块涨停价）。
+    只取最近 lookback 个交易日内、且有次日数据的涨停日。
+    """
+    n = len(df)
+    if n < 2 or not {"open", "high", "close"} <= set(df.columns):
+        return []
+    close = df["close"]
+    open_ = df["open"]
+    high = df["high"]
+    prev = close.shift(1)
+    limit_price = (prev * (1 + _board_limit_pct(symbol))).round(2)
+    is_lu = (close >= (limit_price - 0.001)).tolist()
+
+    boards_arr = [0] * n
+    run = 0
+    for i in range(n):
+        run = run + 1 if is_lu[i] else 0
+        boards_arr[i] = run
+
+    start = max(1, n - lookback)
+    out: list[dict] = []
+    for i in range(start, n - 1):  # 需要 i+1 次日
+        if not is_lu[i]:
+            continue
+        c0 = float(close.iloc[i])
+        if c0 <= 0:
+            continue
+        out.append({
+            "open_prem": float(open_.iloc[i + 1]) / c0 - 1,
+            "close_prem": float(close.iloc[i + 1]) / c0 - 1,
+            "high_prem": float(high.iloc[i + 1]) / c0 - 1,
+            "boards": boards_arr[i],
+        })
+    return out
+
+
+def _board_group(boards: int) -> str:
+    if boards <= 1:
+        return "1板"
+    if boards == 2:
+        return "2板"
+    return "3板+"
+
+
+def limit_up_premium(symbol: str | None = None, lookback: int = 250, max_scan: int = 800) -> dict:
+    """涨停次日溢价统计（打板复盘）。
+
+    单 symbol（传 symbol）或全市场（默认，扫 ArcticDB 已下载票）。汇总：样本数、
+    次日平均开盘/收盘/最高溢价、次日红盘率（收盘 > 涨停日收盘占比），并按连板高度分组。
+    """
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    lib = get_library("bar_1d")
+    all_syms = lib.list_symbols()
+    if not all_syms:
+        return {"ready": False, "count": 0}
+
+    if symbol:
+        key = normalize(symbol)
+        syms = [key] if key in all_syms else []
+    else:
+        syms = all_syms[:max_scan]
+
+    samples: list[dict] = []
+    for sym in syms:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        samples.extend(_limit_up_samples(df, sym, lookback))
+
+    return _aggregate_premium(samples)
+
+
+def _aggregate_premium(samples: list[dict]) -> dict:
+    if not samples:
+        return {
+            "ready": True, "count": 0,
+            "avg_open_premium": 0.0, "avg_close_premium": 0.0,
+            "avg_high_premium": 0.0, "next_day_win_rate": 0.0, "by_boards": [],
+        }
+
+    op = np.array([s["open_prem"] for s in samples])
+    cl = np.array([s["close_prem"] for s in samples])
+    hi = np.array([s["high_prem"] for s in samples])
+
+    groups: list[dict] = []
+    for label in ("1板", "2板", "3板+"):
+        sub = [s for s in samples if _board_group(s["boards"]) == label]
+        if not sub:
+            continue
+        sub_cl = np.array([s["close_prem"] for s in sub])
+        groups.append({
+            "boards": label,
+            "count": len(sub),
+            "avg_open": round(float(np.mean([s["open_prem"] for s in sub])), 4),
+            "avg_close": round(float(sub_cl.mean()), 4),
+            "win_rate": round(float((sub_cl > 0).mean()), 4),
+        })
+
+    return {
+        "ready": True,
+        "count": len(samples),
+        "avg_open_premium": round(float(op.mean()), 4),
+        "avg_close_premium": round(float(cl.mean()), 4),
+        "avg_high_premium": round(float(hi.mean()), 4),
+        "next_day_win_rate": round(float((cl > 0).mean()), 4),
+        "by_boards": groups,
+    }

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.12] — 2026-06-12
+
+> 打板复盘：涨停次日溢价统计。扫历史涨停日，统计次日开盘/收盘/最高溢价 + 红盘率，按连板高度分组 —— 验证「涨停打板」策略的次日期望与胜率。承接涨停打板选股，复用涨停判定逻辑，零迁移。
+
+### Added — 涨停次日溢价统计（打板复盘）
+- `services/short_term.py`：`_limit_up_samples` 扫单只历史涨停日，记录每个涨停日「次日」的开盘/收盘/最高溢价（以涨停日收盘价为基准）+ 当时连板数；`limit_up_premium(symbol?, lookback)` 单票或全市场汇总 —— 样本数 / 次日平均开盘·收盘·最高溢价 / 次日红盘率，并按 1板·2板·3板+ 分组（各组样本数、均溢价、红盘率）
+- `schemas/screener.py`：`LimitUpPremiumRequest` / `LimitUpPremiumResult` / `BoardGroupStat`
+- `api/screener.py`：`POST /api/screener/limit-up-premium`（`data.read` + `to_thread`）
+- 前端：选股页 Segmented 加第三项「打板复盘」—— `LimitUpStats` 组件（标的可选/留空全市场 + 回看天数 → 总体溢价统计卡 + 按连板分组表）
+- 测试：单票涨停日次日溢价精确匹配 + 无涨停 count 0 + 空库 ready False + 两连板分组（+4 用例，共 185 passed）
+
 ## [0.8.11] — 2026-06-12
 
 > 短线选股新增「涨停打板」形态：按板块涨停价精确判定连板高度，A 股最经典的短线情绪打板范式。复用上轮短线选股骨架，零迁移、零新依赖。

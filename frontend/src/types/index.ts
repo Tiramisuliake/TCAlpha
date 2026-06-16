@@ -294,6 +294,25 @@ export interface ScreenResult {
   candidates: ScreenCandidate[];
 }
 
+/** 涨停次日溢价统计（打板复盘）。 */
+export interface BoardGroupStat {
+  boards: string;
+  count: number;
+  avg_open: number;
+  avg_close: number;
+  win_rate: number;
+}
+
+export interface LimitUpPremiumResult {
+  ready: boolean;
+  count: number;
+  avg_open_premium: number;
+  avg_close_premium: number;
+  avg_high_premium: number;
+  next_day_win_rate: number;
+  by_boards: BoardGroupStat[];
+}
+
 /** 短线技术选股请求（基于历史日 K 的量价形态）。 */
 export interface ShortTermFilters {
   pattern: "volume_breakout" | "ma_long" | "pullback" | "limit_up";

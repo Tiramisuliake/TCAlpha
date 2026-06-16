@@ -93,6 +93,7 @@ async def test_screen_factor_mode_scores_and_sorts(monkeypatch):
 def _mk_kline(
     closes: list[float],
     *,
+    opens: list[float] | None = None,
     highs: list[float] | None = None,
     lows: list[float] | None = None,
     vols: list[float] | None = None,
@@ -100,11 +101,12 @@ def _mk_kline(
     n = len(closes)
     idx = pd.date_range("2024-01-01", periods=n, freq="B", tz="Asia/Shanghai")
     close = np.array(closes, dtype=float)
+    open_ = np.array(opens, dtype=float) if opens else close
     high = np.array(highs, dtype=float) if highs else close * 1.005
     low = np.array(lows, dtype=float) if lows else close * 0.995
     vol = np.array(vols, dtype=float) if vols else np.full(n, 1e6)
     return pd.DataFrame(
-        {"open": close, "high": high, "low": low, "close": close, "volume": vol,
+        {"open": open_, "high": high, "low": low, "close": close, "volume": vol,
          "amount": close * vol},
         index=idx,
     )
@@ -261,3 +263,63 @@ def test_board_limit_pct_by_board():
     assert _board_limit_pct("sz300001") == 0.20
     assert _board_limit_pct("sh688001") == 0.20
     assert _board_limit_pct("bj830799") == 0.30
+
+
+# ── 涨停次日溢价统计（打板复盘，v0.8.12）─────────────────────────────────
+
+
+def test_limit_up_premium_single_stock(fake_arctic):
+    """单只票一个涨停日：次日开盘/收盘/最高溢价与红盘率精确匹配。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import limit_up_premium
+
+    # 40 横盘 10 → 第41根涨停到 11.0 → 次日 open=11.5 close=11.3 high=12.0 → 之后平
+    closes = [10.0] * 40 + [11.0] + [11.3, 11.3, 11.3]
+    opens = [10.0] * 40 + [10.5] + [11.5, 11.3, 11.3]   # 次日（idx41）开盘 11.5
+    highs = [10.05] * 40 + [11.0] + [12.0, 11.4, 11.4]
+    get_library("bar_1d").write("sh600001", _mk_kline(closes, opens=opens, highs=highs))
+
+    res = limit_up_premium(symbol="sh600001", lookback=250)
+
+    assert res["ready"] is True
+    assert res["count"] == 1
+    assert res["avg_open_premium"] == pytest.approx(11.5 / 11.0 - 1, abs=1e-4)
+    assert res["avg_close_premium"] == pytest.approx(11.3 / 11.0 - 1, abs=1e-4)
+    assert res["avg_high_premium"] == pytest.approx(12.0 / 11.0 - 1, abs=1e-4)
+    assert res["next_day_win_rate"] == 1.0  # 次日收盘 11.3 > 11.0
+    assert res["by_boards"][0]["boards"] == "1板"
+
+
+def test_limit_up_premium_no_limit_up(fake_arctic):
+    """横盘无涨停 → count 0，各项归零。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import limit_up_premium
+
+    get_library("bar_1d").write("sz000099", _flat())
+    res = limit_up_premium(symbol="sz000099")
+    assert res["ready"] is True and res["count"] == 0
+    assert res["by_boards"] == []
+
+
+def test_limit_up_premium_empty_lib(fake_arctic):
+    """空库 → ready False。"""
+    from app.services.short_term import limit_up_premium
+
+    assert limit_up_premium()["ready"] is False
+
+
+def test_limit_up_premium_groups_by_boards(fake_arctic):
+    """两连板产生 1板 + 2板两个涨停日样本，分组统计各 1 条。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import limit_up_premium
+
+    # 40 横盘 → 两连板（11.0, 12.10）→ 后续有次日数据
+    closes = [10.0] * 40 + [11.0, 12.1] + [12.0, 12.0]
+    get_library("bar_1d").write("sh600002", _mk_kline(closes, highs=closes))
+
+    res = limit_up_premium(symbol="sh600002", lookback=250)
+    labels = {g["boards"]: g for g in res["by_boards"]}
+    assert "1板" in labels and "2板" in labels
+    assert labels["1板"]["count"] == 1
+    assert labels["2板"]["count"] == 1
+    assert res["count"] == 2

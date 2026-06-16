@@ -58,6 +58,7 @@ class BoardGroupStat(BaseModel):
     avg_open: float   # 次日平均开盘溢价
     avg_close: float  # 次日平均收盘溢价
     win_rate: float   # 次日红盘率
+    promote_rate: float = 0.0  # 次日续板率（晋级 N+1 板的概率）
 
 
 class LimitUpPremiumResult(BaseModel):

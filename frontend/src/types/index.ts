@@ -301,6 +301,7 @@ export interface BoardGroupStat {
   avg_open: number;
   avg_close: number;
   win_rate: number;
+  promote_rate: number; // 次日续板率（晋级 N+1 板）
 }
 
 export interface LimitUpPremiumResult {

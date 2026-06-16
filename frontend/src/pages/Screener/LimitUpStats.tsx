@@ -46,6 +46,12 @@ export default function LimitUpStats() {
       align: "right",
       render: (v: number) => <span className="num">{pct(v)}</span>,
     },
+    {
+      title: "晋级率（次日续板）",
+      dataIndex: "promote_rate",
+      align: "right",
+      render: (v: number) => <span className="num font-medium text-orange-500">{pct(v)}</span>,
+    },
   ];
 
   return (
@@ -72,7 +78,7 @@ export default function LimitUpStats() {
           </Button>
         </div>
         <div className="mt-2 text-xs text-slate-400">
-          统计历史涨停日的「次日」表现，溢价以涨停日收盘价为基准，按连板高度分组 —— 验证打板的次日期望与胜率
+          统计历史涨停日的「次日」表现，溢价以涨停日收盘价为基准，按连板高度分组 —— 验证打板的次日期望、胜率与晋级率（N 板次日续板成 N+1 的概率）
         </div>
       </Card>
 

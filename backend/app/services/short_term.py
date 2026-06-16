@@ -273,6 +273,7 @@ def _limit_up_samples(df: pd.DataFrame, symbol: str, lookback: int) -> list[dict
             "close_prem": float(close.iloc[i + 1]) / c0 - 1,
             "high_prem": float(high.iloc[i + 1]) / c0 - 1,
             "boards": boards_arr[i],
+            "next_limit_up": bool(is_lu[i + 1]),  # 次日续板 = 晋级 N+1
         })
     return out
 
@@ -336,12 +337,14 @@ def _aggregate_premium(samples: list[dict]) -> dict:
         if not sub:
             continue
         sub_cl = np.array([s["close_prem"] for s in sub])
+        promote = np.array([1.0 if s["next_limit_up"] else 0.0 for s in sub])
         groups.append({
             "boards": label,
             "count": len(sub),
             "avg_open": round(float(np.mean([s["open_prem"] for s in sub])), 4),
             "avg_close": round(float(sub_cl.mean()), 4),
             "win_rate": round(float((sub_cl > 0).mean()), 4),
+            "promote_rate": round(float(promote.mean()), 4),  # 次日续板率（晋级 N+1）
         })
 
     return {

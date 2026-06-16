@@ -323,3 +323,6 @@ def test_limit_up_premium_groups_by_boards(fake_arctic):
     assert labels["1板"]["count"] == 1
     assert labels["2板"]["count"] == 1
     assert res["count"] == 2
+    # 晋级率：1板日次日续板（晋级2板）→ 1.0；2板日次日未续板 → 0.0
+    assert labels["1板"]["promote_rate"] == 1.0
+    assert labels["2板"]["promote_rate"] == 0.0

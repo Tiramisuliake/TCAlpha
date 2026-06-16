@@ -16,6 +16,8 @@ from app.db.models.strategy import StrategyConfig
 from app.schemas.sim import (
     AccountOut,
     AccountPosition,
+    EquityCurveOut,
+    EquityCurvePoint,
     PositionOut,
     PositionSummary,
     SimOrderOut,
@@ -255,6 +257,26 @@ async def cancel_order(
 # ──────────────────────────────────────────────
 
 
+def _replay_positions(orders) -> dict[str, dict]:
+    """按时序重放 filled 订单 → {symbol: {pos, avg}}（加权摊薄均价，清仓归零）。
+
+    orders 须按 (created_at, id) 升序。async / sync 路径共用，纯计算无 IO。
+    """
+    pos_map: dict[str, dict] = {}
+    for o in orders:
+        eff = o.filled_volume * (1 if (o.direction == "long") == (o.offset == "open") else -1)
+        st = pos_map.setdefault(o.symbol, {"pos": 0, "avg": 0.0})
+        if eff > 0:
+            total = st["avg"] * st["pos"] + o.price * eff
+            st["pos"] += eff
+            st["avg"] = total / st["pos"] if st["pos"] > 0 else 0.0
+        else:
+            st["pos"] = max(st["pos"] + eff, 0)
+            if st["pos"] == 0:
+                st["avg"] = 0.0
+    return pos_map
+
+
 async def _get_or_create_account(db: AsyncSession, user_id: int) -> SimAccount:
     """懒创建资金账户（初始资金走 settings.sim_init_capital）。"""
     stmt = select(SimAccount).where(SimAccount.user_id == user_id)
@@ -286,18 +308,7 @@ async def get_account(db: AsyncSession, user_id: int) -> AccountOut:
     )
     rows = (await db.execute(stmt)).scalars().all()
 
-    pos_map: dict[str, dict] = {}  # symbol → {pos, avg}
-    for o in rows:
-        eff = o.filled_volume * (1 if (o.direction == "long") == (o.offset == "open") else -1)
-        st = pos_map.setdefault(o.symbol, {"pos": 0, "avg": 0.0})
-        if eff > 0:
-            total = st["avg"] * st["pos"] + o.price * eff
-            st["pos"] += eff
-            st["avg"] = total / st["pos"] if st["pos"] > 0 else 0.0
-        else:
-            st["pos"] = max(st["pos"] + eff, 0)
-            if st["pos"] == 0:
-                st["avg"] = 0.0
+    pos_map = _replay_positions(rows)
 
     positions = [
         AccountPosition(
@@ -326,6 +337,113 @@ async def reset_account(db: AsyncSession, user_id: int) -> AccountOut:
     await db.commit()
     logger.info("reset_account: user={} balance→{}", user_id, acct.init_capital)
     return await get_account(db, user_id)
+
+
+# ──────────────────────────────────────────────
+# 净值快照与曲线（v0.8.15）
+# ──────────────────────────────────────────────
+
+
+def _latest_close_sync(symbol: str) -> float | None:
+    """ArcticDB bar_1d 取该 symbol 最新收盘价；无数据返回 None。"""
+    try:
+        from app.db.arctic import get_library
+
+        key = normalize(symbol)
+        lib = get_library("bar_1d")
+        if key not in lib.list_symbols():
+            return None
+        df = lib.read(key).data
+        if df is None or df.empty or "close" not in df.columns:
+            return None
+        return float(df["close"].iloc[-1])
+    except Exception:
+        return None
+
+
+def snapshot_equity_sync(user_id: int) -> dict | None:
+    """同步快照账户净值（供 Celery beat 调用，用 SyncSession）。
+
+    total_asset = 现金 + 持仓市值（最新收盘价；无行情用持仓成本兜底）。
+    按 (user_id, 当日) upsert，返回快照字段；无账户则返回 None。
+    """
+    from app.db.models.account import SimAccount, SimEquitySnapshot
+    from app.db.models.order import SimOrder
+    from app.db.postgres import SyncSessionLocal
+    from app.utils.trading_period import now_cn
+
+    with SyncSessionLocal() as db:
+        acct = db.execute(
+            select(SimAccount).where(SimAccount.user_id == user_id)
+        ).scalar_one_or_none()
+        if acct is None:
+            return None
+
+        orders = db.execute(
+            select(SimOrder)
+            .where(SimOrder.user_id == user_id, SimOrder.status == "filled")
+            .order_by(SimOrder.created_at, SimOrder.id)
+        ).scalars().all()
+        pos_map = _replay_positions(orders)
+
+        position_value = 0.0
+        for sym, st in pos_map.items():
+            if st["pos"] <= 0:
+                continue
+            close = _latest_close_sync(sym)
+            position_value += (close if close is not None else st["avg"]) * st["pos"]
+
+        total = acct.balance + position_value
+        today = now_cn().date()
+        snap = db.execute(
+            select(SimEquitySnapshot).where(
+                SimEquitySnapshot.user_id == user_id, SimEquitySnapshot.dt == today
+            )
+        ).scalar_one_or_none()
+        if snap is None:
+            snap = SimEquitySnapshot(user_id=user_id, dt=today)
+            db.add(snap)
+        snap.balance = round(acct.balance, 2)
+        snap.position_value = round(position_value, 2)
+        snap.total_asset = round(total, 2)
+        db.commit()
+        return {
+            "dt": str(today),
+            "balance": snap.balance,
+            "position_value": snap.position_value,
+            "total_asset": snap.total_asset,
+        }
+
+
+async def get_equity_curve(db: AsyncSession, user_id: int, days: int = 180) -> EquityCurveOut:
+    """近 days 天的账户净值序列 + 初始资金基准。"""
+    from datetime import timedelta
+
+    from app.db.models.account import SimEquitySnapshot
+    from app.utils.trading_period import now_cn
+
+    acct = await _get_or_create_account(db, user_id)
+    await db.commit()
+
+    cutoff = now_cn().date() - timedelta(days=days)
+    rows = (
+        await db.execute(
+            select(SimEquitySnapshot)
+            .where(SimEquitySnapshot.user_id == user_id, SimEquitySnapshot.dt >= cutoff)
+            .order_by(SimEquitySnapshot.dt)
+        )
+    ).scalars().all()
+
+    points = [
+        EquityCurvePoint(
+            dt=str(r.dt),
+            balance=r.balance,
+            position_value=r.position_value,
+            total_asset=r.total_asset,
+        )
+        for r in rows
+    ]
+    return EquityCurveOut(init_capital=acct.init_capital, points=points)
 
 
 async def list_positions(

@@ -63,6 +63,20 @@ class AccountOut(BaseModel):
     positions: list[AccountPosition] = []
 
 
+class EquityCurvePoint(BaseModel):
+    """每日净值快照点（市值口径）。"""
+
+    dt: str
+    balance: float
+    position_value: float
+    total_asset: float
+
+
+class EquityCurveOut(BaseModel):
+    init_capital: float
+    points: list[EquityCurvePoint] = []
+
+
 class StrategySignal(BaseModel):
     strategy_id: int
     symbol: str

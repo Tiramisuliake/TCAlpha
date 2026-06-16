@@ -365,6 +365,19 @@ export interface AccountOut {
   positions: AccountPosition[];
 }
 
+/** 每日净值快照点（市值口径）。 */
+export interface EquityCurvePoint {
+  dt: string;
+  balance: number;
+  position_value: number;
+  total_asset: number;
+}
+
+export interface EquityCurveOut {
+  init_capital: number;
+  points: EquityCurvePoint[];
+}
+
 export interface PlaceOrderRequest {
   symbol: string;
   direction: "long" | "short";

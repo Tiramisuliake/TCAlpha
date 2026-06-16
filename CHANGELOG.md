@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.15] — 2026-06-12
+
+> 账户净值曲线：给模拟资金账户配上历史净值。每日收盘 beat 快照各用户净值（现金 + 持仓市值），Trade 页画净值曲线 vs 初始资金基准 —— 模拟盘从"能下单"升级到"能复盘"。
+
+### Added — 账户净值曲线（市值口径）
+- `db/models/account.py`：新增 `SimEquitySnapshot`（user_id + dt 唯一 / balance / position_value / total_asset）+ 迁移 `3afb46c74f15`
+- `services/sim.py`：抽 `_replay_positions` 纯函数（async `get_account` 与同步快照共用持仓重放）；`snapshot_equity_sync(user_id)` —— 现金 + 持仓市值（ArcticDB 最新收盘价，无行情用持仓成本兜底），按 (user, 当日) upsert；`get_equity_curve(db, user_id, days)` 返回净值序列 + 初始资金基准
+- `tasks/sim_tasks.py`：`snapshot_all_equity` beat 任务遍历所有 SimAccount 用户快照；`celery_app` include + beat cron 交易日 15:30（晚于选股推送）
+- API `GET /api/sim/equity-curve`；前端 Trade 页账户卡下方加净值曲线（ECharts 总资产折线 + 初始资金虚线基准）
+- 测试：市值估值 / 无行情成本兜底 / 同日 upsert / 无账户返回 None / beat 遍历用户（+5 用例，共 194 passed）
+
 ## [0.8.14] — 2026-06-12
 
 > 每日收盘推送升级为多形态合并：一次扫齐全部 4 形态（放量突破 / 均线多头 / 回踩企稳 / 涨停打板），汇总成单条飞书，避免每形态各推一条。复用现有扫描与事件总线，零迁移、零前端改动。

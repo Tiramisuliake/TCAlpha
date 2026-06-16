@@ -8,6 +8,7 @@ from app.core.auth_deps import CurrentUser, effective_scope, require_permission
 from app.deps import DB, CurrentUserId
 from app.schemas.sim import (
     AccountOut,
+    EquityCurveOut,
     PlaceOrderRequest,
     PositionOut,
     PositionSummary,
@@ -99,6 +100,20 @@ async def reset_account(
 ):
     """重置账户现金到初始资金（订单流水保留）。"""
     return await sim_svc.reset_account(db, user_id)
+
+
+@router.get(
+    "/equity-curve",
+    response_model=EquityCurveOut,
+    dependencies=[Depends(require_permission("sim.order.read"))],
+)
+async def equity_curve(
+    days: int = Query(default=180, ge=7, le=1000),
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """账户每日净值曲线（市值口径，收盘后 beat 记录）。"""
+    return await sim_svc.get_equity_curve(db, user_id, days=days)
 
 
 @router.get(

@@ -18,9 +18,11 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactECharts from "echarts-for-react";
 import {
   cancelOrder,
   getAccount,
+  getEquityCurve,
   listOrders,
   listPositions,
   placeOrder,
@@ -28,12 +30,57 @@ import {
 } from "@/api/sim";
 import { getSymbols } from "@/api/market";
 import type {
+  EquityCurveOut,
   PlaceOrderRequest,
   PositionSummary,
   SimOrder,
 } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
+
+/** 账户净值曲线 ECharts option：总资产折线 + 初始资金基准虚线。 */
+function equityChartOption(equity: EquityCurveOut) {
+  return {
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (v: number) => (v == null ? "-" : Number(v).toLocaleString()),
+    },
+    grid: { left: 64, right: 20, top: 16, bottom: 44 },
+    xAxis: {
+      type: "category",
+      data: equity.points.map((p) => p.dt),
+      axisLabel: { fontSize: 10, rotate: 30 },
+    },
+    yAxis: { type: "value", scale: true, axisLabel: { fontSize: 10 } },
+    series: [
+      {
+        name: "总资产",
+        type: "line",
+        smooth: true,
+        symbol: "none",
+        data: equity.points.map((p) => p.total_asset),
+        lineStyle: { color: "#3b82f6", width: 2 },
+        areaStyle: {
+          color: {
+            type: "linear",
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: "rgba(59,130,246,0.28)" },
+              { offset: 1, color: "rgba(59,130,246,0)" },
+            ],
+          },
+        },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          data: [{ yAxis: equity.init_capital }],
+          lineStyle: { color: "#94a3b8", type: "dashed" },
+          label: { formatter: `初始 ${equity.init_capital.toLocaleString()}`, fontSize: 10 },
+        },
+      },
+    ],
+  };
+}
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAuthStore, wsUrl as buildWsUrl } from "@/store/useAuthStore";
 
@@ -173,6 +220,12 @@ export default function TradePage() {
     queryKey: ["sim", "account"],
     queryFn: getAccount,
     staleTime: 10_000,
+  });
+
+  const equityQuery = useQuery({
+    queryKey: ["sim", "equity-curve"],
+    queryFn: () => getEquityCurve(180),
+    staleTime: 60_000,
   });
 
   const placeMut = useMutation({
@@ -417,6 +470,16 @@ export default function TradePage() {
                 <Statistic title="初始资金" value={account?.init_capital ?? 0} precision={0} valueStyle={{ fontSize: 18 }} />
               </Col>
             </Row>
+          </Card>
+
+          <Card title="净值曲线（市值口径 · 每日收盘记录）" size="small" className="mb-3">
+            {equityQuery.data && equityQuery.data.points.length > 0 ? (
+              <ReactECharts option={equityChartOption(equityQuery.data)} style={{ height: 220 }} notMerge />
+            ) : (
+              <div className="h-[120px] flex items-center justify-center text-slate-400 text-sm">
+                暂无净值快照（每交易日 15:30 收盘后由 Celery beat 自动记录）
+              </div>
+            )}
           </Card>
 
           <Card

@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { AccountOut, PlaceOrderRequest, PositionSummary, SimOrder } from "@/types";
+import type { AccountOut, EquityCurveOut, PlaceOrderRequest, PositionSummary, SimOrder } from "@/types";
 
 export const listOrders = (strategyId?: number, limit = 50) =>
   api
@@ -20,6 +20,9 @@ export const getAccount = () =>
 
 export const resetAccount = () =>
   api.post<AccountOut>("/sim/account/reset").then((r) => r.data);
+
+export const getEquityCurve = (days = 180) =>
+  api.get<EquityCurveOut>("/sim/equity-curve", { params: { days } }).then((r) => r.data);
 
 export const getPosition = (symbol: string) =>
   api

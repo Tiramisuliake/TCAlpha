@@ -21,6 +21,7 @@ celery_app = Celery(
         "app.tasks.strategy_tasks",
         "app.tasks.ai_tasks",
         "app.tasks.screen_tasks",
+        "app.tasks.sim_tasks",
     ],
 )
 
@@ -70,5 +71,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.screen_tasks.scan_multi_pattern_daily",
         "schedule": crontab(hour=15, minute=5, day_of_week="1-5"),
         "kwargs": {"top": 5},
+    },
+    # 模拟账户：交易日收盘后（15:30）快照各用户净值，供净值曲线复盘
+    "sim-equity-snapshot-close": {
+        "task": "app.tasks.sim_tasks.snapshot_all_equity",
+        "schedule": crontab(hour=15, minute=30, day_of_week="1-5"),
     },
 }

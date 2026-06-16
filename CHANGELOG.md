@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.14] — 2026-06-12
+
+> 每日收盘推送升级为多形态合并：一次扫齐全部 4 形态（放量突破 / 均线多头 / 回踩企稳 / 涨停打板），汇总成单条飞书，避免每形态各推一条。复用现有扫描与事件总线，零迁移、零前端改动。
+
+### Changed — 多形态合并推送
+- `tasks/screen_tasks.py`：新增 `scan_multi_pattern_daily(patterns默认4形态, top)` —— 逐形态跑 `scan_short_term`，把各形态命中汇总成单条 `screen.short_term` 事件（每形态一行：命中数 + TOP3 代码名，无命中形态不列）；任一形态有数据即 ready、全零命中不推送、周末/无数据 skip
+- `celery_app.py`：beat `short-term-scan-close` 从单形态 `scan_short_term_daily` 改指向 `scan_multi_pattern_daily`（单形态任务保留供手动调用）
+- 用户订阅同一 `screen.short_term` 事件即可，**无需改通知配置 / 无前端改动**
+- 测试：多形态合并仅推一条且 payload 含各形态行 / 全零不推 / 无数据 skip / 周末 skip（+4 用例，共 189 passed）
+
 ## [0.8.13] — 2026-06-12
 
 > 打板复盘增强：连板晋级率。在涨停次日溢价统计的基础上，加「N 板次日续板成 N+1 的概率」—— 打板情绪周期的核心指标（晋级率高低决定打几板）。复用现有涨停扫描，零迁移。

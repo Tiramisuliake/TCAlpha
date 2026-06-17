@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ScreenRequest(BaseModel):
@@ -69,3 +69,9 @@ class LimitUpPremiumResult(BaseModel):
     avg_high_premium: float = 0.0
     next_day_win_rate: float = 0.0
     by_boards: list[BoardGroupStat] = []
+
+
+class MatchPatternsRequest(BaseModel):
+    """盯盘短线形态匹配请求。"""
+
+    symbols: list[str] = Field(default_factory=list, max_length=300)

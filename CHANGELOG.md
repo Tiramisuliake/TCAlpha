@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.17] — 2026-06-12
+
+> 盯盘驾驶舱接入短线形态实时标记：自选股表格新增「短线形态」列，直接看到每只票当前命中放量突破 / 均线多头 / 回踩企稳 / 涨停打板。打通短线选股能力与盯盘场景，零迁移、零新依赖。
+
+### Added — 盯盘短线形态标记
+- `services/short_term.py`：新增 `match_patterns(symbols)` —— 对一组标的各算当前命中的短线形态（中文名列表），复用 `_tech_snapshot` + `_match`；不在 ArcticDB / 数据不足 / 非法代码均返回空
+- `schemas/screener.py` `MatchPatternsRequest` + `api/screener.py` `POST /api/screener/match-patterns`（`data.read` + `to_thread`，response `dict[str, list[str]]`）
+- 前端：盯盘驾驶舱（Monitor）自选股表加「短线形态」列，按自选 symbols 60s 刷新匹配，命中形态以彩色 Tag 标记（与选股形态配色对齐）
+- 测试：放量突破/涨停票命中对应形态 + 横盘票空 + 不在库票空（+2 用例，共 198 passed）
+
 ## [0.8.16] — 2026-06-12
 
 > 净值曲线叠加沪深300基准：模拟账户净值与指数同起点对比，直观看是否跑赢大盘 + 区间超额收益。复用回测引擎指数加载，零迁移、零新依赖。

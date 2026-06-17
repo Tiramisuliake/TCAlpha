@@ -2,6 +2,7 @@ import { Badge, Card, Empty, Table, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import { getBoard, type BoardItem } from "@/api/watchlist";
+import { matchPatterns } from "@/api/screener";
 import type { AlertLevel } from "@/api/ai_alerts";
 import { PageScaffold } from "@/components/PageScaffold";
 
@@ -9,6 +10,14 @@ const LEVEL_COLOR: Record<AlertLevel, string> = {
   info: "blue",
   warn: "orange",
   danger: "red",
+};
+
+// 短线形态标签配色（与选股形态对齐）
+const PATTERN_COLOR: Record<string, string> = {
+  放量突破: "red",
+  均线多头: "volcano",
+  回踩企稳: "blue",
+  涨停打板: "magenta",
 };
 
 export default function Monitor() {
@@ -20,6 +29,15 @@ export default function Monitor() {
 
   const items = data?.items ?? [];
   const alerts = data?.alerts ?? [];
+
+  const symbols = items.map((i) => i.symbol);
+  const { data: patterns } = useQuery({
+    queryKey: ["watchlist", "patterns", symbols],
+    queryFn: () => matchPatterns(symbols),
+    enabled: symbols.length > 0,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 
   const cols: ColumnsType<BoardItem> = [
     { title: "代码", dataIndex: "symbol", width: 90, render: (v: string) => <span className="num">{v}</span> },
@@ -42,6 +60,25 @@ export default function Monitor() {
       dataIndex: "amount",
       align: "right",
       render: (v: number | null) => (v != null ? <span className="num">{(v / 1e8).toFixed(2)}</span> : "-"),
+    },
+    {
+      title: "短线形态",
+      key: "patterns",
+      width: 200,
+      render: (_: unknown, row: BoardItem) => {
+        const ps = patterns?.[row.symbol] ?? [];
+        return ps.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            {ps.map((p) => (
+              <Tag key={p} color={PATTERN_COLOR[p] ?? "default"} className="!m-0">
+                {p}
+              </Tag>
+            ))}
+          </span>
+        ) : (
+          <span className="text-slate-300">-</span>
+        );
+      },
     },
     {
       title: "备注",

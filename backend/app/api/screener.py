@@ -10,6 +10,7 @@ from app.deps import CurrentUserId
 from app.schemas.screener import (
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
+    MatchPatternsRequest,
     ScreenRequest,
     ScreenResult,
     ShortTermRequest,
@@ -62,3 +63,16 @@ async def run_limit_up_premium(
     return await asyncio.to_thread(
         short_term_svc.limit_up_premium, payload.symbol, payload.lookback
     )
+
+
+@router.post(
+    "/match-patterns",
+    response_model=dict[str, list[str]],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def match_patterns(
+    payload: MatchPatternsRequest,
+    _: int = CurrentUserId,
+):
+    """对一组标的各算当前命中的短线形态（盯盘实时标记）。"""
+    return await asyncio.to_thread(short_term_svc.match_patterns, payload.symbols)

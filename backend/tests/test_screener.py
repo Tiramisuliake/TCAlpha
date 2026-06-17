@@ -326,3 +326,33 @@ def test_limit_up_premium_groups_by_boards(fake_arctic):
     # 晋级率：1板日次日续板（晋级2板）→ 1.0；2板日次日未续板 → 0.0
     assert labels["1板"]["promote_rate"] == 1.0
     assert labels["2板"]["promote_rate"] == 0.0
+
+
+# ── 盯盘短线形态匹配（v0.8.17）───────────────────────────────────────────
+
+
+def test_match_patterns_marks_hits(fake_arctic, _no_names):
+    """放量突破票命中「放量突破」；横盘票空；不在库的票空。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import match_patterns
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _mk_kline(
+        [10.0] * 59 + [11.0], highs=[10.05] * 59 + [11.05], vols=[1e6] * 59 + [3e6],
+    ))
+    lib.write("sz000099", _flat())
+
+    res = match_patterns(["sh600001", "sz000099", "sh999999"])
+    assert "放量突破" in res["sh600001"]
+    assert res["sz000099"] == []
+    assert res["sh999999"] == []   # 不在 ArcticDB
+
+
+def test_match_patterns_limit_up_marked(fake_arctic, _no_names):
+    """涨停票命中「涨停打板」。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import match_patterns
+
+    get_library("bar_1d").write("sh600003", _kline_with_tail_limit_ups(2))
+    res = match_patterns(["sh600003"])
+    assert "涨停打板" in res["sh600003"]

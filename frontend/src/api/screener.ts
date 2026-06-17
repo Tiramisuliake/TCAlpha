@@ -9,3 +9,6 @@ export const runShortTerm = (filters: ShortTermFilters) =>
 
 export const runLimitUpPremium = (payload: { symbol?: string; lookback?: number }) =>
   api.post<LimitUpPremiumResult>("/screener/limit-up-premium", payload).then((r) => r.data);
+
+export const matchPatterns = (symbols: string[]) =>
+  api.post<Record<string, string[]>>("/screener/match-patterns", { symbols }).then((r) => r.data);

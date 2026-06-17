@@ -19,6 +19,12 @@ import pandas as pd
 from loguru import logger
 
 PATTERNS = ("volume_breakout", "ma_long", "pullback", "limit_up")
+_PATTERN_CN = {
+    "volume_breakout": "放量突破",
+    "ma_long": "均线多头",
+    "pullback": "回踩企稳",
+    "limit_up": "涨停打板",
+}
 _MIN_BARS = 30  # 算 MA20 + 突破窗口所需最少 bar 数
 
 
@@ -356,3 +362,46 @@ def _aggregate_premium(samples: list[dict]) -> dict:
         "next_day_win_rate": round(float((cl > 0).mean()), 4),
         "by_boards": groups,
     }
+
+
+# ── 单票形态匹配（盯盘标记，v0.8.17）─────────────────────────────────────
+
+
+def match_patterns(
+    symbols: list[str],
+    breakout_window: int = 20,
+    vol_window: int = 5,
+    vol_ratio_min: float = 1.5,
+    min_boards: int = 1,
+) -> dict[str, list[str]]:
+    """对给定 symbols 各算当前命中的短线形态（中文名列表），供盯盘页实时标记。
+
+    复用 _tech_snapshot + _match；不在 ArcticDB / 数据不足 / 非法代码均返回空列表。
+    """
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    lib = get_library("bar_1d")
+    avail = set(lib.list_symbols())
+    out: dict[str, list[str]] = {}
+    for sym in symbols:
+        names: list[str] = []
+        try:
+            key = normalize(sym)
+        except ValueError:
+            out[sym] = names
+            continue
+        if key in avail:
+            try:
+                df = lib.read(key).data
+                snap = _tech_snapshot(df, breakout_window, vol_window, symbol=key)
+                if snap is not None:
+                    names = [
+                        _PATTERN_CN[p]
+                        for p in PATTERNS
+                        if _match(p, snap, vol_ratio_min, min_boards)
+                    ]
+            except Exception:
+                names = []
+        out[sym] = names
+    return out

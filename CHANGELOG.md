@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.16] — 2026-06-12
+
+> 净值曲线叠加沪深300基准：模拟账户净值与指数同起点对比，直观看是否跑赢大盘 + 区间超额收益。复用回测引擎指数加载，零迁移、零新依赖。
+
+### Added — 净值曲线基准对比
+- `services/sim.py`：`get_equity_curve` 加 `benchmark` 参数（默认 000300）；`_attach_benchmark` 复用 `backtest_engine._load_index_close`（`to_thread` 不阻塞）加载指数日 K，按净值快照日期 ffill 对齐、**归一化到净值起点**（同起跑线），并算区间超额收益（净值收益率 − 基准收益率）；指数加载失败静默跳过、不影响净值返回
+- `schemas/sim.py`：`EquityCurveOut` 加 `benchmark` / `benchmark_points` / `excess_return`，新增 `BenchmarkPoint`
+- `api/sim.py`：`/sim/equity-curve` 加 `benchmark` query 参数
+- 前端：Trade 页净值曲线叠加沪深300虚线（橙色，同起点）+ 卡片标题显示区间超额收益（红涨绿跌）
+- 测试：基准对齐归一化 + 超额计算 + 指数为空时静默跳过（+2 用例，共 196 passed）
+
 ## [0.8.15] — 2026-06-12
 
 > 账户净值曲线：给模拟资金账户配上历史净值。每日收盘 beat 快照各用户净值（现金 + 持仓市值），Trade 页画净值曲线 vs 初始资金基准 —— 模拟盘从"能下单"升级到"能复盘"。

@@ -109,11 +109,12 @@ async def reset_account(
 )
 async def equity_curve(
     days: int = Query(default=180, ge=7, le=1000),
+    benchmark: str | None = Query(default="000300"),
     user_id: int = CurrentUserId,
     db: AsyncSession = DB,
 ):
-    """账户每日净值曲线（市值口径，收盘后 beat 记录）。"""
-    return await sim_svc.get_equity_curve(db, user_id, days=days)
+    """账户每日净值曲线（市值口径，收盘后 beat 记录）+ 可选指数基准对比。"""
+    return await sim_svc.get_equity_curve(db, user_id, days=days, benchmark=benchmark)
 
 
 @router.get(

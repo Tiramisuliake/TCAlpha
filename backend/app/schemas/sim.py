@@ -72,9 +72,20 @@ class EquityCurvePoint(BaseModel):
     total_asset: float
 
 
+class BenchmarkPoint(BaseModel):
+    """归一化到净值起点的基准曲线点。"""
+
+    dt: str
+    value: float
+
+
 class EquityCurveOut(BaseModel):
     init_capital: float
     points: list[EquityCurvePoint] = []
+    # 基准对比（同起点归一化）：无指数数据时整组缺省
+    benchmark: str | None = None
+    benchmark_points: list[BenchmarkPoint] = []
+    excess_return: float | None = None  # 区间超额收益（净值收益 - 基准收益）
 
 
 class StrategySignal(BaseModel):

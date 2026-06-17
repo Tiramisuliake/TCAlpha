@@ -373,9 +373,18 @@ export interface EquityCurvePoint {
   total_asset: number;
 }
 
+export interface BenchmarkPoint {
+  dt: string;
+  value: number;
+}
+
 export interface EquityCurveOut {
   init_capital: number;
   points: EquityCurvePoint[];
+  // 基准对比（同起点归一化）：无指数数据时缺省
+  benchmark?: string | null;
+  benchmark_points?: BenchmarkPoint[];
+  excess_return?: number | null;
 }
 
 export interface PlaceOrderRequest {

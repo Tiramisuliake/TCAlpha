@@ -38,14 +38,24 @@ import type {
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 
-/** 账户净值曲线 ECharts option：总资产折线 + 初始资金基准虚线。 */
+/** 账户净值曲线 ECharts option：总资产折线 + 初始资金基准 + 可选指数基准线。 */
 function equityChartOption(equity: EquityCurveOut) {
+  const benchPts = equity.benchmark_points ?? [];
+  const hasBench = benchPts.length > 0;
+  const benchByDay = new Map(benchPts.map((p) => [p.dt, p.value]));
+  const benchName = equity.benchmark ?? "沪深300";
+
   return {
     tooltip: {
       trigger: "axis",
       valueFormatter: (v: number) => (v == null ? "-" : Number(v).toLocaleString()),
     },
-    grid: { left: 64, right: 20, top: 16, bottom: 44 },
+    legend: {
+      data: hasBench ? ["总资产", benchName] : ["总资产"],
+      top: 0,
+      textStyle: { fontSize: 11 },
+    },
+    grid: { left: 64, right: 20, top: 28, bottom: 44 },
     xAxis: {
       type: "category",
       data: equity.points.map((p) => p.dt),
@@ -78,6 +88,17 @@ function equityChartOption(equity: EquityCurveOut) {
           label: { formatter: `初始 ${equity.init_capital.toLocaleString()}`, fontSize: 10 },
         },
       },
+      ...(hasBench
+        ? [{
+            name: benchName,
+            type: "line",
+            smooth: true,
+            symbol: "none",
+            connectNulls: true,
+            data: equity.points.map((p) => benchByDay.get(p.dt) ?? null),
+            lineStyle: { color: "#f59e0b", width: 1.5, type: "dashed" },
+          }]
+        : []),
     ],
   };
 }
@@ -472,7 +493,23 @@ export default function TradePage() {
             </Row>
           </Card>
 
-          <Card title="净值曲线（市值口径 · 每日收盘记录）" size="small" className="mb-3">
+          <Card
+            title={
+              <span>
+                净值曲线（市值口径 · 每日收盘记录）
+                {equityQuery.data?.excess_return != null && (
+                  <span className="ml-3 text-xs font-normal">
+                    超额{" "}
+                    <span className={equityQuery.data.excess_return >= 0 ? "text-red-500" : "text-green-500"}>
+                      {(equityQuery.data.excess_return * 100).toFixed(2)}%
+                    </span>
+                  </span>
+                )}
+              </span>
+            }
+            size="small"
+            className="mb-3"
+          >
             {equityQuery.data && equityQuery.data.points.length > 0 ? (
               <ReactECharts option={equityChartOption(equityQuery.data)} style={{ height: 220 }} notMerge />
             ) : (

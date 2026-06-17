@@ -16,6 +16,7 @@ from app.db.models.strategy import StrategyConfig
 from app.schemas.sim import (
     AccountOut,
     AccountPosition,
+    BenchmarkPoint,
     EquityCurveOut,
     EquityCurvePoint,
     PositionOut,
@@ -415,8 +416,14 @@ def snapshot_equity_sync(user_id: int) -> dict | None:
         }
 
 
-async def get_equity_curve(db: AsyncSession, user_id: int, days: int = 180) -> EquityCurveOut:
-    """近 days 天的账户净值序列 + 初始资金基准。"""
+async def get_equity_curve(
+    db: AsyncSession, user_id: int, days: int = 180, benchmark: str | None = "000300"
+) -> EquityCurveOut:
+    """近 days 天的账户净值序列 + 初始资金基准 + 可选指数基准对比。
+
+    指数基准按净值快照日期 ffill 对齐、归一化到净值起点（同起跑线），
+    便于直观比较是否跑赢大盘；指数加载失败则整组基准缺省，不影响净值返回。
+    """
     from datetime import timedelta
 
     from app.db.models.account import SimEquitySnapshot
@@ -443,7 +450,56 @@ async def get_equity_curve(db: AsyncSession, user_id: int, days: int = 180) -> E
         )
         for r in rows
     ]
-    return EquityCurveOut(init_capital=acct.init_capital, points=points)
+
+    out = EquityCurveOut(init_capital=acct.init_capital, points=points)
+    if benchmark and len(points) >= 2:
+        await _attach_benchmark(out, points, benchmark)
+    return out
+
+
+async def _attach_benchmark(
+    out: EquityCurveOut, points: list[EquityCurvePoint], benchmark: str
+) -> None:
+    """加载指数日 K，对齐净值快照日期并归一化到净值起点，填充 out 的基准字段。
+
+    任何失败（无数据 / 加载异常）都静默跳过，绝不影响净值曲线本身。
+    """
+    import asyncio
+
+    import pandas as pd
+
+    try:
+        from app.core.backtest_engine import _benchmark_name, _load_index_close
+
+        start, end = points[0].dt, points[-1].dt
+        series = await asyncio.to_thread(_load_index_close, benchmark, start, end)
+        if series is None or series.empty:
+            return
+
+        idx = pd.DatetimeIndex(series.index).tz_localize(None).normalize()
+        s = pd.Series(series.to_numpy(dtype=float), index=idx)
+        s = s[~s.index.duplicated(keep="last")].sort_index()
+
+        target = pd.DatetimeIndex([pd.Timestamp(p.dt) for p in points])
+        aligned = s.reindex(target, method="ffill").bfill()
+        if aligned.isna().any():
+            return
+
+        base = float(aligned.iloc[0])
+        if base <= 0:
+            return
+        start_equity = points[0].total_asset
+        out.benchmark = _benchmark_name(benchmark)
+        out.benchmark_points = [
+            BenchmarkPoint(dt=p.dt, value=round(float(v) / base * start_equity, 2))
+            for p, v in zip(points, aligned.to_numpy(), strict=False)
+        ]
+        # 区间超额 = 净值收益率 - 基准收益率
+        equity_ret = points[-1].total_asset / start_equity - 1 if start_equity > 0 else 0.0
+        bench_ret = float(aligned.iloc[-1]) / base - 1
+        out.excess_return = round(equity_ret - bench_ret, 4)
+    except Exception as exc:
+        logger.warning("attach benchmark to equity curve failed (skip): {}", exc)
 
 
 async def list_positions(

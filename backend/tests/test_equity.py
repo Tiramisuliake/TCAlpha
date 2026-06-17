@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pandas as pd
+import pytest
 
 
 def _seed_account(sync_db, user_id: int, balance: float) -> None:
@@ -87,6 +88,59 @@ def test_snapshot_no_account_returns_none(sync_db, fake_arctic):
     from app.services.sim import snapshot_equity_sync
 
     assert snapshot_equity_sync(999) is None
+
+
+async def test_attach_benchmark_aligns_and_normalizes(monkeypatch):
+    """基准对齐归一化：指数按净值日期对齐、归一到净值起点，超额 = 净值收益 - 基准收益。"""
+    import pandas as pd
+
+    from app.schemas.sim import EquityCurveOut, EquityCurvePoint
+    from app.services import sim as sim_svc
+
+    points = [
+        EquityCurvePoint(dt="2025-01-02", balance=0, position_value=0, total_asset=1_000_000.0),
+        EquityCurvePoint(dt="2025-01-03", balance=0, position_value=0, total_asset=1_100_000.0),  # +10%
+    ]
+    # 指数同期 +5%（3000 → 3150）
+    idx = pd.date_range("2025-01-02", periods=2, freq="D", tz="Asia/Shanghai")
+    fake_series = pd.Series([3000.0, 3150.0], index=idx)
+    monkeypatch.setattr(
+        "app.core.backtest_engine._load_index_close", lambda *a, **k: fake_series
+    )
+    monkeypatch.setattr("app.core.backtest_engine._benchmark_name", lambda c: "沪深300")
+
+    out = EquityCurveOut(init_capital=1_000_000.0, points=points)
+    await sim_svc._attach_benchmark(out, points, "000300")
+
+    assert out.benchmark == "沪深300"
+    assert len(out.benchmark_points) == 2
+    # 基准归一化到净值起点 100 万
+    assert out.benchmark_points[0].value == pytest.approx(1_000_000.0)
+    assert out.benchmark_points[1].value == pytest.approx(1_050_000.0)  # +5%
+    # 超额 = 10% - 5% = 5%
+    assert out.excess_return == pytest.approx(0.05, abs=1e-4)
+
+
+async def test_attach_benchmark_skips_on_empty_index(monkeypatch):
+    """指数加载为空 → 基准字段保持缺省，不报错。"""
+    import pandas as pd
+
+    from app.schemas.sim import EquityCurveOut, EquityCurvePoint
+    from app.services import sim as sim_svc
+
+    points = [
+        EquityCurvePoint(dt="2025-01-02", balance=0, position_value=0, total_asset=1_000_000.0),
+        EquityCurvePoint(dt="2025-01-03", balance=0, position_value=0, total_asset=1_100_000.0),
+    ]
+    monkeypatch.setattr(
+        "app.core.backtest_engine._load_index_close", lambda *a, **k: pd.Series(dtype=float)
+    )
+
+    out = EquityCurveOut(init_capital=1_000_000.0, points=points)
+    await sim_svc._attach_benchmark(out, points, "000300")
+
+    assert out.benchmark is None
+    assert out.benchmark_points == []
 
 
 def test_snapshot_all_equity_task(sync_db, fake_arctic):

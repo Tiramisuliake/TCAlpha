@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.18] — 2026-06-12
+
+> 形态有效性验证：把打板复盘的「次日统计」范式推广到全部短线形态——历史每次形态命中后持有 N 日的收益分布与胜率，回答「放量突破/均线多头/回踩企稳到底赚不赚钱」。选股时直接看到形态历史靠谱度。
+
+### Added — 形态前瞻收益统计
+- `services/short_term.py`：`_pattern_hit_series` 向量化逐日形态命中布尔序列（含连板 streak 计数，与 `_match` 同口径）；`pattern_forward_stats(pattern, symbol?, hold_days, lookback)` 扫历史命中日统计持有 N 日收益（命中次数 / 平均收益 / 胜率 / 平均盈亏 / 中位数），单票或全市场
+- `schemas/screener.py` `PatternStatsRequest` / `PatternStatsResult` + `api/screener.py` `POST /api/screener/pattern-stats`
+- 前端：短线选股页形态说明下方加「形态有效性」条——切换形态时自动查全市场近 250 日命中后持有 5 日的命中次数 + 平均收益 + 胜率（红绿着色，5min 缓存）
+- 测试：放量突破前瞻收益为正 / 无命中 count 0 / 空库 ready False / 非法形态报错（+4 用例，共 202 passed）
+
 ## [0.8.17] — 2026-06-12
 
 > 盯盘驾驶舱接入短线形态实时标记：自选股表格新增「短线形态」列，直接看到每只票当前命中放量突破 / 均线多头 / 回踩企稳 / 涨停打板。打通短线选股能力与盯盘场景，零迁移、零新依赖。

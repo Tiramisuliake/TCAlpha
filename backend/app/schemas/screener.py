@@ -75,3 +75,24 @@ class MatchPatternsRequest(BaseModel):
     """盯盘短线形态匹配请求。"""
 
     symbols: list[str] = Field(default_factory=list, max_length=300)
+
+
+class PatternStatsRequest(BaseModel):
+    """形态前瞻收益统计请求。"""
+
+    pattern: str = "volume_breakout"
+    symbol: str | None = None  # 单票；None = 全市场
+    hold_days: int = Field(default=5, ge=1, le=60)
+    lookback: int = Field(default=500, ge=20, le=2000)
+
+
+class PatternStatsResult(BaseModel):
+    ready: bool
+    pattern: str
+    hold_days: int
+    count: int
+    avg_return: float = 0.0
+    win_rate: float = 0.0
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
+    median_return: float = 0.0

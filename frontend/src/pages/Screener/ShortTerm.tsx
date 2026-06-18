@@ -2,10 +2,10 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Alert, Button, Card, Empty, InputNumber, Select, Space, Switch, Table, Tag, message } from "antd";
 import { ThunderboltOutlined, StarOutlined } from "@ant-design/icons";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import type { ColumnsType } from "antd/es/table";
-import { runShortTerm } from "@/api/screener";
+import { runPatternStats, runShortTerm } from "@/api/screener";
 import { addWatch } from "@/api/watchlist";
 import type { ScreenCandidate, ShortTermFilters } from "@/types";
 
@@ -60,6 +60,13 @@ export default function ShortTerm() {
       if (!res.ready) message.info("尚无历史 K 线，请先到「数据」页下载日 K");
       else message.success(`命中 ${res.count} 只`);
     },
+  });
+
+  // 形态有效性：当前形态全市场历史命中后持有 5 日的平均收益与胜率
+  const { data: stats } = useQuery({
+    queryKey: ["pattern-stats", filters.pattern],
+    queryFn: () => runPatternStats({ pattern: filters.pattern, hold_days: 5, lookback: 250 }),
+    staleTime: 5 * 60_000,
   });
 
   const result = mut.data;
@@ -190,6 +197,16 @@ export default function ShortTerm() {
           </Button>
         </div>
         <div className="mt-2 text-xs text-slate-400">{PATTERN_DESC[filters.pattern]}</div>
+        {stats?.ready && stats.count > 0 && (
+          <div className="mt-1 text-xs text-slate-500">
+            形态有效性（全市场近 250 日，命中后持有 5 日）：命中{" "}
+            <b className="num">{stats.count}</b> 次 · 平均收益{" "}
+            <b className={stats.avg_return >= 0 ? "text-red-500" : "text-green-500"}>
+              {(stats.avg_return * 100).toFixed(2)}%
+            </b>{" "}
+            · 胜率 <b className="num">{(stats.win_rate * 100).toFixed(1)}%</b>
+          </div>
+        )}
       </Card>
 
       {result && !result.ready && (

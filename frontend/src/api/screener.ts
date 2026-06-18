@@ -1,5 +1,11 @@
 import { api } from "./client";
-import type { LimitUpPremiumResult, ScreenFilters, ScreenResult, ShortTermFilters } from "@/types";
+import type {
+  LimitUpPremiumResult,
+  PatternStatsResult,
+  ScreenFilters,
+  ScreenResult,
+  ShortTermFilters,
+} from "@/types";
 
 export const runScreen = (filters: ScreenFilters) =>
   api.post<ScreenResult>("/screener/run", filters).then((r) => r.data);
@@ -12,3 +18,6 @@ export const runLimitUpPremium = (payload: { symbol?: string; lookback?: number 
 
 export const matchPatterns = (symbols: string[]) =>
   api.post<Record<string, string[]>>("/screener/match-patterns", { symbols }).then((r) => r.data);
+
+export const runPatternStats = (payload: { pattern: string; hold_days?: number; lookback?: number }) =>
+  api.post<PatternStatsResult>("/screener/pattern-stats", payload).then((r) => r.data);

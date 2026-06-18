@@ -314,6 +314,19 @@ export interface LimitUpPremiumResult {
   by_boards: BoardGroupStat[];
 }
 
+/** 形态前瞻收益统计（形态有效性验证）。 */
+export interface PatternStatsResult {
+  ready: boolean;
+  pattern: string;
+  hold_days: number;
+  count: number;
+  avg_return: number;
+  win_rate: number;
+  avg_win: number;
+  avg_loss: number;
+  median_return: number;
+}
+
 /** 短线技术选股请求（基于历史日 K 的量价形态）。 */
 export interface ShortTermFilters {
   pattern: "volume_breakout" | "ma_long" | "pullback" | "limit_up";

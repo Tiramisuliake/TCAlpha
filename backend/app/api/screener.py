@@ -11,6 +11,8 @@ from app.schemas.screener import (
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
     MatchPatternsRequest,
+    PatternStatsRequest,
+    PatternStatsResult,
     ScreenRequest,
     ScreenResult,
     ShortTermRequest,
@@ -76,3 +78,19 @@ async def match_patterns(
 ):
     """对一组标的各算当前命中的短线形态（盯盘实时标记）。"""
     return await asyncio.to_thread(short_term_svc.match_patterns, payload.symbols)
+
+
+@router.post(
+    "/pattern-stats",
+    response_model=PatternStatsResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def pattern_stats(
+    payload: PatternStatsRequest,
+    _: int = CurrentUserId,
+):
+    """形态前瞻收益统计：历史每次形态命中后持有 N 日的平均收益与胜率（验证形态有效性）。"""
+    return await asyncio.to_thread(
+        short_term_svc.pattern_forward_stats,
+        payload.pattern, payload.symbol, payload.hold_days, payload.lookback,
+    )

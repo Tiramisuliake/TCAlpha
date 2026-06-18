@@ -405,3 +405,115 @@ def match_patterns(
                 names = []
         out[sym] = names
     return out
+
+
+# ── 形态前瞻收益统计（形态有效性验证，v0.8.18）──────────────────────────
+
+
+def _boards_series(is_lu: pd.Series) -> pd.Series:
+    """连板计数序列：连续涨停累加，遇非涨停归零（pandas streak 计数）。"""
+    grp = (~is_lu).cumsum()
+    return is_lu.groupby(grp).cumsum().astype(int)
+
+
+def _pattern_hit_series(
+    df: pd.DataFrame,
+    pattern: str,
+    symbol: str,
+    breakout_window: int,
+    vol_window: int,
+    vol_ratio_min: float,
+    min_boards: int,
+) -> pd.Series:
+    """向量化逐日形态命中布尔序列（与 _match 同口径）。"""
+    close, high, low, vol = df["close"], df["high"], df["low"], df["volume"]
+    if pattern == "volume_breakout":
+        prev_high = high.rolling(breakout_window).max().shift(1)
+        vol_base = vol.rolling(vol_window).mean().shift(1)
+        hit = (close >= prev_high) & (vol >= vol_ratio_min * vol_base)
+    elif pattern == "ma_long":
+        ma5, ma10, ma20 = (close.rolling(w).mean() for w in (5, 10, 20))
+        hit = (ma5 > ma10) & (ma10 > ma20) & (close >= ma5)
+    elif pattern == "pullback":
+        ma10, ma20 = close.rolling(10).mean(), close.rolling(20).mean()
+        hit = (close > ma20) & (low <= ma10) & (ma10 <= close)
+    elif pattern == "limit_up":
+        prev = close.shift(1)
+        limit_price = (prev * (1 + _board_limit_pct(symbol))).round(2)
+        is_lu = close >= (limit_price - 0.001)
+        hit = _boards_series(is_lu) >= min_boards
+    else:
+        raise ValueError(f"unknown pattern: {pattern}")
+    return hit.fillna(False).astype(bool)
+
+
+def pattern_forward_stats(
+    pattern: str,
+    symbol: str | None = None,
+    hold_days: int = 5,
+    lookback: int = 500,
+    max_scan: int = 300,
+    breakout_window: int = 20,
+    vol_window: int = 5,
+    vol_ratio_min: float = 1.5,
+    min_boards: int = 1,
+) -> dict:
+    """形态前瞻收益统计：历史每次形态命中后，持有 hold_days 日的收益分布。
+
+    单 symbol（传 symbol）或全市场（默认，扫已下载票）。回答「该形态命中后
+    N 日平均赚多少、胜率多少」，验证形态有效性。
+    """
+    if pattern not in PATTERNS:
+        raise ValueError(f"unknown pattern: {pattern} (allowed {PATTERNS})")
+
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    lib = get_library("bar_1d")
+    avail = lib.list_symbols()
+    if not avail:
+        return {"ready": False, "pattern": pattern, "hold_days": hold_days, "count": 0}
+
+    if symbol:
+        key = normalize(symbol)
+        syms = [key] if key in avail else []
+    else:
+        syms = avail[:max_scan]
+
+    rets: list[float] = []
+    for sym in syms:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        n = len(df)
+        if df is None or n < _MIN_BARS + hold_days or "close" not in df.columns:
+            continue
+        hit = _pattern_hit_series(
+            df, pattern, sym, breakout_window, vol_window, vol_ratio_min, min_boards
+        )
+        close = df["close"]
+        fwd = close.shift(-hold_days) / close - 1
+        valid = (hit & fwd.notna()).to_numpy()
+        if n > lookback:
+            valid[: n - lookback] = False  # 只统计最近 lookback 根
+        rets.extend(fwd.to_numpy()[valid].tolist())
+
+    return _agg_forward(rets, pattern, hold_days)
+
+
+def _agg_forward(rets: list[float], pattern: str, hold_days: int) -> dict:
+    base = {"ready": True, "pattern": pattern, "hold_days": hold_days, "count": len(rets)}
+    if not rets:
+        return {**base, "avg_return": 0.0, "win_rate": 0.0,
+                "avg_win": 0.0, "avg_loss": 0.0, "median_return": 0.0}
+    a = np.array(rets, dtype=float)
+    wins, losses = a[a > 0], a[a < 0]
+    return {
+        **base,
+        "avg_return": round(float(a.mean()), 4),
+        "win_rate": round(float((a > 0).mean()), 4),
+        "avg_win": round(float(wins.mean()), 4) if len(wins) else 0.0,
+        "avg_loss": round(float(losses.mean()), 4) if len(losses) else 0.0,
+        "median_return": round(float(np.median(a)), 4),
+    }

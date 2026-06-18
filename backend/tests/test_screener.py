@@ -356,3 +356,47 @@ def test_match_patterns_limit_up_marked(fake_arctic, _no_names):
     get_library("bar_1d").write("sh600003", _kline_with_tail_limit_ups(2))
     res = match_patterns(["sh600003"])
     assert "涨停打板" in res["sh600003"]
+
+
+# ── 形态前瞻收益统计（v0.8.18）───────────────────────────────────────────
+
+
+def test_pattern_forward_stats_volume_breakout(fake_arctic):
+    """放量突破：横盘 → 单日放量突破 → 之后持续上涨；命中后 hold=2 日收益为正。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import pattern_forward_stats
+
+    # 50 横盘 10 → 第51根放量突破到 11 → 后 5 根继续涨（11.5,12,12.5,13,13.5）
+    closes = [10.0] * 50 + [11.0, 11.5, 12.0, 12.5, 13.0, 13.5]
+    highs = [10.05] * 50 + [11.05, 11.55, 12.05, 12.55, 13.05, 13.55]
+    vols = [1e6] * 50 + [3e6, 1e6, 1e6, 1e6, 1e6, 1e6]
+    get_library("bar_1d").write("sh600001", _mk_kline(closes, highs=highs, vols=vols))
+
+    res = pattern_forward_stats("volume_breakout", symbol="sh600001", hold_days=2, lookback=500)
+    assert res["ready"] is True
+    assert res["count"] >= 1
+    assert res["avg_return"] > 0       # 突破后 2 日继续涨
+    assert res["win_rate"] == 1.0
+
+
+def test_pattern_forward_stats_no_hit(fake_arctic):
+    """横盘票无任何命中 → count 0。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import pattern_forward_stats
+
+    get_library("bar_1d").write("sz000099", _flat())
+    res = pattern_forward_stats("volume_breakout", symbol="sz000099", hold_days=5)
+    assert res["ready"] is True and res["count"] == 0
+
+
+def test_pattern_forward_stats_empty_lib(fake_arctic):
+    from app.services.short_term import pattern_forward_stats
+
+    assert pattern_forward_stats("ma_long")["ready"] is False
+
+
+def test_pattern_forward_stats_unknown_pattern(fake_arctic):
+    from app.services.short_term import pattern_forward_stats
+
+    with pytest.raises(ValueError, match="unknown pattern"):
+        pattern_forward_stats("foobar")

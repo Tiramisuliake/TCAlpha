@@ -1,7 +1,7 @@
 {
   "name": "tcalpha-frontend",
   "private": true,
-  "version": "0.8.17",
+  "version": "0.8.20",
   "type": "module",
   "scripts": {
     "dev": "vite",

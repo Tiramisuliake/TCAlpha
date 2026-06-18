@@ -5,7 +5,7 @@ import { ThunderboltOutlined, StarOutlined } from "@ant-design/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import type { ColumnsType } from "antd/es/table";
-import { runPatternStats, runShortTerm } from "@/api/screener";
+import { runPatternStats, runResonance, runShortTerm } from "@/api/screener";
 import { addWatch } from "@/api/watchlist";
 import type { ScreenCandidate, ShortTermFilters } from "@/types";
 
@@ -14,6 +14,7 @@ const PATTERN_OPTIONS = [
   { value: "ma_long", label: "均线多头" },
   { value: "pullback", label: "回踩企稳" },
   { value: "limit_up", label: "涨停打板" },
+  { value: "resonance", label: "多形态共振" },
 ];
 
 const PATTERN_DESC: Record<string, string> = {
@@ -21,6 +22,7 @@ const PATTERN_DESC: Record<string, string> = {
   ma_long: "MA5 > MA10 > MA20 且收盘站上 MA5——强势多头排列，趋势延续",
   pullback: "上升趋势中当日最低回踩 MA10 并收回其上——短线低吸点",
   limit_up: "尾部连续涨停（按板块涨停价判定），按连板高度排序——打板情绪龙头",
+  resonance: "同时命中多个独立形态（如放量突破 + 均线多头）——多形态共振强信号，按命中数排序",
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -46,7 +48,9 @@ export default function ShortTerm() {
     exclude_st: true,
     limit: 50,
   });
+  const [minPatterns, setMinPatterns] = useState(2);
   const set = (patch: Partial<ShortTermFilters>) => setFilters((p) => ({ ...p, ...patch }));
+  const isResonance = filters.pattern === "resonance";
 
   const navigate = useNavigate();
   const addMut = useMutation({
@@ -54,22 +58,27 @@ export default function ShortTerm() {
     onSuccess: () => message.success("已加入自选"),
   });
 
-  const mut = useMutation({
-    mutationFn: runShortTerm,
-    onSuccess: (res) => {
-      if (!res.ready) message.info("尚无历史 K 线，请先到「数据」页下载日 K");
-      else message.success(`命中 ${res.count} 只`);
-    },
-  });
+  const onScanSuccess = (res: { ready: boolean; count: number }) => {
+    if (!res.ready) message.info("尚无历史 K 线，请先到「数据」页下载日 K");
+    else message.success(`命中 ${res.count} 只`);
+  };
+  const mut = useMutation({ mutationFn: runShortTerm, onSuccess: onScanSuccess });
+  const resMut = useMutation({ mutationFn: runResonance, onSuccess: onScanSuccess });
 
-  // 形态有效性：当前形态全市场历史命中后持有 5 日的平均收益与胜率
+  // 形态有效性：当前形态全市场历史命中后持有 5 日的平均收益与胜率（共振模式不适用）
   const { data: stats } = useQuery({
     queryKey: ["pattern-stats", filters.pattern],
     queryFn: () => runPatternStats({ pattern: filters.pattern, hold_days: 5, lookback: 250 }),
+    enabled: !isResonance,
     staleTime: 5 * 60_000,
   });
 
-  const result = mut.data;
+  const scan = () =>
+    isResonance
+      ? resMut.mutate({ min_patterns: minPatterns, exclude_st: filters.exclude_st, limit: filters.limit })
+      : mut.mutate(filters);
+  const scanning = isResonance ? resMut.isPending : mut.isPending;
+  const result = isResonance ? resMut.data : mut.data;
   const candidates = result?.candidates ?? [];
 
   const cols: ColumnsType<ScreenCandidate> = [
@@ -81,56 +90,75 @@ export default function ShortTerm() {
       align: "right",
       render: (v: number | null) => (v != null ? <span className="num">{v.toFixed(2)}</span> : "-"),
     },
-    {
-      title: "量比",
-      dataIndex: "vol_ratio",
-      align: "right",
-      render: (v: number | null) =>
-        v != null ? <span className={`num ${v >= 1.5 ? "up" : ""}`}>{v.toFixed(2)}</span> : "-",
-    },
-    {
-      title: "近5日涨幅",
-      dataIndex: "ret5",
-      align: "right",
-      render: (v: number | null) =>
-        v != null ? <span className={`num ${v >= 0 ? "up" : "down"}`}>{(v * 100).toFixed(2)}%</span> : "-",
-    },
-    {
-      title: "距新高",
-      dataIndex: "dist_high",
-      align: "right",
-      render: (v: number | null) => (v != null ? <span className="num">{(v * 100).toFixed(2)}%</span> : "-"),
-    },
-    {
-      title: "均线",
-      key: "ma",
-      render: (_: unknown, r: ScreenCandidate) =>
-        r.ma5 != null && r.ma10 != null && r.ma20 != null ? (
-          r.ma5 > r.ma10 && r.ma10 > r.ma20 ? (
-            <Tag color="red">多头</Tag>
-          ) : (
-            <Tag>纠缠</Tag>
-          )
-        ) : (
-          "-"
-        ),
-    },
-    ...(filters.pattern === "limit_up"
-      ? ([{
-          title: "连板",
-          dataIndex: "boards",
-          align: "right" as const,
-          render: (v: number | null) =>
-            v != null && v > 0 ? <Tag color="red">{v} 板</Tag> : "-",
-        }] as ColumnsType<ScreenCandidate>)
-      : []),
-    {
-      title: "评分",
-      dataIndex: "score",
-      align: "right",
-      render: (v: number | null) =>
-        v != null ? <span className="num font-medium text-blue-600">{v.toFixed(3)}</span> : "-",
-    },
+    ...(isResonance
+      ? ([
+          {
+            title: "命中形态",
+            key: "patterns",
+            render: (_: unknown, r: ScreenCandidate) => (
+              <span className="flex flex-wrap gap-1">
+                {(r.patterns ?? []).map((p) => (
+                  <Tag key={p} color="red" className="!m-0">{p}</Tag>
+                ))}
+              </span>
+            ),
+          },
+          {
+            title: "共振数",
+            dataIndex: "match_count",
+            align: "right" as const,
+            render: (v: number | null) =>
+              v != null ? <span className="num font-medium text-blue-600">{v}</span> : "-",
+          },
+        ] as ColumnsType<ScreenCandidate>)
+      : ([
+          {
+            title: "量比",
+            dataIndex: "vol_ratio",
+            align: "right" as const,
+            render: (v: number | null) =>
+              v != null ? <span className={`num ${v >= 1.5 ? "up" : ""}`}>{v.toFixed(2)}</span> : "-",
+          },
+          {
+            title: "近5日涨幅",
+            dataIndex: "ret5",
+            align: "right" as const,
+            render: (v: number | null) =>
+              v != null ? <span className={`num ${v >= 0 ? "up" : "down"}`}>{(v * 100).toFixed(2)}%</span> : "-",
+          },
+          {
+            title: "距新高",
+            dataIndex: "dist_high",
+            align: "right" as const,
+            render: (v: number | null) => (v != null ? <span className="num">{(v * 100).toFixed(2)}%</span> : "-"),
+          },
+          {
+            title: "均线",
+            key: "ma",
+            render: (_: unknown, r: ScreenCandidate) =>
+              r.ma5 != null && r.ma10 != null && r.ma20 != null ? (
+                r.ma5 > r.ma10 && r.ma10 > r.ma20 ? <Tag color="red">多头</Tag> : <Tag>纠缠</Tag>
+              ) : (
+                "-"
+              ),
+          },
+          ...(filters.pattern === "limit_up"
+            ? [{
+                title: "连板",
+                dataIndex: "boards",
+                align: "right" as const,
+                render: (v: number | null) =>
+                  v != null && v > 0 ? <Tag color="red">{v} 板</Tag> : "-",
+              }]
+            : []),
+          {
+            title: "评分",
+            dataIndex: "score",
+            align: "right" as const,
+            render: (v: number | null) =>
+              v != null ? <span className="num font-medium text-blue-600">{v.toFixed(3)}</span> : "-",
+          },
+        ] as ColumnsType<ScreenCandidate>)),
     {
       title: "操作",
       key: "actions",
@@ -169,16 +197,24 @@ export default function ShortTerm() {
               onChange={(v) => set({ pattern: v })}
             />
           </Field>
-          <Field label="突破窗口(日)">
-            <InputNumber size="small" min={5} max={120} value={filters.breakout_window} onChange={(v) => set({ breakout_window: v ?? 20 })} />
-          </Field>
-          <Field label="量比 ≥（放量突破用）">
-            <InputNumber size="small" min={1} step={0.1} value={filters.vol_ratio_min} onChange={(v) => set({ vol_ratio_min: v ?? 1.5 })} />
-          </Field>
-          {filters.pattern === "limit_up" && (
-            <Field label="连板下限">
-              <InputNumber size="small" min={1} max={10} value={filters.min_boards ?? 1} onChange={(v) => set({ min_boards: v ?? 1 })} />
+          {isResonance ? (
+            <Field label="最少形态数">
+              <InputNumber size="small" min={2} max={4} value={minPatterns} onChange={(v) => setMinPatterns(v ?? 2)} />
             </Field>
+          ) : (
+            <>
+              <Field label="突破窗口(日)">
+                <InputNumber size="small" min={5} max={120} value={filters.breakout_window} onChange={(v) => set({ breakout_window: v ?? 20 })} />
+              </Field>
+              <Field label="量比 ≥（放量突破用）">
+                <InputNumber size="small" min={1} step={0.1} value={filters.vol_ratio_min} onChange={(v) => set({ vol_ratio_min: v ?? 1.5 })} />
+              </Field>
+              {filters.pattern === "limit_up" && (
+                <Field label="连板下限">
+                  <InputNumber size="small" min={1} max={10} value={filters.min_boards ?? 1} onChange={(v) => set({ min_boards: v ?? 1 })} />
+                </Field>
+              )}
+            </>
           )}
           <Field label="股价 ≥">
             <InputNumber size="small" value={filters.price_min} onChange={(v) => set({ price_min: v ?? undefined })} />
@@ -192,7 +228,7 @@ export default function ShortTerm() {
           <Field label="数量">
             <InputNumber size="small" min={1} max={200} value={filters.limit} onChange={(v) => set({ limit: v ?? 50 })} />
           </Field>
-          <Button type="primary" icon={<ThunderboltOutlined />} loading={mut.isPending} onClick={() => mut.mutate(filters)}>
+          <Button type="primary" icon={<ThunderboltOutlined />} loading={scanning} onClick={scan}>
             扫描
           </Button>
         </div>

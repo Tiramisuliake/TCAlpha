@@ -424,3 +424,44 @@ def test_pattern_forward_stats_all_empty_lib(fake_arctic):
     res = pattern_forward_stats_all()
     assert len(res) == len(PATTERNS)
     assert all(r["ready"] is False for r in res)
+
+
+# ── 多形态共振筛选（v0.8.20）─────────────────────────────────────────────
+
+
+def test_scan_resonance_marks_multi_pattern(fake_arctic, _no_names):
+    """放量突破票同时命中放量突破+均线多头（≥2 形态）→ 共振入选；横盘票不入选。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_resonance
+
+    lib = get_library("bar_1d")
+    # 横盘后单日放量突破：close>prev_high+放量（突破），且末根拉动 ma5>ma10>ma20（多头）
+    lib.write("sh600001", _mk_kline(
+        [10.0] * 59 + [11.0], highs=[10.05] * 59 + [11.05], vols=[1e6] * 59 + [3e6],
+    ))
+    lib.write("sz000099", _flat())
+
+    res = scan_resonance({"min_patterns": 2})
+    rows = {c["symbol"]: c for c in res["candidates"]}
+    assert "sh600001" in rows
+    assert "sz000099" not in rows
+    assert rows["sh600001"]["match_count"] >= 2
+    assert "放量突破" in rows["sh600001"]["patterns"]
+
+
+def test_scan_resonance_min_patterns_filter(fake_arctic, _no_names):
+    """min_patterns=4：要求 4 形态全中，普通放量突破票（2 形态）被过滤。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import scan_resonance
+
+    get_library("bar_1d").write("sh600001", _mk_kline(
+        [10.0] * 59 + [11.0], highs=[10.05] * 59 + [11.05], vols=[1e6] * 59 + [3e6],
+    ))
+    res = scan_resonance({"min_patterns": 4})
+    assert res["candidates"] == []
+
+
+def test_scan_resonance_empty_lib(fake_arctic, _no_names):
+    from app.services.short_term import scan_resonance
+
+    assert scan_resonance({"min_patterns": 2})["ready"] is False

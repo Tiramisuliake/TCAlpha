@@ -13,6 +13,9 @@ export const runScreen = (filters: ScreenFilters) =>
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);
 
+export const runResonance = (filters: { min_patterns: number; exclude_st?: boolean; price_min?: number; price_max?: number; limit?: number }) =>
+  api.post<ScreenResult>("/screener/resonance", filters).then((r) => r.data);
+
 export const runLimitUpPremium = (payload: { symbol?: string; lookback?: number }) =>
   api.post<LimitUpPremiumResult>("/screener/limit-up-premium", payload).then((r) => r.data);
 

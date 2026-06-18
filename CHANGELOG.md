@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.20] — 2026-06-12
+
+> 多形态共振筛选：短线选股加「多形态共振」模式，筛同时命中 ≥N 个独立形态的强信号票——放量突破 + 均线多头同根 K 线共振，比单一形态更可靠。复用形态判定逻辑。
+
+### Added — 多形态共振筛选
+- `services/short_term.py`：`scan_resonance(min_patterns, ...)` —— 扫全市场对每票算命中形态数，筛 ≥min_patterns 的票按命中数降序，候选带命中形态中文名列表 + 共振数；复用 `_tech_snapshot` + `_match`
+- `schemas/screener.py` `ResonanceRequest` + `api/screener.py` `POST /api/screener/resonance`（复用 ScreenResult）
+- 前端：短线选股页买点形态下拉加「多形态共振」，选中切换为「最少形态数」输入 + 调共振接口，结果表展示命中形态彩签 + 共振数列；`ScreenCandidate` 加 patterns / match_count
+- 测试：放量突破票共振命中（≥2 形态）/ min_patterns=4 过滤 / 横盘不入选 / 空库 ready False（+3 用例，共 207 passed）
+
 ## [0.8.19] — 2026-06-12
 
 > 全形态有效性对比：打板复盘页新增 4 形态横向对比表，一眼看出放量突破 / 均线多头 / 回踩企稳 / 涨停打板哪个命中后更赚钱、胜率更高。复用前瞻收益统计，一次读 IO 算全部形态。

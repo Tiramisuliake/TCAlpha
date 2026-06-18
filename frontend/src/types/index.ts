@@ -286,6 +286,8 @@ export interface ScreenCandidate {
   ma10?: number;
   ma20?: number;
   boards?: number; // 连板数（涨停打板，v0.8.11）
+  patterns?: string[]; // 命中形态中文名（多形态共振，v0.8.20）
+  match_count?: number; // 共振命中形态数
 }
 
 export interface ScreenResult {
@@ -329,7 +331,7 @@ export interface PatternStatsResult {
 
 /** 短线技术选股请求（基于历史日 K 的量价形态）。 */
 export interface ShortTermFilters {
-  pattern: "volume_breakout" | "ma_long" | "pullback" | "limit_up";
+  pattern: "volume_breakout" | "ma_long" | "pullback" | "limit_up" | "resonance";
   breakout_window?: number;
   vol_window?: number;
   vol_ratio_min?: number;

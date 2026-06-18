@@ -14,6 +14,7 @@ from app.schemas.screener import (
     PatternStatsAllRequest,
     PatternStatsRequest,
     PatternStatsResult,
+    ResonanceRequest,
     ScreenRequest,
     ScreenResult,
     ShortTermRequest,
@@ -51,6 +52,19 @@ async def run_short_term(
     扫描读 ArcticDB（同步 IO），丢线程池避免阻塞事件循环。
     """
     return await asyncio.to_thread(short_term_svc.scan_short_term, payload.model_dump())
+
+
+@router.post(
+    "/resonance",
+    response_model=ScreenResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_resonance(
+    payload: ResonanceRequest,
+    _: int = CurrentUserId,
+):
+    """多形态共振筛选：筛当前同时命中 ≥ min_patterns 个短线形态的强信号票。"""
+    return await asyncio.to_thread(short_term_svc.scan_resonance, payload.model_dump())
 
 
 @router.post(

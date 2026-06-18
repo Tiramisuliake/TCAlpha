@@ -407,6 +407,71 @@ def match_patterns(
     return out
 
 
+# ── 多形态共振筛选（v0.8.20）─────────────────────────────────────────────
+
+
+def scan_resonance(filters: dict) -> dict:
+    """多形态共振筛选：扫全市场，筛当前同时命中 ≥ min_patterns 个形态的强信号票。
+
+    同一根 K 线上多个独立形态共振（如放量突破 + 均线多头）比单一形态更可靠。
+    复用 _tech_snapshot + _match；按命中形态数降序。返回结构对齐 screener.screen。
+    """
+    from app.db.arctic import get_library
+
+    min_patterns = int(filters.get("min_patterns") or 2)
+    breakout_window = int(filters.get("breakout_window") or 20)
+    vol_window = int(filters.get("vol_window") or 5)
+    vol_ratio_min = float(filters.get("vol_ratio_min") or 1.5)
+    min_boards = int(filters.get("min_boards") or 1)
+    price_min = filters.get("price_min")
+    price_max = filters.get("price_max")
+    exclude_st = filters.get("exclude_st", True)
+    limit = int(filters.get("limit") or 50)
+    max_scan = int(filters.get("max_scan") or 800)
+
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if not symbols:
+        return {"ready": False, "count": 0, "candidates": []}
+    symbols = symbols[:max_scan]
+    names = _name_map(symbols)
+
+    hits: list[dict] = []
+    for sym in symbols:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or df.empty or "close" not in df.columns:
+            continue
+        snap = _tech_snapshot(df, breakout_window, vol_window, symbol=sym)
+        if snap is None:
+            continue
+        if price_min is not None and snap["close"] < float(price_min):
+            continue
+        if price_max is not None and snap["close"] > float(price_max):
+            continue
+        name = names.get(sym, "")
+        if exclude_st and "ST" in name.upper():
+            continue
+        matched = [p for p in PATTERNS if _match(p, snap, vol_ratio_min, min_boards)]
+        if len(matched) < min_patterns:
+            continue
+        hits.append({
+            "symbol": sym,
+            "code": sym[2:] if sym[:2] in ("sh", "sz", "bj") else sym,
+            "name": name,
+            "price": snap["close"],
+            "patterns": [_PATTERN_CN[p] for p in matched],
+            "match_count": len(matched),
+            "score": float(len(matched)),
+        })
+
+    hits.sort(key=lambda h: h["match_count"], reverse=True)
+    candidates = hits[:limit]
+    return {"ready": True, "count": len(candidates), "candidates": candidates}
+
+
 # ── 形态前瞻收益统计（形态有效性验证，v0.8.18）──────────────────────────
 
 

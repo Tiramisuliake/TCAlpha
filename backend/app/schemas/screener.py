@@ -77,6 +77,17 @@ class MatchPatternsRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list, max_length=300)
 
 
+class ResonanceRequest(BaseModel):
+    """多形态共振筛选请求。"""
+
+    min_patterns: int = Field(default=2, ge=2, le=4)  # 最少同时命中形态数
+    vol_ratio_min: float = 1.5
+    price_min: float | None = None
+    price_max: float | None = None
+    exclude_st: bool = True
+    limit: int = 50
+
+
 class PatternStatsRequest(BaseModel):
     """形态前瞻收益统计请求。"""
 

@@ -3,12 +3,98 @@ import { Alert, Button, Card, Col, Empty, Input, InputNumber, Row, Statistic, Ta
 import { LineChartOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
-import { runLimitUpPremium } from "@/api/screener";
-import type { BoardGroupStat } from "@/types";
+import { runLimitUpPremium, runPatternStatsAll } from "@/api/screener";
+import type { BoardGroupStat, PatternStatsResult } from "@/types";
+
+const PATTERN_CN: Record<string, string> = {
+  volume_breakout: "放量突破",
+  ma_long: "均线多头",
+  pullback: "回踩企稳",
+  limit_up: "涨停打板",
+};
 
 function pct(v: number | undefined | null): string {
   if (v == null) return "-";
   return `${(v * 100).toFixed(2)}%`;
+}
+
+/** 全形态有效性对比：4 形态命中后持有 N 日的收益与胜率横向对比。 */
+function PatternCompare() {
+  const [holdDays, setHoldDays] = useState(5);
+  const [lookback, setLookback] = useState(250);
+  const mut = useMutation({ mutationFn: runPatternStatsAll });
+  const rows = (mut.data ?? []).filter((r) => r.ready);
+
+  const cols: ColumnsType<PatternStatsResult> = [
+    { title: "形态", dataIndex: "pattern", render: (v: string) => PATTERN_CN[v] ?? v },
+    { title: "命中次数", dataIndex: "count", align: "right" },
+    {
+      title: `${holdDays}日后平均收益`,
+      dataIndex: "avg_return",
+      align: "right",
+      render: (v: number) => <span className={`num ${v >= 0 ? "up" : "down"}`}>{pct(v)}</span>,
+    },
+    {
+      title: "胜率",
+      dataIndex: "win_rate",
+      align: "right",
+      render: (v: number) => <span className="num font-medium text-blue-600">{pct(v)}</span>,
+    },
+    {
+      title: "平均盈利",
+      dataIndex: "avg_win",
+      align: "right",
+      render: (v: number) => <span className="num up">{pct(v)}</span>,
+    },
+    {
+      title: "平均亏损",
+      dataIndex: "avg_loss",
+      align: "right",
+      render: (v: number) => <span className="num down">{pct(v)}</span>,
+    },
+    {
+      title: "收益中位数",
+      dataIndex: "median_return",
+      align: "right",
+      render: (v: number) => <span className={`num ${v >= 0 ? "up" : "down"}`}>{pct(v)}</span>,
+    },
+  ];
+
+  return (
+    <Card size="small" title="全形态有效性对比（命中后持有 N 日）">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-slate-400">持有天数</span>
+          <InputNumber size="small" min={1} max={30} value={holdDays} onChange={(v) => setHoldDays(v ?? 5)} />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs text-slate-400">回看交易日</span>
+          <InputNumber size="small" min={20} max={1200} value={lookback} onChange={(v) => setLookback(v ?? 250)} />
+        </div>
+        <Button
+          type="primary"
+          icon={<LineChartOutlined />}
+          loading={mut.isPending}
+          onClick={() => mut.mutate({ hold_days: holdDays, lookback })}
+        >
+          对比
+        </Button>
+      </div>
+      {mut.data && rows.length === 0 && (
+        <Alert className="mt-2" type="info" showIcon message="尚无历史 K 线数据，请先到「数据」页下载日 K" />
+      )}
+      {rows.length > 0 && (
+        <Table<PatternStatsResult>
+          className="mt-3"
+          rowKey="pattern"
+          size="small"
+          dataSource={rows}
+          columns={cols}
+          pagination={false}
+        />
+      )}
+    </Card>
+  );
 }
 
 /**
@@ -56,6 +142,8 @@ export default function LimitUpStats() {
 
   return (
     <>
+      <PatternCompare />
+
       <Card size="small" title="打板复盘（涨停次日溢价统计）">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           <div className="flex flex-col gap-0.5">

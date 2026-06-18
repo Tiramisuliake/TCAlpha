@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.19] — 2026-06-12
+
+> 全形态有效性对比：打板复盘页新增 4 形态横向对比表，一眼看出放量突破 / 均线多头 / 回踩企稳 / 涨停打板哪个命中后更赚钱、胜率更高。复用前瞻收益统计，一次读 IO 算全部形态。
+
+### Added — 全形态前瞻收益对比
+- `services/short_term.py`：`pattern_forward_stats_all(hold_days, lookback)` —— 一次读各票、4 形态共用前瞻收益序列分别统计（比逐形态各扫一遍省 4 倍 ArcticDB 读 IO），返回顺序同 PATTERNS
+- `schemas/screener.py` `PatternStatsAllRequest` + `api/screener.py` `POST /api/screener/pattern-stats-all`（response `list[PatternStatsResult]`）
+- 前端：打板复盘页顶部加「全形态有效性对比」卡（持有天数 / 回看天数可调 → 4 形态横向表：命中次数 / N 日后平均收益 / 胜率 / 平均盈亏 / 收益中位数，红绿着色）
+- 测试：全形态对比覆盖 4 形态且放量突破票命中 / 空库全 ready False（+2 用例，共 204 passed）
+
 ## [0.8.18] — 2026-06-12
 
 > 形态有效性验证：把打板复盘的「次日统计」范式推广到全部短线形态——历史每次形态命中后持有 N 日的收益分布与胜率，回答「放量突破/均线多头/回踩企稳到底赚不赚钱」。选股时直接看到形态历史靠谱度。

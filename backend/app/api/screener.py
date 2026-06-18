@@ -11,6 +11,7 @@ from app.schemas.screener import (
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
     MatchPatternsRequest,
+    PatternStatsAllRequest,
     PatternStatsRequest,
     PatternStatsResult,
     ScreenRequest,
@@ -93,4 +94,19 @@ async def pattern_stats(
     return await asyncio.to_thread(
         short_term_svc.pattern_forward_stats,
         payload.pattern, payload.symbol, payload.hold_days, payload.lookback,
+    )
+
+
+@router.post(
+    "/pattern-stats-all",
+    response_model=list[PatternStatsResult],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def pattern_stats_all(
+    payload: PatternStatsAllRequest,
+    _: int = CurrentUserId,
+):
+    """全形态前瞻收益对比：4 个短线形态各自命中后持有 N 日的收益与胜率，横向对比有效性。"""
+    return await asyncio.to_thread(
+        short_term_svc.pattern_forward_stats_all, payload.hold_days, payload.lookback
     )

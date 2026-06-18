@@ -21,3 +21,6 @@ export const matchPatterns = (symbols: string[]) =>
 
 export const runPatternStats = (payload: { pattern: string; hold_days?: number; lookback?: number }) =>
   api.post<PatternStatsResult>("/screener/pattern-stats", payload).then((r) => r.data);
+
+export const runPatternStatsAll = (payload: { hold_days?: number; lookback?: number }) =>
+  api.post<PatternStatsResult[]>("/screener/pattern-stats-all", payload).then((r) => r.data);

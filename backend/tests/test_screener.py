@@ -400,3 +400,27 @@ def test_pattern_forward_stats_unknown_pattern(fake_arctic):
 
     with pytest.raises(ValueError, match="unknown pattern"):
         pattern_forward_stats("foobar")
+
+
+def test_pattern_forward_stats_all_covers_four_patterns(fake_arctic):
+    """全形态对比：返回 4 形态统计，放量突破票在该形态有命中。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import PATTERNS, pattern_forward_stats_all
+
+    closes = [10.0] * 50 + [11.0, 11.5, 12.0, 12.5, 13.0, 13.5]
+    highs = [10.05] * 50 + [11.05, 11.55, 12.05, 12.55, 13.05, 13.55]
+    vols = [1e6] * 50 + [3e6, 1e6, 1e6, 1e6, 1e6, 1e6]
+    get_library("bar_1d").write("sh600001", _mk_kline(closes, highs=highs, vols=vols))
+
+    res = pattern_forward_stats_all(hold_days=2, lookback=500)
+    assert [r["pattern"] for r in res] == list(PATTERNS)
+    vb = next(r for r in res if r["pattern"] == "volume_breakout")
+    assert vb["ready"] is True and vb["count"] >= 1
+
+
+def test_pattern_forward_stats_all_empty_lib(fake_arctic):
+    from app.services.short_term import PATTERNS, pattern_forward_stats_all
+
+    res = pattern_forward_stats_all()
+    assert len(res) == len(PATTERNS)
+    assert all(r["ready"] is False for r in res)

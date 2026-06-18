@@ -96,3 +96,10 @@ class PatternStatsResult(BaseModel):
     avg_win: float = 0.0
     avg_loss: float = 0.0
     median_return: float = 0.0
+
+
+class PatternStatsAllRequest(BaseModel):
+    """全形态前瞻收益对比请求。"""
+
+    hold_days: int = Field(default=5, ge=1, le=60)
+    lookback: int = Field(default=500, ge=20, le=2000)

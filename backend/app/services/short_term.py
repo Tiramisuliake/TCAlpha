@@ -502,6 +502,49 @@ def pattern_forward_stats(
     return _agg_forward(rets, pattern, hold_days)
 
 
+def pattern_forward_stats_all(
+    hold_days: int = 5,
+    lookback: int = 500,
+    max_scan: int = 300,
+    breakout_window: int = 20,
+    vol_window: int = 5,
+    vol_ratio_min: float = 1.5,
+    min_boards: int = 1,
+) -> list[dict]:
+    """全形态前瞻收益对比：一次读各票、4 形态共用前瞻收益序列分别统计。
+
+    比逐形态各扫一遍省 4 倍 ArcticDB 读 IO。返回顺序同 PATTERNS。
+    """
+    from app.db.arctic import get_library
+
+    lib = get_library("bar_1d")
+    avail = lib.list_symbols()
+    if not avail:
+        return [{"ready": False, "pattern": p, "hold_days": hold_days, "count": 0} for p in PATTERNS]
+
+    rets_by_pattern: dict[str, list[float]] = {p: [] for p in PATTERNS}
+    for sym in avail[:max_scan]:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        n = len(df)
+        if df is None or n < _MIN_BARS + hold_days or "close" not in df.columns:
+            continue
+        close = df["close"]
+        fwd = (close.shift(-hold_days) / close - 1).to_numpy()
+        base_valid = ~np.isnan(fwd)
+        if n > lookback:
+            base_valid[: n - lookback] = False
+        for p in PATTERNS:
+            hit = _pattern_hit_series(
+                df, p, sym, breakout_window, vol_window, vol_ratio_min, min_boards
+            ).to_numpy()
+            rets_by_pattern[p].extend(fwd[hit & base_valid].tolist())
+
+    return [_agg_forward(rets_by_pattern[p], p, hold_days) for p in PATTERNS]
+
+
 def _agg_forward(rets: list[float], pattern: str, hold_days: int) -> dict:
     base = {"ready": True, "pattern": pattern, "hold_days": hold_days, "count": len(rets)}
     if not rets:

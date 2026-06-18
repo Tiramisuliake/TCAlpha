@@ -134,3 +134,63 @@ def download_and_save_minute(
         "start": start,
         "end": end,
     }
+
+
+# ── 数据健康面板（v0.8.21）────────────────────────────────────────────────
+
+
+def data_health_sync() -> dict:
+    """数据健康聚合（同步，供 API to_thread 调用）。
+
+    PG symbols 总数 + ArcticDB bar_1d 实际覆盖数 + 覆盖率 + SyncLog 同步状态计数
+    + 最近失败 top10。让用户一眼看出数据完整性（选股 / 回测都依赖它）。
+    """
+    from sqlalchemy import func, select
+
+    from app.db.models.symbol import Symbol
+    from app.db.models.sync_log import SyncLog
+    from app.db.postgres import SyncSessionLocal
+
+    with SyncSessionLocal() as db:
+        symbols_total = db.scalar(
+            select(func.count()).select_from(Symbol).where(Symbol.is_active.is_(True))
+        ) or 0
+        sync_ok = db.scalar(
+            select(func.count()).select_from(SyncLog).where(SyncLog.status == "ok")
+        ) or 0
+        sync_failed = db.scalar(
+            select(func.count()).select_from(SyncLog).where(SyncLog.status == "failed")
+        ) or 0
+        failures = db.execute(
+            select(SyncLog)
+            .where(SyncLog.status == "failed")
+            .order_by(SyncLog.updated_at.desc())
+            .limit(10)
+        ).scalars().all()
+        recent_failures = [
+            {
+                "symbol": r.symbol,
+                "period": r.period,
+                "error": (r.error or "")[:200],
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in failures
+        ]
+
+    try:
+        # 经 app.db.arctic 模块属性访问，便于测试 monkeypatch get_library 生效
+        from app.db import arctic
+
+        bar1d_covered = len(arctic.get_library("bar_1d").list_symbols())
+    except Exception:
+        bar1d_covered = 0
+
+    coverage_rate = round(bar1d_covered / symbols_total, 4) if symbols_total > 0 else 0.0
+    return {
+        "symbols_total": int(symbols_total),
+        "bar1d_covered": int(bar1d_covered),
+        "coverage_rate": coverage_rate,
+        "sync_ok": int(sync_ok),
+        "sync_failed": int(sync_failed),
+        "recent_failures": recent_failures,
+    }

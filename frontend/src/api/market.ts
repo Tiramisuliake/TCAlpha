@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { KlineResponse, SymbolListResponse } from "@/types";
+import type { DataHealth, KlineResponse, SymbolListResponse } from "@/types";
 
 export interface SymbolsParams {
   search?: string;
@@ -19,3 +19,6 @@ export const triggerDownload = (symbol: string, period = "1d") =>
 
 export const refreshSymbols = () =>
   api.post<{ task_id: string; message: string }>("/market/symbols/refresh").then((r) => r.data);
+
+export const getDataHealth = () =>
+  api.get<DataHealth>("/data/health").then((r) => r.data);

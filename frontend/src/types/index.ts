@@ -16,6 +16,23 @@ export interface SymbolListResponse {
   total: number;
 }
 
+export interface SyncFailure {
+  symbol: string;
+  period: string;
+  error: string;
+  updated_at: string | null;
+}
+
+/** 数据健康面板：K 线覆盖度 + 同步状态。 */
+export interface DataHealth {
+  symbols_total: number;
+  bar1d_covered: number;
+  coverage_rate: number;
+  sync_ok: number;
+  sync_failed: number;
+  recent_failures: SyncFailure[];
+}
+
 export interface KlineBar {
   dt: string;
   open: number;

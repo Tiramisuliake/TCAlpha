@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Card, Input, Select, Space, Table, Tag, message } from "antd";
+import { Card, Col, Input, Progress, Row, Select, Space, Statistic, Table, Tag, message } from "antd";
 import { ReloadOutlined, DownloadOutlined } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
-import { getSymbols, refreshSymbols, triggerDownload } from "@/api/market";
-import type { Symbol } from "@/types";
+import { getDataHealth, getSymbols, refreshSymbols, triggerDownload } from "@/api/market";
+import type { Symbol, SyncFailure } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 
@@ -29,12 +29,29 @@ export default function DataMgr() {
     staleTime: 60_000,
   });
 
+  const { data: health } = useQuery({
+    queryKey: ["data", "health"],
+    queryFn: getDataHealth,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
   const refreshMut = useMutation({
     mutationFn: refreshSymbols,
     onSuccess: (res) => {
       message.success(`刷新任务已提交（task: ${res.task_id.slice(0, 8)}…）`);
     },
   });
+
+  const failureCols: ColumnsType<SyncFailure> = [
+    { title: "代码", dataIndex: "symbol", width: 100, render: (v) => <span className="font-mono">{v}</span> },
+    { title: "周期", dataIndex: "period", width: 70 },
+    { title: "错误", dataIndex: "error", render: (v) => <span className="text-xs text-red-500">{v}</span> },
+    {
+      title: "时间", dataIndex: "updated_at", width: 160,
+      render: (v: string | null) => (v ? <span className="num text-xs">{v.slice(0, 19).replace("T", " ")}</span> : "—"),
+    },
+  ];
 
   const downloadMut = useMutation({
     mutationFn: (symbol: string) => triggerDownload(symbol),
@@ -75,6 +92,48 @@ export default function DataMgr() {
 
   return (
     <PageScaffold>
+      <Card size="small" title="数据健康（K 线覆盖度 + 同步状态）" className="mb-3">
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} lg={8}>
+            <div className="flex items-center gap-4">
+              <Progress
+                type="dashboard"
+                size={88}
+                percent={Math.round((health?.coverage_rate ?? 0) * 100)}
+                strokeColor={(health?.coverage_rate ?? 0) >= 0.8 ? "#10b981" : "#f59e0b"}
+              />
+              <div>
+                <div className="text-xs text-slate-400">K 线覆盖</div>
+                <div className="num text-lg font-medium">
+                  {health?.bar1d_covered ?? 0} / {health?.symbols_total ?? 0}
+                </div>
+                <div className="text-xs text-slate-400">已下载 / 活跃标的</div>
+              </div>
+            </div>
+          </Col>
+          <Col xs={12} lg={4}>
+            <Statistic title="同步成功" value={health?.sync_ok ?? 0} valueStyle={{ fontSize: 20, color: "#10b981" }} />
+          </Col>
+          <Col xs={12} lg={4}>
+            <Statistic title="同步失败" value={health?.sync_failed ?? 0} valueStyle={{ fontSize: 20, color: (health?.sync_failed ?? 0) > 0 ? "#ef4444" : undefined }} />
+          </Col>
+          <Col xs={24} lg={8}>
+            {(health?.recent_failures?.length ?? 0) > 0 ? (
+              <Table<SyncFailure>
+                rowKey={(r) => `${r.symbol}-${r.period}`}
+                size="small"
+                dataSource={health?.recent_failures}
+                columns={failureCols}
+                pagination={false}
+                scroll={{ y: 120 }}
+              />
+            ) : (
+              <div className="text-xs text-slate-400">近期无同步失败 ✓</div>
+            )}
+          </Col>
+        </Row>
+      </Card>
+
       <Card
         title="股票列表"
         className="flex-1"

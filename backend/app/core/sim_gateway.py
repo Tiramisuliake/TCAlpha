@@ -129,6 +129,7 @@ class SimGateway(BaseGateway):
             orders = db.execute(stmt).scalars().all()
             acct = self._get_or_create_account(db) if orders else None
             for order in orders:
+                assert acct is not None  # orders 非空 → 账户已懒创建（类型收窄）
                 exec_price = float(next_bar.open_price)
                 if order.offset == "open":
                     cost = exec_price * order.volume * (1 + self.COMMISSION_RATE)

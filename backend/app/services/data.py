@@ -185,7 +185,8 @@ def data_health_sync() -> dict:
     except Exception:
         bar1d_covered = 0
 
-    coverage_rate = round(bar1d_covered / symbols_total, 4) if symbols_total > 0 else 0.0
+    # cap 到 1.0：bar_1d 可能含 active 之外（停牌/退市但有历史）的票，避免覆盖率 >100%
+    coverage_rate = round(min(bar1d_covered / symbols_total, 1.0), 4) if symbols_total > 0 else 0.0
     return {
         "symbols_total": int(symbols_total),
         "bar1d_covered": int(bar1d_covered),

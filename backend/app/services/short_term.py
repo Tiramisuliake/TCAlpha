@@ -63,17 +63,12 @@ def _name_map(symbols: list[str]) -> dict[str, str]:
 
 
 def _count_boards(close: pd.Series, limit_pct: float) -> int:
-    """从最后一根往前数连续涨停天数（价格判定：收盘 ≥ 昨收涨停价）。"""
+    """最后一根的连板数（价格判定：收盘 ≥ 昨收涨停价）。复用 _boards_series 统一口径。"""
     prev = close.shift(1)
     limit_price = (prev * (1 + limit_pct)).round(2)
     is_lu = close >= (limit_price - 0.001)
-    boards = 0
-    for ok in reversed(is_lu.tolist()):
-        if ok is True:
-            boards += 1
-        else:
-            break
-    return boards
+    series = _boards_series(is_lu)
+    return int(series.iloc[-1]) if len(series) else 0
 
 
 def _tech_snapshot(

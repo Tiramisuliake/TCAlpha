@@ -465,3 +465,27 @@ def test_scan_resonance_empty_lib(fake_arctic, _no_names):
     from app.services.short_term import scan_resonance
 
     assert scan_resonance({"min_patterns": 2})["ready"] is False
+
+
+# ── K 线形态标记（v0.8.22）───────────────────────────────────────────────
+
+
+def test_pattern_markers_returns_hit_days(fake_arctic):
+    """放量突破票：末根命中日出现在 markers 且含「放量突破」；日期升序。"""
+    from app.db.arctic import get_library
+    from app.services.short_term import pattern_markers
+
+    get_library("bar_1d").write("sh600001", _mk_kline(
+        [10.0] * 59 + [11.0], highs=[10.05] * 59 + [11.05], vols=[1e6] * 59 + [3e6],
+    ))
+    markers = pattern_markers("sh600001", lookback=250)
+    assert len(markers) >= 1
+    assert any("放量突破" in m["patterns"] for m in markers)
+    dates = [m["dt"] for m in markers]
+    assert dates == sorted(dates)
+
+
+def test_pattern_markers_not_in_lib(fake_arctic):
+    from app.services.short_term import pattern_markers
+
+    assert pattern_markers("sh999999") == []

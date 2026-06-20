@@ -23,6 +23,12 @@ export interface SyncFailure {
   updated_at: string | null;
 }
 
+/** K 线图形态命中标记：某日命中的形态中文名列表。 */
+export interface PatternMarker {
+  dt: string;
+  patterns: string[];
+}
+
 /** 数据健康面板：K 线覆盖度 + 同步状态。 */
 export interface DataHealth {
   symbols_total: number;

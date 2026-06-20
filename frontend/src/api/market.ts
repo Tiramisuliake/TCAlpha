@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { DataHealth, KlineResponse, SymbolListResponse } from "@/types";
+import type { DataHealth, KlineResponse, PatternMarker, SymbolListResponse } from "@/types";
 
 export interface SymbolsParams {
   search?: string;
@@ -13,6 +13,9 @@ export const getSymbols = (params: SymbolsParams = {}) =>
 
 export const getKline = (symbol: string, period = "1d", limit = 300) =>
   api.get<KlineResponse>(`/market/kline/${symbol}`, { params: { period, limit } }).then((r) => r.data);
+
+export const getKlinePatterns = (symbol: string, lookback = 250) =>
+  api.get<PatternMarker[]>(`/market/kline/${symbol}/patterns`, { params: { lookback } }).then((r) => r.data);
 
 export const triggerDownload = (symbol: string, period = "1d") =>
   api.post(`/market/kline/${symbol}/download`, null, { params: { period } }).then((r) => r.data);

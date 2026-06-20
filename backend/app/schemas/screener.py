@@ -88,6 +88,13 @@ class ResonanceRequest(BaseModel):
     limit: int = 50
 
 
+class PatternMarker(BaseModel):
+    """K 线图形态命中标记：某日命中的形态中文名列表。"""
+
+    dt: str
+    patterns: list[str]
+
+
 class PatternStatsRequest(BaseModel):
     """形态前瞻收益统计请求。"""
 

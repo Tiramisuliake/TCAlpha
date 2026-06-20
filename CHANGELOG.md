@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.22] — 2026-06-12
+
+> K 线图叠加短线形态历史标记：日 K 上直接标出每只票历史在哪些天触发了放量突破 / 均线多头 / 回踩企稳 / 涨停打板。把抽象的形态命中可视化到走势上，复盘买点一目了然。
+
+### Added — K 线形态历史标记
+- `services/short_term.py`：`pattern_markers(symbol, lookback)` —— 复用 `_pattern_hit_series` 对 4 形态算历史逐日命中，取最近 lookback 个交易日按日聚合 `[{dt, patterns:[中文名]}]`（升序，仅日线）
+- `schemas/screener.py` `PatternMarker` + `api/market.py` `GET /api/market/kline/{symbol}/patterns`（`data.read` + `to_thread`）
+- 前端：K 线图（lightweight-charts）`setMarkers` 按 bar 时间对齐打标（多形态同日聚合一个标记、按形态着色）；Chart 页加「显示形态」开关（仅日线，5min 缓存）
+- 测试：放量突破票命中日含该形态 + 日期升序 / 不在库返回空（+2 用例，共 211 passed）
+
 ## [0.8.21] — 2026-06-12
 
 > 数据健康面板：数据页一眼看出 K 线覆盖度（已下载 / 活跃标的）+ 同步成功/失败计数 + 最近失败明细。选股、回测、形态统计全都依赖数据完整性，这是它们的底座监控。

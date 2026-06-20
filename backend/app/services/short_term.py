@@ -402,6 +402,39 @@ def match_patterns(
     return out
 
 
+def pattern_markers(symbol: str, lookback: int = 250) -> list[dict]:
+    """单票历史每日形态命中（供 K 线图打标）。
+
+    复用 _pattern_hit_series 对 4 形态算逐日命中，取最近 lookback 个交易日，
+    按日聚合 → [{dt, patterns:[中文名]}]（升序）。仅日线（bar_1d）。
+    """
+    from app.db.arctic import get_library
+    from app.utils.symbol import normalize
+
+    lib = get_library("bar_1d")
+    key = normalize(symbol)
+    if key not in lib.list_symbols():
+        return []
+    try:
+        df = lib.read(key).data
+    except Exception:
+        return []
+    if df is None or len(df) < _MIN_BARS or "close" not in df.columns:
+        return []
+
+    by_day: dict[str, list[str]] = {}
+    for p in PATTERNS:
+        hit = _pattern_hit_series(df, p, key, 20, 5, 1.5, 1)
+        recent = hit.iloc[-lookback:] if len(hit) > lookback else hit
+        for dt, ok in recent.items():
+            if not ok:
+                continue
+            d = str(dt.date()) if hasattr(dt, "date") else str(dt)
+            by_day.setdefault(d, []).append(_PATTERN_CN[p])
+
+    return [{"dt": d, "patterns": by_day[d]} for d in sorted(by_day)]
+
+
 # ── 多形态共振筛选（v0.8.20）─────────────────────────────────────────────
 
 

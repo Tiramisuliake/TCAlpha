@@ -12,6 +12,7 @@ from app.schemas.market import (
     RefreshTriggerResponse,
     SymbolListResponse,
 )
+from app.schemas.screener import PatternMarker
 from app.services import market as market_svc
 
 router = APIRouter()
@@ -72,3 +73,20 @@ async def trigger_download(
     """触发 Celery 下载该股票 K 线（异步，立即返回 task_id）。"""
     task_id = market_svc.trigger_download(symbol, period=period)
     return DownloadTriggerResponse(symbol=symbol, task_id=task_id)
+
+
+@router.get(
+    "/kline/{symbol}/patterns",
+    response_model=list[PatternMarker],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def kline_patterns(
+    symbol: str,
+    lookback: int = Query(default=250, ge=20, le=1200),
+):
+    """该股票历史每日命中的短线形态（K 线图打标，仅日线）。"""
+    import asyncio
+
+    from app.services import short_term as short_term_svc
+
+    return await asyncio.to_thread(short_term_svc.pattern_markers, symbol, lookback)

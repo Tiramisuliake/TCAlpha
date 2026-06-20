@@ -20,9 +20,9 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createChart } from "lightweight-charts";
 import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
-import { getKline, getSymbols, triggerDownload } from "@/api/market";
+import { getKline, getKlinePatterns, getSymbols, triggerDownload } from "@/api/market";
 import { streamChartAnalysis } from "@/api/ai_chart";
-import type { KlineBar, Period, QuoteUpdate } from "@/types";
+import type { KlineBar, PatternMarker, Period, QuoteUpdate } from "@/types";
 import { PageScaffold } from "@/components/PageScaffold";
 import { PermButton } from "@/components/PermButton";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -31,6 +31,14 @@ import { wsUrl as buildWsUrl } from "@/store/useAuthStore";
 // 涨跌色（A 股惯例 红涨绿跌），与 styles/index.css 的 --tc-up/--tc-down 对齐
 const UP = "#ef4444";
 const DOWN = "#00a778";
+
+// 短线形态标记配色（与选股/盯盘形态标签对齐）
+const PATTERN_MARK_COLOR: Record<string, string> = {
+  放量突破: "#ef4444",
+  均线多头: "#f97316",
+  回踩企稳: "#3b82f6",
+  涨停打板: "#d946ef",
+};
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "日K", value: "1d" },
@@ -41,7 +49,7 @@ const PERIODS: { label: string; value: Period }[] = [
   { label: "1分", value: "1m" },
 ];
 
-function KlineChart({ bars }: { bars: KlineBar[] }) {
+function KlineChart({ bars, markers = [] }: { bars: KlineBar[]; markers?: PatternMarker[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -117,6 +125,29 @@ function KlineChart({ bars }: { bars: KlineBar[] }) {
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
 
+  // 短线形态标记：按 bar 时间对齐打标（多形态同日聚合一个标记）
+  useEffect(() => {
+    if (!candleRef.current) return;
+    const timeByDay = new Map(
+      bars.map((b) => [b.dt.slice(0, 10), Math.floor(new Date(b.dt).getTime() / 1000)]),
+    );
+    const lwMarkers = markers
+      .map((m) => {
+        const t = timeByDay.get(m.dt.slice(0, 10));
+        if (t == null) return null;
+        return {
+          time: t as UTCTimestamp,
+          position: "belowBar" as const,
+          color: PATTERN_MARK_COLOR[m.patterns[0]] ?? "#64748b",
+          shape: "arrowUp" as const,
+          text: m.patterns.join("·"),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => (a.time as number) - (b.time as number));
+    candleRef.current.setMarkers(lwMarkers);
+  }, [bars, markers]);
+
   return <div ref={ref} className="w-full h-full min-h-[320px]" />;
 }
 
@@ -168,6 +199,15 @@ export default function ChartPage() {
     queryFn: () => getKline(symbol!, period, 500),
     enabled: !!symbol,
     staleTime: 30_000,
+  });
+
+  // 短线形态标记（仅日线）
+  const [showPatterns, setShowPatterns] = useState(false);
+  const { data: patternMarkers = [] } = useQuery({
+    queryKey: ["kline-patterns", symbol],
+    queryFn: () => getKlinePatterns(symbol!, 250),
+    enabled: !!symbol && period === "1d" && showPatterns,
+    staleTime: 5 * 60_000,
   });
 
   const downloadMut = useMutation({
@@ -255,6 +295,16 @@ export default function ChartPage() {
               </Button>
             ))}
           </Space.Compact>
+          {symbol && period === "1d" && (
+            <Button
+              size="small"
+              type={showPatterns ? "primary" : "default"}
+              ghost={showPatterns}
+              onClick={() => setShowPatterns((v) => !v)}
+            >
+              {showPatterns ? "隐藏形态" : "显示形态"}
+            </Button>
+          )}
           {symbol && (
             <PermButton
               perm="data.download"
@@ -327,7 +377,7 @@ export default function ChartPage() {
               </Empty>
             </div>
           ) : (
-            <KlineChart bars={bars} />
+            <KlineChart bars={bars} markers={showPatterns && period === "1d" ? patternMarkers : []} />
           )}
         </div>
       </Card>

@@ -3,6 +3,7 @@ import { Card, Statistic, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import {
+  AlertOutlined,
   DatabaseOutlined,
   DollarOutlined,
   ExperimentOutlined,
@@ -11,7 +12,9 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { root } from "@/api/client";
-import { getSymbols } from "@/api/market";
+import { getDataHealth, getSymbols } from "@/api/market";
+import { getAccount } from "@/api/sim";
+import { listAlerts } from "@/api/ai_alerts";
 import { useAuthStore } from "@/store/useAuthStore";
 
 interface Shortcut {
@@ -46,10 +49,41 @@ export default function Dashboard() {
     queryFn: () => getSymbols({ limit: 1 }),
   });
 
+  const canData = has("data.read");
+  const canSim = has("sim.order.read");
+  const canWatch = has("ai.watch");
+
+  // ── 运行概览：仅在有对应权限时拉取，避免无权限触发 403 ──
+  const { data: dataHealth } = useQuery({
+    queryKey: ["dashboard-data-health"],
+    queryFn: getDataHealth,
+    enabled: canData,
+    staleTime: 60_000,
+  });
+
+  const { data: account } = useQuery({
+    queryKey: ["dashboard-account"],
+    queryFn: getAccount,
+    enabled: canSim,
+    staleTime: 30_000,
+  });
+
+  const { data: alerts } = useQuery({
+    queryKey: ["dashboard-alerts"],
+    queryFn: () => listAlerts({ only_unacked: true, limit: 50 }),
+    enabled: canWatch,
+    refetchInterval: 60_000,
+  });
+
   const shortcuts = SHORTCUTS.filter((s) => !s.perm || has(s.perm));
+  const showOverview = canData || canSim || canWatch;
+
+  const pnl = account ? account.total_asset - account.init_capital : 0;
+  const latestAlert = alerts?.[0];
 
   return (
-    <div className="flex-1 min-h-0 grid grid-rows-[auto_1fr] gap-3 overflow-auto">
+    <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-auto">
+      {/* 系统状态 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
           <Statistic
@@ -71,6 +105,82 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* 运行概览（按权限聚合数据健康 / 模拟账户 / AI 告警，点击跳转对应页） */}
+      {showOverview && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {canData && (
+            <Link to="/data" className="block">
+              <Card hoverable size="small">
+                <Statistic
+                  title={
+                    <span>
+                      <DatabaseOutlined /> 数据覆盖率
+                    </span>
+                  }
+                  value={dataHealth ? dataHealth.coverage_rate * 100 : 0}
+                  precision={1}
+                  suffix="%"
+                  valueStyle={{
+                    color: dataHealth && dataHealth.coverage_rate < 0.8 ? "#f59e0b" : undefined,
+                  }}
+                />
+                <div className="text-xs text-slate-400 mt-1">
+                  已覆盖 {dataHealth?.bar1d_covered ?? 0}/{dataHealth?.symbols_total ?? 0} 只
+                  {dataHealth && dataHealth.sync_failed > 0 && (
+                    <span className="text-red-500"> · 同步失败 {dataHealth.sync_failed}</span>
+                  )}
+                </div>
+              </Card>
+            </Link>
+          )}
+          {canSim && (
+            <Link to="/trade" className="block">
+              <Card hoverable size="small">
+                <Statistic
+                  title={
+                    <span>
+                      <DollarOutlined /> 模拟总资产
+                    </span>
+                  }
+                  value={account?.total_asset ?? 0}
+                  precision={2}
+                  valueStyle={{ color: pnl >= 0 ? "#ef4444" : "#10b981" }}
+                />
+                <div className="text-xs text-slate-400 mt-1">
+                  浮动盈亏{" "}
+                  <span className={pnl >= 0 ? "text-red-500" : "text-emerald-500"}>
+                    {pnl >= 0 ? "+" : ""}
+                    {pnl.toFixed(2)}
+                  </span>
+                </div>
+              </Card>
+            </Link>
+          )}
+          {canWatch && (
+            <Link to="/monitor" className="block">
+              <Card hoverable size="small">
+                <Statistic
+                  title={
+                    <span>
+                      <AlertOutlined /> 未读告警
+                    </span>
+                  }
+                  value={alerts?.length ?? 0}
+                  suffix="条"
+                  valueStyle={{ color: alerts && alerts.length > 0 ? "#f59e0b" : undefined }}
+                />
+                <div className="text-xs text-slate-400 mt-1 truncate">
+                  {latestAlert
+                    ? `最新：${latestAlert.symbol} ${latestAlert.signal}`
+                    : "暂无未读告警"}
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* 功能入口 */}
       <Card title="功能入口" className="flex-1 min-h-0">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {shortcuts.map((s) => (

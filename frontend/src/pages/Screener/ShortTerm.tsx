@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
+import type { Key } from "react";
 import { Alert, Button, Card, Empty, InputNumber, Select, Space, Switch, Table, Tag, message } from "antd";
 import { ThunderboltOutlined, StarOutlined } from "@ant-design/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import type { ColumnsType } from "antd/es/table";
 import { runPatternStats, runResonance, runShortTerm } from "@/api/screener";
-import { addWatch } from "@/api/watchlist";
+import { addWatch, addWatchBatch } from "@/api/watchlist";
 import type { ScreenCandidate, ShortTermFilters } from "@/types";
 
 const PATTERN_OPTIONS = [
@@ -53,12 +54,26 @@ export default function ShortTerm() {
   const isResonance = filters.pattern === "resonance";
 
   const navigate = useNavigate();
+  const [selectedKeys, setSelectedKeys] = useState<Key[]>([]);
   const addMut = useMutation({
     mutationFn: (symbol: string) => addWatch(symbol),
     onSuccess: () => message.success("已加入自选"),
   });
+  const batchMut = useMutation({
+    mutationFn: (symbols: string[]) => addWatchBatch(symbols),
+    onSuccess: (res) => {
+      const parts = [`已加 ${res.added.length} 只`];
+      if (res.skipped.length) parts.push(`跳过 ${res.skipped.length} 只（已在自选）`);
+      if (res.failed.length) parts.push(`失败 ${res.failed.length} 只`);
+      const text = parts.join("，");
+      if (res.failed.length) message.warning(text);
+      else message.success(text);
+      setSelectedKeys([]);
+    },
+  });
 
   const onScanSuccess = (res: { ready: boolean; count: number }) => {
+    setSelectedKeys([]);
     if (!res.ready) message.info("尚无历史 K 线，请先到「数据」页下载日 K");
     else message.success(`命中 ${res.count} 只`);
   };
@@ -254,6 +269,21 @@ export default function ShortTerm() {
         title={result?.ready ? `命中（${result.count} 只）` : "结果"}
         className="flex-1"
         classNames={{ body: "flex-1 flex flex-col min-h-0" }}
+        extra={
+          candidates.length > 0 ? (
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon={<StarOutlined />}
+              disabled={selectedKeys.length === 0}
+              loading={batchMut.isPending}
+              onClick={() => batchMut.mutate(selectedKeys.map(String))}
+            >
+              批量加自选{selectedKeys.length ? `（${selectedKeys.length}）` : ""}
+            </Button>
+          ) : null
+        }
       >
         {candidates.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
@@ -265,6 +295,7 @@ export default function ShortTerm() {
             size="small"
             dataSource={candidates}
             columns={cols}
+            rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
             pagination={{ pageSize: 15 }}
             className="flex-1"
           />

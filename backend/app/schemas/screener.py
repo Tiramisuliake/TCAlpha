@@ -121,3 +121,24 @@ class PatternStatsAllRequest(BaseModel):
 
     hold_days: int = Field(default=5, ge=1, le=60)
     lookback: int = Field(default=500, ge=20, le=2000)
+
+
+class FactorWeights(BaseModel):
+    """多因子综合打分权重（缺省等权，0 表示该因子不参与）。"""
+
+    mom_20: float = Field(default=1.0, ge=0, le=10)       # 20日动量
+    mom_60: float = Field(default=1.0, ge=0, le=10)       # 60日动量
+    volatility: float = Field(default=1.0, ge=0, le=10)   # 低波动溢价
+    trend_slope: float = Field(default=1.0, ge=0, le=10)  # 趋势斜率
+    vol_surge: float = Field(default=1.0, ge=0, le=10)    # 量能放大
+
+
+class FactorScreenRequest(BaseModel):
+    """时序多因子选股请求（基于 ArcticDB 历史日 K 计算的连续因子）。"""
+
+    weights: FactorWeights = Field(default_factory=FactorWeights)
+    price_min: float | None = None
+    price_max: float | None = None
+    exclude_st: bool = True
+    limit: int = Field(default=50, ge=1, le=200)
+    max_scan: int = Field(default=800, ge=1, le=5000)

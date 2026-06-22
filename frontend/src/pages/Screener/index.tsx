@@ -10,7 +10,10 @@ import { addWatch } from "@/api/watchlist";
 import { PageScaffold } from "@/components/PageScaffold";
 import ShortTerm from "./ShortTerm";
 import LimitUpStats from "./LimitUpStats";
+import FactorScreen from "./FactorScreen";
 import type { ScreenCandidate, ScreenFilters } from "@/types";
+
+type ScreenMode = "fundamental" | "factor" | "short_term" | "board_review";
 
 const SORT_OPTIONS = [
   { value: "amount", label: "成交额" },
@@ -30,7 +33,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function Screener() {
-  const [mode, setMode] = useState<"fundamental" | "short_term" | "board_review">("fundamental");
+  const [mode, setMode] = useState<ScreenMode>("fundamental");
   const [filters, setFilters] = useState<ScreenFilters>({
     exclude_st: true,
     sort_by: "amount",
@@ -133,15 +136,18 @@ export default function Screener() {
     <PageScaffold>
       <Segmented
         value={mode}
-        onChange={(v) => setMode(v as "fundamental" | "short_term" | "board_review")}
+        onChange={(v) => setMode(v as ScreenMode)}
         options={[
           { label: "基本面筛选", value: "fundamental" },
+          { label: "多因子选股", value: "factor" },
           { label: "短线技术选股", value: "short_term" },
           { label: "打板复盘", value: "board_review" },
         ]}
         className="self-start"
       />
-      {mode === "short_term" ? (
+      {mode === "factor" ? (
+        <FactorScreen />
+      ) : mode === "short_term" ? (
         <ShortTerm />
       ) : mode === "board_review" ? (
         <LimitUpStats />

@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type {
+  FactorScreenFilters,
   LimitUpPremiumResult,
   PatternStatsResult,
   ScreenFilters,
@@ -9,6 +10,9 @@ import type {
 
 export const runScreen = (filters: ScreenFilters) =>
   api.post<ScreenResult>("/screener/run", filters).then((r) => r.data);
+
+export const runFactorScreen = (filters: FactorScreenFilters) =>
+  api.post<ScreenResult>("/screener/factor", filters).then((r) => r.data);
 
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);

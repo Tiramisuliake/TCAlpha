@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.25] — 2026-06-21
+
+> 时序多因子选股引擎（基座）：从 ArcticDB 历史日 K 向量化计算多周期动量 / 波动率 / 趋势斜率 / 量能四类**连续因子**，横截面 z-score 标准化后按方向可配权重综合打分选股。把原先仅 3 个当日截面因子的「玩具级多因子」升级为基于时序的因子库——是后续单因子有效性检验（IC/分层）、因子组合回测的地基，且每类因子可逐批增量扩充。
+
+### Added — 时序多因子选股引擎
+- 后端 `services/factors.py`（新建）：复用 `bar_1d` 批量读 + `_name_map`；第一批 5 因子 `mom_20` / `mom_60`（多周期动量）· `volatility`（年化波动率）· `trend_slope`（对数收盘价回归斜率年化）· `vol_surge`（5/20 日量能比）；横截面 z-score（clip ±3）+ 方向（动量/趋势/量能越高越优、波动率越低越优）+ 可配权重综合分；`factor_screen(filters)` 返回 `{ready,count,candidates}`，候选暴露因子原始值 + z 分 + 综合分
+- 后端 `schemas/screener.py` `FactorWeights` / `FactorScreenRequest` + `api/screener.py` `POST /screener/factor`（`data.read` + `to_thread`，复用 `ScreenResult`）
+- 前端 `pages/Screener/FactorScreen`（新）：5 因子权重输入（0 即排除该因子）+ 因子值结果表（动量/波动/斜率/量能 + 综合分可排序）+ 单只/批量加自选闭环；Screener 页 Segmented 加「多因子选股」模式
+- 测试：强势票综合分最高 + 下跌垫底 + score 降序 / 因子字段完整 / 权重置零 score 全 0 / 单因子驱动排序 / 价格过滤 / 空库 ready False（+6 用例，共 217 passed）
+
 ## [0.8.24] — 2026-06-21
 
 > 短线选股批量加自选：选股命中一篮子票时，多选勾选后一键全加入自选，复用后端唯一约束区分新增 / 已存在。把「选股 → 盯盘」闭环从单只点选升级到批量行动——选出来的强信号票能一次性进盯盘 + AI 告警跟踪。

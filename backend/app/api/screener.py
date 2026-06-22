@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from app.core.auth_deps import require_permission
 from app.deps import CurrentUserId
 from app.schemas.screener import (
+    FactorScreenRequest,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
     MatchPatternsRequest,
@@ -19,6 +20,7 @@ from app.schemas.screener import (
     ScreenResult,
     ShortTermRequest,
 )
+from app.services import factors as factors_svc
 from app.services import screener as screener_svc
 from app.services import short_term as short_term_svc
 
@@ -124,3 +126,20 @@ async def pattern_stats_all(
     return await asyncio.to_thread(
         short_term_svc.pattern_forward_stats_all, payload.hold_days, payload.lookback
     )
+
+
+@router.post(
+    "/factor",
+    response_model=ScreenResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_screen(
+    payload: FactorScreenRequest,
+    _: int = CurrentUserId,
+):
+    """时序多因子选股：从历史日 K 算多周期动量 / 波动率 / 趋势斜率 / 量能因子，
+    横截面 z-score 标准化后按方向加权综合打分排序。
+
+    扫描读 ArcticDB（同步 IO），丢线程池避免阻塞事件循环。
+    """
+    return await asyncio.to_thread(factors_svc.factor_screen, payload.model_dump())

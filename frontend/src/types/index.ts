@@ -311,6 +311,35 @@ export interface ScreenCandidate {
   boards?: number; // 连板数（涨停打板，v0.8.11）
   patterns?: string[]; // 命中形态中文名（多形态共振，v0.8.20）
   match_count?: number; // 共振命中形态数
+  // 时序多因子选股字段（v0.8.25）：因子原始值 + 截面 z 分
+  mom_20?: number;
+  mom_60?: number;
+  volatility?: number;
+  trend_slope?: number;
+  vol_surge?: number;
+  mom_20_z?: number;
+  mom_60_z?: number;
+  volatility_z?: number;
+  trend_slope_z?: number;
+  vol_surge_z?: number;
+}
+
+/** 时序多因子综合打分权重（缺省等权，0 表示不参与）。 */
+export interface FactorWeights {
+  mom_20: number;
+  mom_60: number;
+  volatility: number;
+  trend_slope: number;
+  vol_surge: number;
+}
+
+/** 多因子选股请求。 */
+export interface FactorScreenFilters {
+  weights: FactorWeights;
+  price_min?: number;
+  price_max?: number;
+  exclude_st: boolean;
+  limit: number;
 }
 
 export interface ScreenResult {

@@ -131,6 +131,10 @@ class FactorWeights(BaseModel):
     volatility: float = Field(default=1.0, ge=0, le=10)   # 低波动溢价
     trend_slope: float = Field(default=1.0, ge=0, le=10)  # 趋势斜率
     vol_surge: float = Field(default=1.0, ge=0, le=10)    # 量能放大
+    # 反转 / 超卖风格（缺省 0，不参与；用户按需开启与动量对冲）
+    rev_5: float = Field(default=0.0, ge=0, le=10)        # 5日反转
+    rsi_14: float = Field(default=0.0, ge=0, le=10)       # RSI 超卖
+    boll_pctb: float = Field(default=0.0, ge=0, le=10)    # 布林%B 位置
 
 
 class FactorScreenRequest(BaseModel):

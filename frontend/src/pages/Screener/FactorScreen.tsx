@@ -16,6 +16,9 @@ const FACTORS = [
   { key: "volatility", label: "波动率", unit: "pct", desc: "年化波动率，越低越优（低波动溢价）" },
   { key: "trend_slope", label: "趋势斜率", unit: "num", desc: "对数收盘价线性回归斜率年化，越高越强" },
   { key: "vol_surge", label: "量能放大", unit: "x", desc: "近 5 日均量 / 近 20 日均量，越高越活跃" },
+  { key: "rev_5", label: "5日反转", unit: "pct", desc: "近 5 日收益，越低（跌多）越优——短期反转，与动量对冲" },
+  { key: "rsi_14", label: "RSI", unit: "rsi", desc: "RSI(14) Wilder，越低越超卖——反转风格" },
+  { key: "boll_pctb", label: "布林%B", unit: "pctb", desc: "布林带位置，越低越接近下轨——超卖" },
 ] as const;
 
 const DEFAULT_WEIGHTS: FactorWeights = {
@@ -24,6 +27,10 @@ const DEFAULT_WEIGHTS: FactorWeights = {
   volatility: 1,
   trend_slope: 1,
   vol_surge: 1,
+  // 反转类缺省关闭，按需开启与动量对冲
+  rev_5: 0,
+  rsi_14: 0,
+  boll_pctb: 0,
 };
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
@@ -42,6 +49,8 @@ function fmt(v: number | undefined, unit: string): ReactNode {
     return <span className={`num ${pct >= 0 ? "up" : "down"}`}>{pct.toFixed(1)}%</span>;
   }
   if (unit === "x") return <span className="num">{v.toFixed(2)}×</span>;
+  if (unit === "rsi") return <span className="num">{v.toFixed(1)}</span>;
+  if (unit === "pctb") return <span className="num">{v.toFixed(2)}</span>;
   return <span className={`num ${v >= 0 ? "up" : "down"}`}>{v.toFixed(3)}</span>;
 }
 
@@ -217,6 +226,7 @@ export default function FactorScreen() {
             columns={cols}
             rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
             pagination={{ pageSize: 15 }}
+            scroll={{ x: 1180 }}
             className="flex-1"
           />
         )}

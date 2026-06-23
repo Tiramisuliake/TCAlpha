@@ -322,15 +322,25 @@ export interface ScreenCandidate {
   volatility_z?: number;
   trend_slope_z?: number;
   vol_surge_z?: number;
+  // 反转风格因子（v0.8.26）
+  rev_5?: number;
+  rsi_14?: number;
+  boll_pctb?: number;
+  rev_5_z?: number;
+  rsi_14_z?: number;
+  boll_pctb_z?: number;
 }
 
-/** 时序多因子综合打分权重（缺省等权，0 表示不参与）。 */
+/** 时序多因子综合打分权重（动量类缺省 1，反转类缺省 0；0 表示不参与）。 */
 export interface FactorWeights {
   mom_20: number;
   mom_60: number;
   volatility: number;
   trend_slope: number;
   vol_surge: number;
+  rev_5: number;
+  rsi_14: number;
+  boll_pctb: number;
 }
 
 /** 多因子选股请求。 */

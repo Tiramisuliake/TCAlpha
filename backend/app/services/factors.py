@@ -3,11 +3,16 @@
 从 ArcticDB ``bar_1d`` 历史日 K 向量化计算一批**连续因子**（区别于 short_term 的布尔形态命中），
 横截面 z-score 标准化后按方向加权综合打分排序。这是多因子选股的基座，后续可逐批扩充因子。
 
-第一批因子（覆盖 动量 / 波动 / 趋势 / 量能 四类）：
-  mom_20 / mom_60   多周期动量（区间收益率，越高越强）
+第一批因子（追强风格，越高越优）：
+  mom_20 / mom_60   多周期动量（区间收益率）
   volatility        年化波动率（低波动溢价，越低越优）
-  trend_slope       对数收盘价线性回归斜率年化（趋势强度，越高越强）
-  vol_surge         近 5 日均量 / 近 20 日均量（量能放大，越高越强）
+  trend_slope       对数收盘价线性回归斜率年化（趋势强度）
+  vol_surge         近 5 日均量 / 近 20 日均量（量能放大）
+
+第二批因子（反转 / 超卖风格，越低越优，与动量对冲）：
+  rev_5             近 5 日收益（短期反转，跌多者优）
+  rsi_14            RSI(14) Wilder 平滑（越低越超卖）
+  boll_pctb         布林带 %B 位置（越接近下轨越超卖）
 
 数据读取（list_symbols + read）为同步 IO，路由层用 ``asyncio.to_thread`` 包裹。
 """
@@ -28,6 +33,17 @@ FACTORS: dict[str, tuple[str, bool]] = {
     "volatility": ("年化波动率", False),  # 低波动溢价
     "trend_slope": ("趋势斜率", True),
     "vol_surge": ("量能放大", True),
+    # 反转 / 超卖风格（越低越优，与动量对冲）
+    "rev_5": ("5日反转", False),
+    "rsi_14": ("RSI超卖", False),
+    "boll_pctb": ("布林%B", False),
+}
+
+# 缺省权重：第一批动量/趋势/量能类等权 1，反转类 0（按需开启与动量对冲）。
+# 与 FactorWeights schema 默认值一致——未显式指定的因子按此参与加权。
+_DEFAULT_WEIGHTS: dict[str, float] = {
+    "mom_20": 1.0, "mom_60": 1.0, "volatility": 1.0, "trend_slope": 1.0,
+    "vol_surge": 1.0, "rev_5": 0.0, "rsi_14": 0.0, "boll_pctb": 0.0,
 }
 
 
@@ -65,6 +81,20 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
             if base > 0:
                 vol_surge = float(vol[-5:].mean() / base)
 
+    # 短期反转：近 5 日收益（跌多者反转优）
+    rev_5 = c[-1] / c[-6] - 1.0
+
+    # RSI(14) Wilder 平滑（越低越超卖）
+    delta = pd.Series(c).diff().fillna(0.0)
+    avg_gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean().iloc[-1]
+    avg_loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean().iloc[-1]
+    rsi_14 = 100.0 if avg_loss == 0 else float(100 - 100 / (1 + avg_gain / avg_loss))
+
+    # 布林带 %B 位置（近 20 日，越接近下轨越超卖；可超出 [0,1]）
+    recent = c[-20:]
+    sd = recent.std(ddof=0)
+    boll_pctb = float((c[-1] - (recent.mean() - 2 * sd)) / (4 * sd)) if sd > 0 else 0.5
+
     return {
         "price": float(c[-1]),
         "mom_20": float(mom_20),
@@ -72,6 +102,9 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
         "volatility": volatility,
         "trend_slope": slope,
         "vol_surge": vol_surge,
+        "rev_5": float(rev_5),
+        "rsi_14": rsi_14,
+        "boll_pctb": boll_pctb,
     }
 
 
@@ -130,7 +163,7 @@ def factor_screen(filters: dict) -> dict:
     weights = filters.get("weights") or {}
     total = pd.Series(0.0, index=fdf.index)
     for fname, (_cn, higher) in FACTORS.items():
-        w = float(weights.get(fname, 1.0))
+        w = float(weights.get(fname, _DEFAULT_WEIGHTS.get(fname, 1.0)))
         z = _zscore(fdf[fname])
         if not higher:
             z = -z

@@ -131,3 +131,50 @@ def test_factor_screen_empty_lib_not_ready(fake_arctic, _no_names):
     res = factor_screen({})
     assert res["ready"] is False
     assert res["candidates"] == []
+
+
+# ── 反转风格因子（v0.8.26）───────────────────────────────────────────────
+
+
+def test_factor_reversal_fields_present(fake_arctic, _no_names):
+    """候选暴露反转因子原始值 + z 分；强势票 RSI 偏高（超买）。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    get_library("bar_1d").write("sh600001", _strong())
+    c = factor_screen({})["candidates"][0]
+    for f in ("rev_5", "rsi_14", "boll_pctb"):
+        assert f in c and f"{f}_z" in c
+    assert c["rsi_14"] > 50          # 持续上涨 → 超买
+    assert 0.0 <= c["rsi_14"] <= 100.0
+
+
+def test_factor_reversal_weights_pick_oversold(fake_arctic, _no_names):
+    """开启反转权重、关闭动量 → 超卖下跌票综合分高于强势超买票。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _strong())    # 持续上涨：超买
+    lib.write("sh600003", _falling())   # 持续下跌：超卖
+
+    weights = {
+        "mom_20": 0, "mom_60": 0, "volatility": 0, "trend_slope": 0, "vol_surge": 0,
+        "rev_5": 1, "rsi_14": 1, "boll_pctb": 1,
+    }
+    cands = factor_screen({"weights": weights})["candidates"]
+    assert cands[0]["symbol"] == "sh600003"               # 超卖票反转得分高
+    assert cands[0]["rsi_14"] < cands[-1]["rsi_14"]       # 超卖 RSI 更低
+
+
+def test_factor_default_weights_ignore_reversal(fake_arctic, _no_names):
+    """缺省权重下反转因子权重 0：动量主导，强势票仍排第一。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _strong())
+    lib.write("sh600003", _falling())
+
+    cands = factor_screen({})["candidates"]
+    assert cands[0]["symbol"] == "sh600001"

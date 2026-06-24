@@ -135,6 +135,10 @@ class FactorWeights(BaseModel):
     rev_5: float = Field(default=0.0, ge=0, le=10)        # 5日反转
     rsi_14: float = Field(default=0.0, ge=0, le=10)       # RSI 超卖
     boll_pctb: float = Field(default=0.0, ge=0, le=10)    # 布林%B 位置
+    # 量价 / 资金行为（缺省 0，按需开启）
+    corr_pv: float = Field(default=0.0, ge=0, le=10)      # 量价相关性
+    amihud: float = Field(default=0.0, ge=0, le=10)       # Amihud 非流动性
+    obv_slope: float = Field(default=0.0, ge=0, le=10)    # OBV 斜率
 
 
 class FactorScreenRequest(BaseModel):

@@ -14,6 +14,11 @@
   rsi_14            RSI(14) Wilder 平滑（越低越超卖）
   boll_pctb         布林带 %B 位置（越接近下轨越超卖）
 
+第三批因子（量价 / 资金行为，纯量价时序，缺省 0 按需开启）：
+  corr_pv           近 20 日收盘价 vs 成交量相关性（量价齐升 > 0）
+  amihud            Amihud 非流动性 mean(|日收益|/成交额)（越低流动性越好）
+  obv_slope         能量潮 OBV 近 20 日回归斜率 / 日均量（资金净流入 > 0）
+
 数据读取（list_symbols + read）为同步 IO，路由层用 ``asyncio.to_thread`` 包裹。
 """
 from __future__ import annotations
@@ -37,6 +42,10 @@ FACTORS: dict[str, tuple[str, bool]] = {
     "rev_5": ("5日反转", False),
     "rsi_14": ("RSI超卖", False),
     "boll_pctb": ("布林%B", False),
+    # 量价 / 资金行为（缺省 0，按需开启）
+    "corr_pv": ("量价相关", True),
+    "amihud": ("非流动性", False),  # 越低流动性越好
+    "obv_slope": ("OBV斜率", True),
 }
 
 # 缺省权重：第一批动量/趋势/量能类等权 1，反转类 0（按需开启与动量对冲）。
@@ -44,6 +53,7 @@ FACTORS: dict[str, tuple[str, bool]] = {
 _DEFAULT_WEIGHTS: dict[str, float] = {
     "mom_20": 1.0, "mom_60": 1.0, "volatility": 1.0, "trend_slope": 1.0,
     "vol_surge": 1.0, "rev_5": 0.0, "rsi_14": 0.0, "boll_pctb": 0.0,
+    "corr_pv": 0.0, "amihud": 0.0, "obv_slope": 0.0,
 }
 
 
@@ -72,14 +82,22 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
     x = np.arange(len(y), dtype=float)
     slope = float(np.polyfit(x, y, 1)[0]) * 252.0
 
+    # 量、额序列（与 close 同长，A 股日 K 无停牌缺口假设）
+    vol_arr = (
+        pd.to_numeric(df["volume"], errors="coerce").to_numpy(dtype=float)
+        if "volume" in df.columns else np.zeros(len(c))
+    )
+    amt_arr = (
+        pd.to_numeric(df["amount"], errors="coerce").to_numpy(dtype=float)
+        if "amount" in df.columns else np.zeros(len(c))
+    )
+
     # 量能放大：近 5 日均量 / 近 20 日均量
     vol_surge = 0.0
-    if "volume" in df.columns:
-        vol = pd.to_numeric(df["volume"], errors="coerce").dropna().to_numpy(dtype=float)
-        if len(vol) >= 20:
-            base = vol[-20:].mean()
-            if base > 0:
-                vol_surge = float(vol[-5:].mean() / base)
+    if len(vol_arr) >= 20:
+        base = vol_arr[-20:].mean()
+        if base > 0:
+            vol_surge = float(vol_arr[-5:].mean() / base)
 
     # 短期反转：近 5 日收益（跌多者反转优）
     rev_5 = c[-1] / c[-6] - 1.0
@@ -95,6 +113,32 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
     sd = recent.std(ddof=0)
     boll_pctb = float((c[-1] - (recent.mean() - 2 * sd)) / (4 * sd)) if sd > 0 else 0.5
 
+    # 量价相关性：近 20 日收盘价 vs 成交量相关系数（量价齐升 > 0）
+    corr_pv = 0.0
+    if len(vol_arr) >= 20:
+        c20, v20 = c[-20:], vol_arr[-20:]
+        if np.std(c20) > 0 and np.std(v20) > 0:
+            corr_pv = float(np.corrcoef(c20, v20)[0, 1])
+
+    # Amihud 非流动性：近 20 日 mean(|日收益| / 成交额) ×1e8（越低越流动）
+    amihud = 0.0
+    if len(amt_arr) >= 21 and len(c) >= 21:
+        ret20 = np.abs(np.diff(c[-21:]) / c[-21:-1])
+        amt20 = amt_arr[-20:]
+        mask = amt20 > 0
+        if mask.any():
+            amihud = float(np.mean(ret20[mask] / amt20[mask]) * 1e8)
+
+    # OBV 斜率：能量潮近 20 日回归斜率 / 日均量（资金净流入 > 0）
+    obv_slope = 0.0
+    if len(vol_arr) >= 21 and len(c) >= 21:
+        obv = np.cumsum(np.sign(np.diff(c)) * vol_arr[1:])
+        obv20 = obv[-20:]
+        base20 = vol_arr[-20:].mean()
+        if base20 > 0:
+            xx = np.arange(len(obv20), dtype=float)
+            obv_slope = float(np.polyfit(xx, obv20, 1)[0] / base20)
+
     return {
         "price": float(c[-1]),
         "mom_20": float(mom_20),
@@ -105,6 +149,9 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
         "rev_5": float(rev_5),
         "rsi_14": rsi_14,
         "boll_pctb": boll_pctb,
+        "corr_pv": corr_pv,
+        "amihud": amihud,
+        "obv_slope": obv_slope,
     }
 
 

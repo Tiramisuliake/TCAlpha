@@ -329,6 +329,13 @@ export interface ScreenCandidate {
   rev_5_z?: number;
   rsi_14_z?: number;
   boll_pctb_z?: number;
+  // 量价 / 资金行为因子（v0.8.27）
+  corr_pv?: number;
+  amihud?: number;
+  obv_slope?: number;
+  corr_pv_z?: number;
+  amihud_z?: number;
+  obv_slope_z?: number;
 }
 
 /** 时序多因子综合打分权重（动量类缺省 1，反转类缺省 0；0 表示不参与）。 */
@@ -341,6 +348,9 @@ export interface FactorWeights {
   rev_5: number;
   rsi_14: number;
   boll_pctb: number;
+  corr_pv: number;
+  amihud: number;
+  obv_slope: number;
 }
 
 /** 多因子选股请求。 */

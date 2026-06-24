@@ -178,3 +178,53 @@ def test_factor_default_weights_ignore_reversal(fake_arctic, _no_names):
 
     cands = factor_screen({})["candidates"]
     assert cands[0]["symbol"] == "sh600001"
+
+
+# ── 量价 / 资金行为因子（v0.8.27）─────────────────────────────────────────
+
+
+def test_factor_pricevolume_fields_present(fake_arctic, _no_names):
+    """候选暴露量价因子原始值 + z 分；持续上涨票 OBV 斜率为正、流动性优于下跌票。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _strong())
+    lib.write("sh600003", _falling())
+
+    rows = {c["symbol"]: c for c in factor_screen({})["candidates"]}
+    up = rows["sh600001"]
+    for f in ("corr_pv", "amihud", "obv_slope"):
+        assert f in up and f"{f}_z" in up
+    assert up["obv_slope"] > 0                              # 持续上涨：OBV 净流入
+    assert rows["sh600003"]["obv_slope"] < 0               # 持续下跌：OBV 净流出
+    assert up["amihud"] >= 0                                # Amihud 非流动性恒非负
+
+
+def test_factor_obv_weight_picks_inflow(fake_arctic, _no_names):
+    """仅开 OBV 斜率权重、关其余 → 资金净流入票（上涨）排第一。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _strong())
+    lib.write("sh600003", _falling())
+
+    weights = {
+        "mom_20": 0, "mom_60": 0, "volatility": 0, "trend_slope": 0, "vol_surge": 0,
+        "rev_5": 0, "rsi_14": 0, "boll_pctb": 0, "obv_slope": 1,
+    }
+    cands = factor_screen({"weights": weights})["candidates"]
+    assert cands[0]["symbol"] == "sh600001"
+
+
+def test_factor_default_weights_ignore_pricevolume(fake_arctic, _no_names):
+    """缺省权重下量价因子权重 0：动量主导，强势票仍排第一。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _strong())
+    lib.write("sh600003", _falling())
+
+    assert factor_screen({})["candidates"][0]["symbol"] == "sh600001"

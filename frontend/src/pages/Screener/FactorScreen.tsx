@@ -19,6 +19,9 @@ const FACTORS = [
   { key: "rev_5", label: "5日反转", unit: "pct", desc: "近 5 日收益，越低（跌多）越优——短期反转，与动量对冲" },
   { key: "rsi_14", label: "RSI", unit: "rsi", desc: "RSI(14) Wilder，越低越超卖——反转风格" },
   { key: "boll_pctb", label: "布林%B", unit: "pctb", desc: "布林带位置，越低越接近下轨——超卖" },
+  { key: "corr_pv", label: "量价相关", unit: "num", desc: "近 20 日收盘价 vs 成交量相关性，越高量价齐升（资金确认）" },
+  { key: "amihud", label: "非流动性", unit: "lo", desc: "Amihud 非流动性 mean(|日收益|/成交额)，越低流动性越好" },
+  { key: "obv_slope", label: "OBV斜率", unit: "num", desc: "能量潮近 20 日回归斜率 / 日均量，越高资金净流入" },
 ] as const;
 
 const DEFAULT_WEIGHTS: FactorWeights = {
@@ -31,6 +34,10 @@ const DEFAULT_WEIGHTS: FactorWeights = {
   rev_5: 0,
   rsi_14: 0,
   boll_pctb: 0,
+  // 量价 / 资金行为类缺省关闭，按需开启
+  corr_pv: 0,
+  amihud: 0,
+  obv_slope: 0,
 };
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
@@ -51,6 +58,7 @@ function fmt(v: number | undefined, unit: string): ReactNode {
   if (unit === "x") return <span className="num">{v.toFixed(2)}×</span>;
   if (unit === "rsi") return <span className="num">{v.toFixed(1)}</span>;
   if (unit === "pctb") return <span className="num">{v.toFixed(2)}</span>;
+  if (unit === "lo") return <span className="num text-slate-500">{v.toFixed(3)}</span>;
   return <span className={`num ${v >= 0 ? "up" : "down"}`}>{v.toFixed(3)}</span>;
 }
 

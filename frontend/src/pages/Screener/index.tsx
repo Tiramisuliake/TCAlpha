@@ -11,9 +11,10 @@ import { PageScaffold } from "@/components/PageScaffold";
 import ShortTerm from "./ShortTerm";
 import LimitUpStats from "./LimitUpStats";
 import FactorScreen from "./FactorScreen";
+import FactorIC from "./FactorIC";
 import type { ScreenCandidate, ScreenFilters } from "@/types";
 
-type ScreenMode = "fundamental" | "factor" | "short_term" | "board_review";
+type ScreenMode = "fundamental" | "factor" | "factor_ic" | "short_term" | "board_review";
 
 const SORT_OPTIONS = [
   { value: "amount", label: "成交额" },
@@ -140,6 +141,7 @@ export default function Screener() {
         options={[
           { label: "基本面筛选", value: "fundamental" },
           { label: "多因子选股", value: "factor" },
+          { label: "因子检验", value: "factor_ic" },
           { label: "短线技术选股", value: "short_term" },
           { label: "打板复盘", value: "board_review" },
         ]}
@@ -147,6 +149,8 @@ export default function Screener() {
       />
       {mode === "factor" ? (
         <FactorScreen />
+      ) : mode === "factor_ic" ? (
+        <FactorIC />
       ) : mode === "short_term" ? (
         <ShortTerm />
       ) : mode === "board_review" ? (

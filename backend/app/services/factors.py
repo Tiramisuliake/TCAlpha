@@ -231,3 +231,125 @@ def factor_screen(filters: dict) -> dict:
         {k: (None if pd.isna(v) else v) for k, v in rec.items()} for rec in records
     ]
     return {"ready": True, "count": len(candidates), "candidates": candidates}
+
+
+def _empty_ic(factor: str, hold_days: int) -> dict:
+    return {
+        "ready": False,
+        "factor": factor,
+        "hold_days": hold_days,
+        "sample_count": 0,
+        "mean_ic": 0.0,
+        "ic_ir": 0.0,
+        "ic_win_rate": 0.0,
+        "long_short": 0.0,
+        "quantiles": [],
+    }
+
+
+def factor_ic(
+    factor: str,
+    hold_days: int = 10,
+    lookback: int = 240,
+    sample_points: int = 8,
+    max_scan: int = 300,
+) -> dict:
+    """单因子有效性检验：多采样时点横截面 rank IC + 5 档分层前瞻收益。
+
+    对回看窗口内等间隔 sample_points 个时点，各算全市场横截面的：
+      - rank IC：因子值 vs 未来 hold_days 收益的 Spearman 秩相关
+      - 5 档分层：按因子值分位，记录各档未来收益（看单调性）
+    汇总 IC 序列均值 / IC_IR（信息比率 = mean/std）/ 胜率（IC>0 占比），
+    及分层平均收益与多空收益（long_short 按因子方向对齐，>0 表示因子有效）。
+
+    采样时点用「距最新交易日的偏移」对齐（同市场交易日历），复用 ``_compute_factors``
+    切片到历史截止点重算。数据读取为同步 IO，路由层用 ``asyncio.to_thread`` 包裹。
+    """
+    if factor not in FACTORS:
+        raise ValueError(f"unknown factor: {factor} (allowed {list(FACTORS)})")
+
+    from app.db.arctic import get_library
+
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if not symbols:
+        return _empty_ic(factor, hold_days)
+
+    symbols = symbols[:max_scan]
+    frames: dict[str, pd.DataFrame] = {}
+    closes: dict[str, np.ndarray] = {}
+    for sym in symbols:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or len(df) < _MIN_BARS + hold_days or "close" not in df.columns:
+            continue
+        frames[sym] = df
+        closes[sym] = pd.to_numeric(df["close"], errors="coerce").to_numpy(dtype=float)
+    if not frames:
+        return _empty_ic(factor, hold_days)
+
+    offsets = sorted({int(round(o)) for o in np.linspace(hold_days, lookback, sample_points)})
+    higher = FACTORS[factor][1]
+    ic_list: list[float] = []
+    quint_rets: dict[int, list[float]] = {q: [] for q in range(5)}
+
+    for off in offsets:
+        fvals: list[float] = []
+        fwds: list[float] = []
+        for sym, df in frames.items():
+            c = closes[sym]
+            n = len(c)
+            t = n - 1 - off
+            if t < _MIN_BARS - 1 or t + hold_days > n - 1:
+                continue
+            f = _compute_factors(df.iloc[: t + 1])
+            if f is None or c[t] <= 0:
+                continue
+            fvals.append(f[factor])
+            fwds.append(c[t + hold_days] / c[t] - 1.0)
+        if len(fvals) < 5:
+            continue
+        sf, sr = pd.Series(fvals), pd.Series(fwds)
+        # rank IC = 秩的 pearson 相关（数学上等价 Spearman，避免引入 scipy 依赖）
+        ic = sf.rank().corr(sr.rank())
+        if pd.notna(ic):
+            ic_list.append(float(ic))
+        try:
+            q = pd.qcut(sf.rank(method="first"), 5, labels=False)
+        except ValueError:
+            continue
+        for qi in range(5):
+            rr = sr[q == qi]
+            if len(rr):
+                quint_rets[qi].append(float(rr.mean()))
+
+    if not ic_list:
+        return _empty_ic(factor, hold_days)
+
+    mean_ic = float(np.mean(ic_list))
+    std_ic = float(np.std(ic_list, ddof=0))
+    ic_ir = mean_ic / std_ic if std_ic > 0 else 0.0
+    win = sum(1 for x in ic_list if x > 0) / len(ic_list)
+    quantiles = [
+        {
+            "q": qi + 1,
+            "avg_return": round(float(np.mean(quint_rets[qi])), 6) if quint_rets[qi] else 0.0,
+        }
+        for qi in range(5)
+    ]
+    q1, q5 = quantiles[0]["avg_return"], quantiles[4]["avg_return"]
+    long_short = (q5 - q1) if higher else (q1 - q5)
+
+    return {
+        "ready": True,
+        "factor": factor,
+        "hold_days": hold_days,
+        "sample_count": len(ic_list),
+        "mean_ic": round(mean_ic, 4),
+        "ic_ir": round(ic_ir, 4),
+        "ic_win_rate": round(win, 4),
+        "long_short": round(long_short, 6),
+        "quantiles": quantiles,
+    }

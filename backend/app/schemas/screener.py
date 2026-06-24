@@ -150,3 +150,30 @@ class FactorScreenRequest(BaseModel):
     exclude_st: bool = True
     limit: int = Field(default=50, ge=1, le=200)
     max_scan: int = Field(default=800, ge=1, le=5000)
+
+
+class FactorICRequest(BaseModel):
+    """单因子有效性检验请求（IC + 分层回测）。"""
+
+    factor: str = "mom_20"
+    hold_days: int = Field(default=10, ge=1, le=60)        # 前瞻持有天数
+    lookback: int = Field(default=240, ge=40, le=1000)     # 采样回看窗口（交易日）
+    sample_points: int = Field(default=8, ge=3, le=30)     # 采样时点数
+    max_scan: int = Field(default=300, ge=1, le=2000)      # 扫描标的上限
+
+
+class QuantileReturn(BaseModel):
+    q: int             # 分档 1..5（1 = 因子值最低档）
+    avg_return: float  # 该档未来 hold_days 平均收益
+
+
+class FactorICResult(BaseModel):
+    ready: bool
+    factor: str
+    hold_days: int
+    sample_count: int           # 有效采样时点数
+    mean_ic: float = 0.0        # 平均 rank IC（客观符号，随因子方向）
+    ic_ir: float = 0.0          # IC 信息比率 = mean/std
+    ic_win_rate: float = 0.0    # IC > 0 的时点占比
+    long_short: float = 0.0     # 多空收益（按因子方向对齐，>0 有效）
+    quantiles: list[QuantileReturn] = []

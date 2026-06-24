@@ -362,6 +362,24 @@ export interface FactorScreenFilters {
   limit: number;
 }
 
+/** 单因子有效性检验（IC + 分层）。 */
+export interface QuantileReturn {
+  q: number;
+  avg_return: number;
+}
+
+export interface FactorICResult {
+  ready: boolean;
+  factor: string;
+  hold_days: number;
+  sample_count: number;
+  mean_ic: number;
+  ic_ir: number;
+  ic_win_rate: number;
+  long_short: number;
+  quantiles: QuantileReturn[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

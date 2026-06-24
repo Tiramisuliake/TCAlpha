@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type {
+  FactorICResult,
   FactorScreenFilters,
   LimitUpPremiumResult,
   PatternStatsResult,
@@ -13,6 +14,14 @@ export const runScreen = (filters: ScreenFilters) =>
 
 export const runFactorScreen = (filters: FactorScreenFilters) =>
   api.post<ScreenResult>("/screener/factor", filters).then((r) => r.data);
+
+export const runFactorIC = (payload: {
+  factor: string;
+  hold_days?: number;
+  lookback?: number;
+  sample_points?: number;
+  max_scan?: number;
+}) => api.post<FactorICResult>("/screener/factor-ic", payload).then((r) => r.data);
 
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);

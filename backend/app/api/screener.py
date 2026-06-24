@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends
 from app.core.auth_deps import require_permission
 from app.deps import CurrentUserId
 from app.schemas.screener import (
+    FactorICRequest,
+    FactorICResult,
     FactorScreenRequest,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
@@ -143,3 +145,24 @@ async def run_factor_screen(
     扫描读 ArcticDB（同步 IO），丢线程池避免阻塞事件循环。
     """
     return await asyncio.to_thread(factors_svc.factor_screen, payload.model_dump())
+
+
+@router.post(
+    "/factor-ic",
+    response_model=FactorICResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_ic(
+    payload: FactorICRequest,
+    _: int = CurrentUserId,
+):
+    """单因子有效性检验：多采样时点横截面 rank IC + 5 档分层前瞻收益，
+    回答某因子是否真有 alpha（IC 显著性 + 分层单调性 + 多空收益）。
+
+    多时点切片重算因子（同步 IO + 计算），丢线程池避免阻塞事件循环。
+    """
+    return await asyncio.to_thread(
+        factors_svc.factor_ic,
+        payload.factor, payload.hold_days, payload.lookback,
+        payload.sample_points, payload.max_scan,
+    )

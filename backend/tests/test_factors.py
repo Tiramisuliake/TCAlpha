@@ -228,3 +228,40 @@ def test_factor_default_weights_ignore_pricevolume(fake_arctic, _no_names):
     lib.write("sh600003", _falling())
 
     assert factor_screen({})["candidates"][0]["symbol"] == "sh600001"
+
+
+# ── 单因子有效性检验 IC + 分层（v0.8.28）─────────────────────────────────
+
+
+def test_factor_ic_momentum_positive(fake_arctic):
+    """8 票不同斜率指数趋势：动量与未来收益完全单调 → IC 强正、分层 Q5>Q1、多空 > 0。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_ic
+
+    lib = get_library("bar_1d")
+    for i in range(8):
+        slope = (i - 3.5) * 0.012  # -0.042 .. +0.042，斜率单调
+        closes = [10.0 * (1 + slope) ** k for k in range(160)]
+        lib.write(f"sh60000{i}", _kline(closes))
+
+    res = factor_ic("mom_20", hold_days=5, lookback=60, sample_points=4, max_scan=50)
+    assert res["ready"] is True
+    assert res["sample_count"] >= 1
+    assert res["mean_ic"] > 0.5          # 单调 → 强正 rank IC
+    assert res["long_short"] > 0         # 高动量档未来收益更高
+    q = {x["q"]: x["avg_return"] for x in res["quantiles"]}
+    assert q[5] > q[1]                    # 分层单调
+
+
+def test_factor_ic_empty_lib(fake_arctic):
+    """空库 → ready False。"""
+    from app.services.factors import factor_ic
+
+    assert factor_ic("mom_20")["ready"] is False
+
+
+def test_factor_ic_unknown_factor(fake_arctic):
+    from app.services.factors import factor_ic
+
+    with pytest.raises(ValueError, match="unknown factor"):
+        factor_ic("foobar")

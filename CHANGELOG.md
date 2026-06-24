@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.28] — 2026-06-24
+
+> 单因子有效性检验（IC + 分层回测）：造因子 → **验因子**闭环。对任一因子算多采样时点的横截面 rank IC（信息系数）+ 5 档分层前瞻收益，回答「这个因子到底有没有 alpha」。11 个因子终于能量化检验，而非只堆不验。
+
+### Added — 单因子有效性检验
+- 后端 `services/factors.py`：`factor_ic(factor, hold_days, lookback, sample_points, max_scan)` —— 回看窗口内等间隔采样时点，各算因子值与未来收益的横截面 rank IC（秩的 pearson 相关，避免 scipy 依赖）+ `qcut` 5 档前瞻收益；汇总 `mean_ic` / `ic_ir`（信息比率 mean/std）/ IC 胜率 / 多空收益（按因子方向对齐，>0 有效）+ 分层收益。复用 `_compute_factors` 切片到历史截止点重算（采样时点按「距最新交易日偏移」对齐）
+- 后端 `schemas/screener.py` `FactorICRequest` / `QuantileReturn` / `FactorICResult` + `api/screener.py` `POST /screener/factor-ic`（`data.read` + `to_thread`）
+- 前端 `pages/Screener/FactorIC`（新）：因子下拉 + 持有 / 回看 / 采样参数 + IC 指标卡（平均 IC / IC_IR / 胜率 / 多空收益 + 强弱有效性 Tag）+ 5 档分层收益 ECharts 柱状图（正红负绿）；Screener 加「因子检验」Segmented 模式
+- 因子元信息抽到 `factorMeta.ts` 供选股 / 检验复用（消除 fast-refresh 警告）
+- 测试：8 票指数趋势动量 IC 强正 + 分层 Q5>Q1 + 多空>0 / 空库 ready False / 未知因子报错（+3 用例，共 226 passed）
+
 ## [0.8.27] — 2026-06-24
 
 > 多因子引擎扩量价 / 资金行为因子组：再加量价相关性 / Amihud 非流动性 / OBV 斜率三个**纯量价时序因子**，刻画资金行为维度——与动量、反转、波动正交。因子库扩至 11 个；量价类缺省权重 0，不改默认语义。

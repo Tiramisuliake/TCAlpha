@@ -265,3 +265,32 @@ def test_factor_ic_unknown_factor(fake_arctic):
 
     with pytest.raises(ValueError, match="unknown factor"):
         factor_ic("foobar")
+
+
+def test_factor_ic_all_covers_factors(fake_arctic):
+    """全因子横评：返回覆盖所有 FACTORS（带中文名），mom_20 IC 正。"""
+    from app.db.arctic import get_library
+    from app.services.factors import FACTORS, factor_ic_all
+
+    lib = get_library("bar_1d")
+    for i in range(8):
+        slope = (i - 3.5) * 0.012
+        closes = [10.0 * (1 + slope) ** k for k in range(160)]
+        lib.write(f"sh60000{i}", _kline(closes))
+
+    rows = factor_ic_all(hold_days=5, lookback=60, sample_points=4, max_scan=50)
+    assert [r["factor"] for r in rows] == list(FACTORS)
+    assert all(r["name"] for r in rows)          # 每行有中文名
+    mom = next(r for r in rows if r["factor"] == "mom_20")
+    assert mom["sample_count"] >= 1
+    assert mom["mean_ic"] > 0.5                   # 单调动量 → 强正 IC
+    assert mom["long_short"] > 0
+
+
+def test_factor_ic_all_empty_lib(fake_arctic):
+    """空库 → 仍返回每因子一行，sample_count 全 0。"""
+    from app.services.factors import FACTORS, factor_ic_all
+
+    rows = factor_ic_all()
+    assert len(rows) == len(FACTORS)
+    assert all(r["sample_count"] == 0 for r in rows)

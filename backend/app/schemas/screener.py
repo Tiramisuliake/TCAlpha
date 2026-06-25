@@ -167,6 +167,25 @@ class QuantileReturn(BaseModel):
     avg_return: float  # 该档未来 hold_days 平均收益
 
 
+class FactorICAllRequest(BaseModel):
+    """全因子 IC 横评请求。"""
+
+    hold_days: int = Field(default=10, ge=1, le=60)
+    lookback: int = Field(default=240, ge=40, le=1000)
+    sample_points: int = Field(default=8, ge=3, le=30)
+    max_scan: int = Field(default=300, ge=1, le=2000)
+
+
+class FactorICSummary(BaseModel):
+    factor: str
+    name: str                  # 因子中文名
+    sample_count: int
+    mean_ic: float = 0.0
+    ic_ir: float = 0.0
+    ic_win_rate: float = 0.0
+    long_short: float = 0.0    # 多空收益（按因子方向对齐）
+
+
 class FactorICResult(BaseModel):
     ready: bool
     factor: str

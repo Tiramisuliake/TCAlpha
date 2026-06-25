@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.29] — 2026-06-25
+
+> 全因子 IC 横评：因子检验页加「全因子横评」——一次算出全部 11 个因子的 IC + 多空收益，横向排名一眼看哪些最强。复用单因子 IC 逻辑，但一个采样时点切片一次即得全因子，省下逐因子重复读 IO。
+
+### Added — 全因子 IC 横评
+- 后端 `services/factors.py`：`factor_ic_all(hold_days, lookback, sample_points, max_scan)` —— 一次遍历数据，每采样时点切片一次算**所有**因子值，对每因子算 rank IC + 多空收益汇总；返回每因子一行（含中文名），顺序对齐 FACTORS，空库每因子 sample_count=0
+- 后端 `schemas/screener.py` `FactorICAllRequest` / `FactorICSummary` + `api/screener.py` `POST /screener/factor-ic-all`（`data.read` + `to_thread`）
+- 前端 `pages/Screener/FactorIC`：配置区加「全因子横评」按钮（与单因子检验共用持有/回看/采样参数）+ 横评对比表（因子 / 平均 IC / IC_IR / 胜率 / 多空 / 有效性 Tag，可点列排序，默认按多空收益降序）
+- 严谨性：因子 / 收益在某采样时点恒定时 rank 相关无定义，加 `nunique` guard 显式跳过（同步修正单因子 `factor_ic`，消除 numpy 除零 warning）
+- 测试：全因子横评覆盖 11 因子 + 动量 IC 正 + 多空 > 0 / 空库每因子归零（+2 用例，共 228 passed）
+
 ## [0.8.28] — 2026-06-24
 
 > 单因子有效性检验（IC + 分层回测）：造因子 → **验因子**闭环。对任一因子算多采样时点的横截面 rank IC（信息系数）+ 5 档分层前瞻收益，回答「这个因子到底有没有 alpha」。11 个因子终于能量化检验，而非只堆不验。

@@ -380,6 +380,17 @@ export interface FactorICResult {
   quantiles: QuantileReturn[];
 }
 
+/** 全因子 IC 横评的单因子汇总行。 */
+export interface FactorICSummary {
+  factor: string;
+  name: string;
+  sample_count: number;
+  mean_ic: number;
+  ic_ir: number;
+  ic_win_rate: number;
+  long_short: number;
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

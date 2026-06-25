@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends
 from app.core.auth_deps import require_permission
 from app.deps import CurrentUserId
 from app.schemas.screener import (
+    FactorICAllRequest,
     FactorICRequest,
     FactorICResult,
+    FactorICSummary,
     FactorScreenRequest,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
@@ -165,4 +167,23 @@ async def run_factor_ic(
         factors_svc.factor_ic,
         payload.factor, payload.hold_days, payload.lookback,
         payload.sample_points, payload.max_scan,
+    )
+
+
+@router.post(
+    "/factor-ic-all",
+    response_model=list[FactorICSummary],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_ic_all(
+    payload: FactorICAllRequest,
+    _: int = CurrentUserId,
+):
+    """全因子 IC 横评：一次遍历算所有因子的 IC + 多空收益，横向对比找最强因子。
+
+    一个采样时点切片一次即得全因子（比单因子 ×N 省 IO），丢线程池避免阻塞。
+    """
+    return await asyncio.to_thread(
+        factors_svc.factor_ic_all,
+        payload.hold_days, payload.lookback, payload.sample_points, payload.max_scan,
     )

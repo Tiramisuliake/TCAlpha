@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
   FactorICResult,
+  FactorICSummary,
   FactorScreenFilters,
   LimitUpPremiumResult,
   PatternStatsResult,
@@ -22,6 +23,13 @@ export const runFactorIC = (payload: {
   sample_points?: number;
   max_scan?: number;
 }) => api.post<FactorICResult>("/screener/factor-ic", payload).then((r) => r.data);
+
+export const runFactorICAll = (payload: {
+  hold_days?: number;
+  lookback?: number;
+  sample_points?: number;
+  max_scan?: number;
+}) => api.post<FactorICSummary[]>("/screener/factor-ic-all", payload).then((r) => r.data);
 
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);

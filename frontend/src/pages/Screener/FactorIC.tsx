@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Button, Card, Empty, InputNumber, Select, Statistic, Tag, Tooltip, message } from "antd";
-import { ExperimentOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Empty, InputNumber, Select, Space, Statistic, Table, Tag, Tooltip, message } from "antd";
+import { ExperimentOutlined, TableOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
+import type { ColumnsType } from "antd/es/table";
 import ReactECharts from "echarts-for-react";
-import { runFactorIC } from "@/api/screener";
+import { runFactorIC, runFactorICAll } from "@/api/screener";
+import type { FactorICSummary } from "@/types";
 import { FACTORS } from "./factorMeta";
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
@@ -19,9 +21,17 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
 const UP = "#ef4444";
 const DOWN = "#10b981";
 
+/** 按 |平均 IC| 强度判定因子有效性。 */
+function icVerdict(meanIc: number) {
+  const ic = Math.abs(meanIc);
+  if (ic >= 0.05) return { color: "red", short: "强", long: "强有效" };
+  if (ic >= 0.03) return { color: "orange", short: "弱", long: "弱有效" };
+  return { color: "default", short: "噪声", long: "噪声为主" };
+}
+
 /**
  * 单因子有效性检验：对回看窗口内多个采样时点，算因子值与未来收益的横截面 rank IC，
- * 并按因子值分 5 档看未来收益单调性。回答某因子是否真有 alpha（造因子 → 验因子闭环）。
+ * 并按因子值分 5 档看未来收益单调性。支持单因子细查（IC 卡 + 分层图）与全因子横评对比。
  */
 export default function FactorIC() {
   const [factor, setFactor] = useState("mom_20");
@@ -38,18 +48,69 @@ export default function FactorIC() {
   });
   const res = mut.data;
 
-  const run = () =>
-    mut.mutate({ factor, hold_days: holdDays, lookback, sample_points: samplePoints });
+  const allMut = useMutation({
+    mutationFn: runFactorICAll,
+    onSuccess: (rows) => {
+      if (!rows.some((r) => r.sample_count > 0))
+        message.info("尚无足够历史 K 线，请先到「数据」页下载日 K");
+      else message.success("全因子横评完成");
+    },
+  });
+  const allRows = allMut.data ?? [];
+
+  const params = { hold_days: holdDays, lookback, sample_points: samplePoints };
+  const runOne = () => mut.mutate({ factor, ...params });
+  const runAll = () => allMut.mutate(params);
 
   const factorLabel = FACTORS.find((f) => f.key === factor)?.label ?? factor;
+  const verdict = res?.ready ? icVerdict(res.mean_ic) : null;
 
-  const verdict = (() => {
-    if (!res?.ready) return null;
-    const ic = Math.abs(res.mean_ic);
-    if (ic >= 0.05) return { color: "red", text: "强有效" };
-    if (ic >= 0.03) return { color: "orange", text: "弱有效" };
-    return { color: "default", text: "噪声为主" };
-  })();
+  const allCols: ColumnsType<FactorICSummary> = [
+    { title: "因子", dataIndex: "name", width: 92 },
+    {
+      title: "平均 IC",
+      dataIndex: "mean_ic",
+      align: "right",
+      sorter: (a, b) => Math.abs(a.mean_ic) - Math.abs(b.mean_ic),
+      render: (v: number) => <span className={`num ${v >= 0 ? "up" : "down"}`}>{v.toFixed(4)}</span>,
+    },
+    {
+      title: "IC_IR",
+      dataIndex: "ic_ir",
+      align: "right",
+      sorter: (a, b) => a.ic_ir - b.ic_ir,
+      render: (v: number) => <span className="num">{v.toFixed(3)}</span>,
+    },
+    {
+      title: "IC胜率",
+      dataIndex: "ic_win_rate",
+      align: "right",
+      render: (v: number) => <span className="num">{(v * 100).toFixed(0)}%</span>,
+    },
+    {
+      title: "多空收益",
+      dataIndex: "long_short",
+      align: "right",
+      defaultSortOrder: "descend",
+      sorter: (a, b) => a.long_short - b.long_short,
+      render: (v: number) => <span className={`num ${v >= 0 ? "up" : "down"}`}>{(v * 100).toFixed(2)}%</span>,
+    },
+    {
+      title: "有效性",
+      key: "verdict",
+      align: "center",
+      render: (_: unknown, r: FactorICSummary) => {
+        const vd = icVerdict(r.mean_ic);
+        return <Tag color={vd.color} className="!m-0">{vd.short}</Tag>;
+      },
+    },
+    {
+      title: "采样",
+      dataIndex: "sample_count",
+      align: "right",
+      render: (v: number) => <span className="num text-slate-400">{v}</span>,
+    },
+  ];
 
   const chartOption = res?.ready
     ? {
@@ -74,7 +135,7 @@ export default function FactorIC() {
     <>
       <Card size="small" title="单因子有效性检验（IC + 5 档分层回测）">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-          <Field label="因子">
+          <Field label="因子（单因子细查）">
             <Select
               size="small"
               style={{ width: 130 }}
@@ -92,9 +153,14 @@ export default function FactorIC() {
           <Field label="采样点数">
             <InputNumber size="small" min={3} max={30} value={samplePoints} onChange={(v) => setSamplePoints(v ?? 8)} />
           </Field>
-          <Button type="primary" icon={<ExperimentOutlined />} loading={mut.isPending} onClick={run}>
-            运行检验
-          </Button>
+          <Space>
+            <Button type="primary" icon={<ExperimentOutlined />} loading={mut.isPending} onClick={runOne}>
+              单因子检验
+            </Button>
+            <Button icon={<TableOutlined />} loading={allMut.isPending} onClick={runAll}>
+              全因子横评
+            </Button>
+          </Space>
         </div>
         <div className="mt-2 text-xs text-slate-400">
           对回看窗口内多个采样时点，算因子值与未来 N 日收益的横截面 rank IC（秩相关），并按因子值分 5
@@ -102,6 +168,18 @@ export default function FactorIC() {
           ≥ 0.3 较稳定；多空收益已按因子方向对齐（&gt; 0 表示有效）。
         </div>
       </Card>
+
+      {allRows.length > 0 && (
+        <Card size="small" title="全因子 IC 横评（按多空收益降序，点列头可改排序）">
+          <Table<FactorICSummary>
+            rowKey="factor"
+            size="small"
+            dataSource={allRows}
+            columns={allCols}
+            pagination={false}
+          />
+        </Card>
+      )}
 
       {res && !res.ready && (
         <Alert type="info" showIcon message="历史 K 线不足以检验（需覆盖回看窗口 + 持有期），请先到「数据」页下载日 K" />
@@ -128,7 +206,7 @@ export default function FactorIC() {
             <Statistic title="采样时点" value={res.sample_count} valueStyle={{ fontSize: 18 }} />
             {verdict && (
               <Tooltip title="基于 |平均 IC| 强度判定">
-                <Tag color={verdict.color} className="text-sm">{verdict.text}</Tag>
+                <Tag color={verdict.color} className="text-sm">{verdict.long}</Tag>
               </Tooltip>
             )}
           </div>
@@ -145,9 +223,10 @@ export default function FactorIC() {
           <ReactECharts option={chartOption} style={{ height: "100%", minHeight: 280 }} notMerge />
         </Card>
       ) : (
-        !res && (
+        !res &&
+        allRows.length === 0 && (
           <Card size="small" className="flex-1" classNames={{ body: "flex-1 flex items-center justify-center" }}>
-            <Empty description="选因子后点「运行检验」" />
+            <Empty description="设参数后点「单因子检验」细查，或「全因子横评」对比" />
           </Card>
         )
       )}

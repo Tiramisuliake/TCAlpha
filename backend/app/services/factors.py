@@ -312,10 +312,11 @@ def factor_ic(
         if len(fvals) < 5:
             continue
         sf, sr = pd.Series(fvals), pd.Series(fwds)
-        # rank IC = 秩的 pearson 相关（数学上等价 Spearman，避免引入 scipy 依赖）
-        ic = sf.rank().corr(sr.rank())
-        if pd.notna(ic):
-            ic_list.append(float(ic))
+        # rank IC = 秩的 pearson 相关（等价 Spearman，避免 scipy）；因子/收益恒定时无定义，跳过
+        if sf.nunique() > 1 and sr.nunique() > 1:
+            ic = sf.rank().corr(sr.rank())
+            if pd.notna(ic):
+                ic_list.append(float(ic))
         try:
             q = pd.qcut(sf.rank(method="first"), 5, labels=False)
         except ValueError:
@@ -353,3 +354,102 @@ def factor_ic(
         "long_short": round(long_short, 6),
         "quantiles": quantiles,
     }
+
+
+def _summarize_ic(name: str, factor: str, ics: list[float], q1s: list[float], q5s: list[float], higher: bool) -> dict:
+    """把一个因子的 IC 序列 + Q1/Q5 收益序列汇总为横评行。"""
+    if not ics:
+        return {
+            "factor": factor, "name": name, "sample_count": 0,
+            "mean_ic": 0.0, "ic_ir": 0.0, "ic_win_rate": 0.0, "long_short": 0.0,
+        }
+    mean_ic = float(np.mean(ics))
+    std_ic = float(np.std(ics, ddof=0))
+    q1 = float(np.mean(q1s)) if q1s else 0.0
+    q5 = float(np.mean(q5s)) if q5s else 0.0
+    return {
+        "factor": factor,
+        "name": name,
+        "sample_count": len(ics),
+        "mean_ic": round(mean_ic, 4),
+        "ic_ir": round(mean_ic / std_ic, 4) if std_ic > 0 else 0.0,
+        "ic_win_rate": round(sum(1 for x in ics if x > 0) / len(ics), 4),
+        "long_short": round((q5 - q1) if higher else (q1 - q5), 6),
+    }
+
+
+def factor_ic_all(
+    hold_days: int = 10,
+    lookback: int = 240,
+    sample_points: int = 8,
+    max_scan: int = 300,
+) -> list[dict]:
+    """全因子 IC 横评：一次遍历数据，每采样时点切片一次算**所有**因子值，
+    对每个因子算 rank IC + 多空收益，横向汇总对比（找最强因子）。
+
+    比单因子 ``factor_ic`` 逐个调用省下重复读 IO / 重复切片——一个时点一次
+    ``_compute_factors`` 即得全因子。返回每因子一行（含中文名），顺序对齐 FACTORS。
+    空库 / 数据不足时每因子 sample_count=0。
+    """
+    from app.db.arctic import get_library
+
+    names = list(FACTORS)
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if symbols:
+        symbols = symbols[:max_scan]
+        frames: dict[str, pd.DataFrame] = {}
+        closes: dict[str, np.ndarray] = {}
+        for sym in symbols:
+            try:
+                df = lib.read(sym).data
+            except Exception:
+                continue
+            if df is None or len(df) < _MIN_BARS + hold_days or "close" not in df.columns:
+                continue
+            frames[sym] = df
+            closes[sym] = pd.to_numeric(df["close"], errors="coerce").to_numpy(dtype=float)
+    else:
+        frames = {}
+
+    ic_lists: dict[str, list[float]] = {f: [] for f in names}
+    q1_lists: dict[str, list[float]] = {f: [] for f in names}
+    q5_lists: dict[str, list[float]] = {f: [] for f in names}
+
+    if frames:
+        offsets = sorted({int(round(o)) for o in np.linspace(hold_days, lookback, sample_points)})
+        for off in offsets:
+            rows: list[tuple[dict, float]] = []
+            for sym, df in frames.items():
+                c = closes[sym]
+                n = len(c)
+                t = n - 1 - off
+                if t < _MIN_BARS - 1 or t + hold_days > n - 1 or c[t] <= 0:
+                    continue
+                fdict = _compute_factors(df.iloc[: t + 1])
+                if fdict is None:
+                    continue
+                rows.append((fdict, c[t + hold_days] / c[t] - 1.0))
+            if len(rows) < 5:
+                continue
+            fwds = pd.Series([r[1] for r in rows])
+            if fwds.nunique() <= 1:  # 收益恒定 → IC 无定义
+                continue
+            fwd_ranks = fwds.rank()
+            for fname in names:
+                fvals = pd.Series([r[0][fname] for r in rows])
+                if fvals.nunique() > 1:  # 因子恒定时跳过（corr 无意义）
+                    ic = fvals.rank().corr(fwd_ranks)
+                    if pd.notna(ic):
+                        ic_lists[fname].append(float(ic))
+                try:
+                    q = pd.qcut(fvals.rank(method="first"), 5, labels=False)
+                except ValueError:
+                    continue
+                q1_lists[fname].append(float(fwds[q == 0].mean()))
+                q5_lists[fname].append(float(fwds[q == 4].mean()))
+
+    return [
+        _summarize_ic(cn, fname, ic_lists[fname], q1_lists[fname], q5_lists[fname], higher)
+        for fname, (cn, higher) in FACTORS.items()
+    ]

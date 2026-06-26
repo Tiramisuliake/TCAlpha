@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.30] — 2026-06-26
+
+> 因子选股 → 组合回测打通（方向 C）：多因子综合分历史每调仓日选 top N 等权持有，拼组合净值并对比全市场等权基准。把因子从「当前截面选股」延伸到「历史收益验证」——选出的因子组合到底赚不赚钱、能不能跑赢市场。**造因子 → 选股 → 验因子 → 组合变现**全链路打通。
+
+### Added — 多因子组合回测
+- 后端 `services/factors.py`：`factor_portfolio_backtest(weights, top_n, rebalance_days, lookback, max_scan)` —— 历史每调仓日切片重算因子 + z-score 加权综合分选 top_n 等权持有到下次调仓，拼组合 / 全市场等权基准净值（调仓粒度），算总收益 / 年化 / 夏普（调仓收益序列年化）/ 最大回撤（含建仓起点）/ 调仓胜率 / 对基准超额；抽 `_weighted_score` 复用 factor_screen 打分口径
+- 后端 `schemas/screener.py` `FactorPortfolioRequest` / `PortfolioPoint` / `FactorPortfolioResult` + `api/screener.py` `POST /screener/factor-portfolio`（`data.read` + `to_thread`）
+- 前端 `pages/Screener/FactorPortfolio`（新）：11 因子权重 + top_n / 调仓周期 / 回看参数 + 指标卡（总收益 / 年化 / 夏普 / 回撤 / 胜率 / 超额）+ 组合 vs 基准净值 ECharts 双线；Screener 加「组合回测」第 6 模式
+- 复用：缺省权重抽到 `factorMeta.DEFAULT_FACTOR_WEIGHTS` 供选股 / 组合共用（FactorScreen 改 import）
+- 测试：12 票分化趋势动量组合超额 > 0 + 净值增长 + 曲线点数 = 调仓数 / 空库 ready False / 票数 < top_n 调仓数 0（+3 用例，共 231 passed）
+
 ## [0.8.29] — 2026-06-25
 
 > 全因子 IC 横评：因子检验页加「全因子横评」——一次算出全部 11 个因子的 IC + 多空收益，横向排名一眼看哪些最强。复用单因子 IC 逻辑，但一个采样时点切片一次即得全因子，省下逐因子重复读 IO。

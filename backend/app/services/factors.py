@@ -453,3 +453,133 @@ def factor_ic_all(
         _summarize_ic(cn, fname, ic_lists[fname], q1_lists[fname], q5_lists[fname], higher)
         for fname, (cn, higher) in FACTORS.items()
     ]
+
+
+def _weighted_score(fdf: pd.DataFrame, weights: dict) -> pd.Series:
+    """截面 z-score 加权综合分（同 factor_screen 打分口径，供组合回测复用）。"""
+    total = pd.Series(0.0, index=fdf.index)
+    for fname, (_cn, higher) in FACTORS.items():
+        w = float(weights.get(fname, _DEFAULT_WEIGHTS.get(fname, 1.0)))
+        if w == 0:
+            continue
+        z = _zscore(fdf[fname])
+        if not higher:
+            z = -z
+        total = total + w * z
+    return total
+
+
+def factor_portfolio_backtest(
+    weights: dict | None = None,
+    top_n: int = 10,
+    rebalance_days: int = 20,
+    lookback: int = 480,
+    max_scan: int = 300,
+) -> dict:
+    """多因子组合回测：历史每调仓日按综合分选 top_n 等权持有到下次调仓，
+    拼组合净值并对比全市场等权基准。
+
+    复用 ``_compute_factors`` 切片到调仓日重算 + z-score 加权打分（同 factor_screen）。
+    调仓日按「距最新交易日偏移」对齐参考日历，净值为**调仓粒度**（非逐日）。
+    指标：总收益 / 年化 / 夏普（调仓收益序列年化）/ 最大回撤 / 调仓胜率 / 对基准超额。
+    """
+    from app.db.arctic import get_library
+
+    empty = {
+        "ready": False, "rebalance_count": 0, "top_n": top_n,
+        "total_return": 0.0, "annual_return": 0.0, "sharpe": 0.0,
+        "max_drawdown": 0.0, "win_rate": 0.0, "excess_return": 0.0,
+        "equity_curve": [], "benchmark_curve": [],
+    }
+
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if not symbols:
+        return empty
+    symbols = symbols[:max_scan]
+
+    frames: dict[str, pd.DataFrame] = {}
+    closes: dict[str, np.ndarray] = {}
+    for sym in symbols:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or len(df) < _MIN_BARS + rebalance_days or "close" not in df.columns:
+            continue
+        frames[sym] = df
+        closes[sym] = pd.to_numeric(df["close"], errors="coerce").to_numpy(dtype=float)
+    if not frames:
+        return empty
+
+    weights = weights or {}
+    # 参考日历：取最长票的 index（A 股交易日对齐）
+    ref_idx = frames[max(frames, key=lambda s: len(frames[s]))].index
+    ref_n = len(ref_idx)
+
+    # 调仓点（距末尾偏移）：lookback → rebalance_days，步长 rebalance_days，早 → 晚
+    offsets = list(range(lookback, 0, -rebalance_days))
+
+    port_rets: list[float] = []
+    bench_rets: list[float] = []
+    dates: list[str] = []
+
+    for off in offsets:
+        score_rows: dict[str, dict] = {}
+        rets: dict[str, float] = {}
+        for sym, df in frames.items():
+            c = closes[sym]
+            n = len(c)
+            t = n - 1 - off
+            if t < _MIN_BARS - 1 or t + rebalance_days > n - 1 or c[t] <= 0:
+                continue
+            fdict = _compute_factors(df.iloc[: t + 1])
+            if fdict is None:
+                continue
+            score_rows[sym] = fdict
+            rets[sym] = c[t + rebalance_days] / c[t] - 1.0
+        if len(score_rows) < top_n:
+            continue
+
+        fdf = pd.DataFrame.from_dict(score_rows, orient="index")
+        picks = _weighted_score(fdf, weights).sort_values(ascending=False).head(top_n).index
+        port_rets.append(float(np.mean([rets[s] for s in picks])))
+        bench_rets.append(float(np.mean(list(rets.values()))))
+        ref_t = ref_n - 1 - off
+        dates.append(str(ref_idx[ref_t].date()) if 0 <= ref_t < ref_n else f"T-{off}")
+
+    if not port_rets:
+        return {**empty, "ready": True}
+
+    port_eq = np.cumprod([1.0 + r for r in port_rets])
+    bench_eq = np.cumprod([1.0 + r for r in bench_rets])
+    equity_curve = [{"dt": dates[i], "value": round(float(port_eq[i]), 4)} for i in range(len(dates))]
+    benchmark_curve = [{"dt": dates[i], "value": round(float(bench_eq[i]), 4)} for i in range(len(dates))]
+
+    n_reb = len(port_rets)
+    total_return = float(port_eq[-1] - 1.0)
+    ppy = 252.0 / rebalance_days  # 每年调仓次数
+    arr = np.asarray(port_rets)
+    std = float(np.std(arr, ddof=0))
+    sharpe = float(np.mean(arr) / std * np.sqrt(ppy)) if std > 0 else 0.0
+    # 最大回撤：净值含建仓起点 1.0
+    eq_full = np.concatenate([[1.0], port_eq])
+    peak = np.maximum.accumulate(eq_full)
+    mdd = float(((eq_full - peak) / peak).min())
+    win = sum(1 for r in port_rets if r > 0) / n_reb
+    annual = (1.0 + total_return) ** (ppy / n_reb) - 1.0 if total_return > -1 else -1.0
+    excess = total_return - float(bench_eq[-1] - 1.0)
+
+    return {
+        "ready": True,
+        "rebalance_count": n_reb,
+        "top_n": top_n,
+        "total_return": round(total_return, 4),
+        "annual_return": round(annual, 4),
+        "sharpe": round(sharpe, 3),
+        "max_drawdown": round(mdd, 4),
+        "win_rate": round(win, 4),
+        "excess_return": round(excess, 4),
+        "equity_curve": equity_curve,
+        "benchmark_curve": benchmark_curve,
+    }

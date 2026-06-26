@@ -1,3 +1,5 @@
+import type { FactorWeights } from "@/types";
+
 /** 因子元信息：多因子选股权重输入 / 结果列 / 因子检验下拉共用。
  *
  * 抽到独立模块（而非 FactorScreen.tsx 导出），避免组件文件混导出常量触发
@@ -16,3 +18,18 @@ export const FACTORS = [
   { key: "amihud", label: "非流动性", unit: "lo", desc: "Amihud 非流动性 mean(|日收益|/成交额)，越低流动性越好" },
   { key: "obv_slope", label: "OBV斜率", unit: "num", desc: "能量潮近 20 日回归斜率 / 日均量，越高资金净流入" },
 ] as const;
+
+/** 多因子缺省权重：动量/趋势/量能类 1，反转/量价类 0（按需开启）。与后端 _DEFAULT_WEIGHTS 一致。 */
+export const DEFAULT_FACTOR_WEIGHTS: FactorWeights = {
+  mom_20: 1,
+  mom_60: 1,
+  volatility: 1,
+  trend_slope: 1,
+  vol_surge: 1,
+  rev_5: 0,
+  rsi_14: 0,
+  boll_pctb: 0,
+  corr_pv: 0,
+  amihud: 0,
+  obv_slope: 0,
+};

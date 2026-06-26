@@ -391,6 +391,27 @@ export interface FactorICSummary {
   long_short: number;
 }
 
+/** 因子组合回测净值点。 */
+export interface PortfolioPoint {
+  dt: string;
+  value: number;
+}
+
+/** 多因子组合回测结果。 */
+export interface FactorPortfolioResult {
+  ready: boolean;
+  rebalance_count: number;
+  top_n: number;
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  win_rate: number;
+  excess_return: number;
+  equity_curve: PortfolioPoint[];
+  benchmark_curve: PortfolioPoint[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

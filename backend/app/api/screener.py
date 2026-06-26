@@ -12,6 +12,8 @@ from app.schemas.screener import (
     FactorICRequest,
     FactorICResult,
     FactorICSummary,
+    FactorPortfolioRequest,
+    FactorPortfolioResult,
     FactorScreenRequest,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
@@ -186,4 +188,24 @@ async def run_factor_ic_all(
     return await asyncio.to_thread(
         factors_svc.factor_ic_all,
         payload.hold_days, payload.lookback, payload.sample_points, payload.max_scan,
+    )
+
+
+@router.post(
+    "/factor-portfolio",
+    response_model=FactorPortfolioResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_portfolio(
+    payload: FactorPortfolioRequest,
+    _: int = CurrentUserId,
+):
+    """多因子组合回测：历史每调仓日按综合分选 top_n 等权持有，拼组合净值并对比全市场基准。
+
+    多调仓点切片重算因子 + 选股（同步 IO + 计算），丢线程池避免阻塞事件循环。
+    """
+    return await asyncio.to_thread(
+        factors_svc.factor_portfolio_backtest,
+        payload.weights.model_dump(), payload.top_n, payload.rebalance_days,
+        payload.lookback, payload.max_scan,
     )

@@ -2,7 +2,9 @@ import { api } from "./client";
 import type {
   FactorICResult,
   FactorICSummary,
+  FactorPortfolioResult,
   FactorScreenFilters,
+  FactorWeights,
   LimitUpPremiumResult,
   PatternStatsResult,
   ScreenFilters,
@@ -30,6 +32,14 @@ export const runFactorICAll = (payload: {
   sample_points?: number;
   max_scan?: number;
 }) => api.post<FactorICSummary[]>("/screener/factor-ic-all", payload).then((r) => r.data);
+
+export const runFactorPortfolio = (payload: {
+  weights: FactorWeights;
+  top_n?: number;
+  rebalance_days?: number;
+  lookback?: number;
+  max_scan?: number;
+}) => api.post<FactorPortfolioResult>("/screener/factor-portfolio", payload).then((r) => r.data);
 
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);

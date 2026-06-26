@@ -8,23 +8,7 @@ import type { ColumnsType } from "antd/es/table";
 import { runFactorScreen } from "@/api/screener";
 import { addWatch, addWatchBatch } from "@/api/watchlist";
 import type { FactorWeights, ScreenCandidate } from "@/types";
-import { FACTORS } from "./factorMeta";
-
-const DEFAULT_WEIGHTS: FactorWeights = {
-  mom_20: 1,
-  mom_60: 1,
-  volatility: 1,
-  trend_slope: 1,
-  vol_surge: 1,
-  // 反转类缺省关闭，按需开启与动量对冲
-  rev_5: 0,
-  rsi_14: 0,
-  boll_pctb: 0,
-  // 量价 / 资金行为类缺省关闭，按需开启
-  corr_pv: 0,
-  amihud: 0,
-  obv_slope: 0,
-};
+import { DEFAULT_FACTOR_WEIGHTS, FACTORS } from "./factorMeta";
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
@@ -53,7 +37,7 @@ function fmt(v: number | undefined, unit: string): ReactNode {
  * 横截面 z-score 标准化后按方向加权综合打分排序。可配各因子权重调整选股风格。
  */
 export default function FactorScreen() {
-  const [weights, setWeights] = useState<FactorWeights>(DEFAULT_WEIGHTS);
+  const [weights, setWeights] = useState<FactorWeights>(DEFAULT_FACTOR_WEIGHTS);
   const [priceMin, setPriceMin] = useState<number | undefined>();
   const [priceMax, setPriceMax] = useState<number | undefined>();
   const [excludeSt, setExcludeSt] = useState(true);

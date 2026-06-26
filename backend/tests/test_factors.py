@@ -294,3 +294,45 @@ def test_factor_ic_all_empty_lib(fake_arctic):
     rows = factor_ic_all()
     assert len(rows) == len(FACTORS)
     assert all(r["sample_count"] == 0 for r in rows)
+
+
+# ── 多因子组合回测（v0.8.30）─────────────────────────────────────────────
+
+
+def test_factor_portfolio_momentum_beats_bench(fake_arctic):
+    """12 票分化趋势 + 默认权重（动量主导）：组合选中强势票，超额 > 0、净值增长。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_backtest
+
+    lib = get_library("bar_1d")
+    for i in range(12):
+        slope = (i - 5.5) * 0.01
+        closes = [10.0 * (1 + slope) ** k for k in range(130)]
+        lib.write(f"sh6000{i:02d}", _kline(closes))
+
+    res = factor_portfolio_backtest(top_n=3, rebalance_days=5, lookback=40, max_scan=50)
+    assert res["ready"] is True
+    assert res["rebalance_count"] >= 1
+    assert res["total_return"] > 0                 # 选中强势票 → 净值增长
+    assert res["excess_return"] > 0                # 跑赢全市场等权基准
+    assert len(res["equity_curve"]) == res["rebalance_count"]
+    assert len(res["benchmark_curve"]) == res["rebalance_count"]
+
+
+def test_factor_portfolio_empty_lib(fake_arctic):
+    """空库 → ready False。"""
+    from app.services.factors import factor_portfolio_backtest
+
+    assert factor_portfolio_backtest()["ready"] is False
+
+
+def test_factor_portfolio_insufficient_names(fake_arctic):
+    """票数 < top_n → 无有效调仓，ready True 但 rebalance_count 0。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_backtest
+
+    closes = [10.0 * 1.01**k for k in range(130)]
+    get_library("bar_1d").write("sh600001", _kline(closes))
+    res = factor_portfolio_backtest(top_n=10, rebalance_days=5, lookback=40)
+    assert res["ready"] is True
+    assert res["rebalance_count"] == 0

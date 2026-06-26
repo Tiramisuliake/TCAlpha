@@ -186,6 +186,35 @@ class FactorICSummary(BaseModel):
     long_short: float = 0.0    # 多空收益（按因子方向对齐）
 
 
+class FactorPortfolioRequest(BaseModel):
+    """多因子组合回测请求。"""
+
+    weights: FactorWeights = Field(default_factory=FactorWeights)
+    top_n: int = Field(default=10, ge=1, le=100)          # 每期持仓数
+    rebalance_days: int = Field(default=20, ge=1, le=120)  # 调仓周期（交易日）
+    lookback: int = Field(default=480, ge=40, le=2000)    # 回测回看窗口
+    max_scan: int = Field(default=300, ge=1, le=2000)
+
+
+class PortfolioPoint(BaseModel):
+    dt: str
+    value: float
+
+
+class FactorPortfolioResult(BaseModel):
+    ready: bool
+    rebalance_count: int = 0
+    top_n: int = 0
+    total_return: float = 0.0
+    annual_return: float = 0.0
+    sharpe: float = 0.0
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0          # 调仓周期胜率
+    excess_return: float = 0.0     # 对全市场等权基准的超额
+    equity_curve: list[PortfolioPoint] = []
+    benchmark_curve: list[PortfolioPoint] = []
+
+
 class FactorICResult(BaseModel):
     ready: bool
     factor: str

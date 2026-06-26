@@ -14,6 +14,7 @@ from app.schemas.screener import (
     FactorICSummary,
     FactorPortfolioRequest,
     FactorPortfolioResult,
+    FactorPortfolioSweepRequest,
     FactorScreenRequest,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
@@ -21,6 +22,7 @@ from app.schemas.screener import (
     PatternStatsAllRequest,
     PatternStatsRequest,
     PatternStatsResult,
+    PortfolioSweepCell,
     ResonanceRequest,
     ScreenRequest,
     ScreenResult,
@@ -207,5 +209,25 @@ async def run_factor_portfolio(
     return await asyncio.to_thread(
         factors_svc.factor_portfolio_backtest,
         payload.weights.model_dump(), payload.top_n, payload.rebalance_days,
+        payload.lookback, payload.max_scan,
+    )
+
+
+@router.post(
+    "/factor-portfolio-sweep",
+    response_model=list[PortfolioSweepCell],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_portfolio_sweep(
+    payload: FactorPortfolioSweepRequest,
+    _: int = CurrentUserId,
+):
+    """组合参数寻优：top_n × rebalance_days 网格各跑回测，返回绩效网格找最优配置。
+
+    同一 rebalance 下多 top_n 共享因子计算（同步 IO + 计算），丢线程池避免阻塞。
+    """
+    return await asyncio.to_thread(
+        factors_svc.factor_portfolio_sweep,
+        payload.weights.model_dump(), payload.top_n_list, payload.rebalance_list,
         payload.lookback, payload.max_scan,
     )

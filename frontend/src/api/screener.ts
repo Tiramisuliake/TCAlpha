@@ -7,6 +7,7 @@ import type {
   FactorWeights,
   LimitUpPremiumResult,
   PatternStatsResult,
+  PortfolioSweepCell,
   ScreenFilters,
   ScreenResult,
   ShortTermFilters,
@@ -40,6 +41,17 @@ export const runFactorPortfolio = (payload: {
   lookback?: number;
   max_scan?: number;
 }) => api.post<FactorPortfolioResult>("/screener/factor-portfolio", payload).then((r) => r.data);
+
+export const runFactorPortfolioSweep = (payload: {
+  weights: FactorWeights;
+  top_n_list: number[];
+  rebalance_list: number[];
+  lookback?: number;
+  max_scan?: number;
+}) =>
+  api
+    .post<PortfolioSweepCell[]>("/screener/factor-portfolio-sweep", payload)
+    .then((r) => r.data);
 
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);

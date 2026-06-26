@@ -412,6 +412,19 @@ export interface FactorPortfolioResult {
   benchmark_curve: PortfolioPoint[];
 }
 
+/** 组合参数寻优单元格（top_n × rebalance_days 网格的一格绩效）。 */
+export interface PortfolioSweepCell {
+  top_n: number;
+  rebalance_days: number;
+  rebalance_count: number;
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  win_rate: number;
+  excess_return: number;
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

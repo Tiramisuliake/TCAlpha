@@ -336,3 +336,54 @@ def test_factor_portfolio_insufficient_names(fake_arctic):
     res = factor_portfolio_backtest(top_n=10, rebalance_days=5, lookback=40)
     assert res["ready"] is True
     assert res["rebalance_count"] == 0
+
+
+# ── 组合参数寻优（v0.8.31）───────────────────────────────────────────────
+
+
+def test_factor_portfolio_sweep_grid(fake_arctic):
+    """12 票趋势：sweep 返回 top_n × rebalance 笛卡尔积网格，每 cell 指标字段齐全。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_sweep
+
+    lib = get_library("bar_1d")
+    for i in range(12):
+        slope = (i - 5.5) * 0.01
+        closes = [10.0 * (1 + slope) ** k for k in range(160)]
+        lib.write(f"sh6000{i:02d}", _kline(closes))
+
+    cells = factor_portfolio_sweep(
+        top_n_list=[2, 4], rebalance_list=[5, 10], lookback=60, max_scan=50
+    )
+    # 2 × 2 网格全部有有效结果
+    grid = {(c["top_n"], c["rebalance_days"]) for c in cells}
+    assert grid == {(2, 5), (2, 10), (4, 5), (4, 10)}
+    for c in cells:
+        assert {"sharpe", "total_return", "annual_return", "max_drawdown",
+                "win_rate", "excess_return", "rebalance_count"} <= set(c)
+        assert c["rebalance_count"] >= 1
+
+
+def test_factor_portfolio_sweep_dedups_and_sorts(fake_arctic):
+    """重复 / 乱序参数去重排序：[20,10,20] → 仅 10/20 两档。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_sweep
+
+    lib = get_library("bar_1d")
+    for i in range(8):
+        closes = [10.0 * (1 + (i - 3.5) * 0.012) ** k for k in range(160)]
+        lib.write(f"sh6000{i:02d}", _kline(closes))
+
+    cells = factor_portfolio_sweep(
+        top_n_list=[3, 3], rebalance_list=[20, 10, 20], lookback=60, max_scan=50
+    )
+    rebals = sorted({c["rebalance_days"] for c in cells})
+    assert rebals == [10, 20]
+    assert all(c["top_n"] == 3 for c in cells)
+
+
+def test_factor_portfolio_sweep_empty_lib(fake_arctic):
+    """空库 → 空网格。"""
+    from app.services.factors import factor_portfolio_sweep
+
+    assert factor_portfolio_sweep(top_n_list=[10], rebalance_list=[20]) == []

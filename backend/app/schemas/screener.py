@@ -215,6 +215,28 @@ class FactorPortfolioResult(BaseModel):
     benchmark_curve: list[PortfolioPoint] = []
 
 
+class FactorPortfolioSweepRequest(BaseModel):
+    """组合参数寻优请求（top_n × rebalance_days 网格）。"""
+
+    weights: FactorWeights = Field(default_factory=FactorWeights)
+    top_n_list: list[int] = Field(default=[10, 20, 30], min_length=1, max_length=10)
+    rebalance_list: list[int] = Field(default=[10, 20, 40], min_length=1, max_length=10)
+    lookback: int = Field(default=480, ge=40, le=2000)
+    max_scan: int = Field(default=300, ge=1, le=2000)
+
+
+class PortfolioSweepCell(BaseModel):
+    top_n: int
+    rebalance_days: int
+    rebalance_count: int
+    total_return: float
+    annual_return: float
+    sharpe: float
+    max_drawdown: float
+    win_rate: float
+    excess_return: float
+
+
 class FactorICResult(BaseModel):
     ready: bool
     factor: str

@@ -469,6 +469,36 @@ def _weighted_score(fdf: pd.DataFrame, weights: dict) -> pd.Series:
     return total
 
 
+def _portfolio_metrics(port_rets: list[float], bench_rets: list[float], rebalance_days: int) -> dict:
+    """组合调仓收益序列 → 绩效指标（单次回测与参数寻优共用）。
+
+    sharpe 按调仓收益序列年化；max_drawdown 含建仓起点 1.0；annual 按调仓周期数折年。
+    """
+    n_reb = len(port_rets)
+    port_eq = np.cumprod([1.0 + r for r in port_rets])
+    bench_eq = np.cumprod([1.0 + r for r in bench_rets])
+    total_return = float(port_eq[-1] - 1.0)
+    ppy = 252.0 / rebalance_days  # 每年调仓次数
+    arr = np.asarray(port_rets)
+    std = float(np.std(arr, ddof=0))
+    sharpe = float(np.mean(arr) / std * np.sqrt(ppy)) if std > 0 else 0.0
+    eq_full = np.concatenate([[1.0], port_eq])
+    peak = np.maximum.accumulate(eq_full)
+    mdd = float(((eq_full - peak) / peak).min())
+    win = sum(1 for r in port_rets if r > 0) / n_reb
+    annual = (1.0 + total_return) ** (ppy / n_reb) - 1.0 if total_return > -1 else -1.0
+    excess = total_return - float(bench_eq[-1] - 1.0)
+    return {
+        "rebalance_count": n_reb,
+        "total_return": round(total_return, 4),
+        "annual_return": round(annual, 4),
+        "sharpe": round(sharpe, 3),
+        "max_drawdown": round(mdd, 4),
+        "win_rate": round(win, 4),
+        "excess_return": round(excess, 4),
+    }
+
+
 def factor_portfolio_backtest(
     weights: dict | None = None,
     top_n: int = 10,
@@ -556,30 +586,93 @@ def factor_portfolio_backtest(
     equity_curve = [{"dt": dates[i], "value": round(float(port_eq[i]), 4)} for i in range(len(dates))]
     benchmark_curve = [{"dt": dates[i], "value": round(float(bench_eq[i]), 4)} for i in range(len(dates))]
 
-    n_reb = len(port_rets)
-    total_return = float(port_eq[-1] - 1.0)
-    ppy = 252.0 / rebalance_days  # 每年调仓次数
-    arr = np.asarray(port_rets)
-    std = float(np.std(arr, ddof=0))
-    sharpe = float(np.mean(arr) / std * np.sqrt(ppy)) if std > 0 else 0.0
-    # 最大回撤：净值含建仓起点 1.0
-    eq_full = np.concatenate([[1.0], port_eq])
-    peak = np.maximum.accumulate(eq_full)
-    mdd = float(((eq_full - peak) / peak).min())
-    win = sum(1 for r in port_rets if r > 0) / n_reb
-    annual = (1.0 + total_return) ** (ppy / n_reb) - 1.0 if total_return > -1 else -1.0
-    excess = total_return - float(bench_eq[-1] - 1.0)
-
     return {
         "ready": True,
-        "rebalance_count": n_reb,
         "top_n": top_n,
-        "total_return": round(total_return, 4),
-        "annual_return": round(annual, 4),
-        "sharpe": round(sharpe, 3),
-        "max_drawdown": round(mdd, 4),
-        "win_rate": round(win, 4),
-        "excess_return": round(excess, 4),
+        **_portfolio_metrics(port_rets, bench_rets, rebalance_days),
         "equity_curve": equity_curve,
         "benchmark_curve": benchmark_curve,
     }
+
+
+def factor_portfolio_sweep(
+    weights: dict | None = None,
+    top_n_list: list[int] | None = None,
+    rebalance_list: list[int] | None = None,
+    lookback: int = 480,
+    max_scan: int = 300,
+) -> list[dict]:
+    """组合参数寻优：对 top_n × rebalance_days 网格各跑回测，返回每组合绩效。
+
+    性能优化：同一 rebalance_days 下，先算每调仓日的综合分序列 + 区间收益（一次），
+    不同 top_n 只是 ``head(top_n)`` 选股不同，共享因子计算，避免 N×M 次完整重算。
+    """
+    from app.db.arctic import get_library
+
+    top_ns = sorted({int(x) for x in (top_n_list or [10, 20, 30]) if x >= 1})
+    rebals = sorted({int(x) for x in (rebalance_list or [10, 20, 40]) if x >= 1})
+    if not top_ns or not rebals:
+        return []
+
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if not symbols:
+        return []
+    symbols = symbols[:max_scan]
+
+    min_need = _MIN_BARS + max(rebals)
+    frames: dict[str, pd.DataFrame] = {}
+    closes: dict[str, np.ndarray] = {}
+    for sym in symbols:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or len(df) < min_need or "close" not in df.columns:
+            continue
+        frames[sym] = df
+        closes[sym] = pd.to_numeric(df["close"], errors="coerce").to_numpy(dtype=float)
+    if not frames:
+        return []
+
+    weights = weights or {}
+    results: list[dict] = []
+    for rebal in rebals:
+        # 每调仓日的 (综合分 series, 区间收益 dict)——多 top_n 共享
+        per: list[tuple[pd.Series, dict]] = []
+        for off in range(lookback, 0, -rebal):
+            score_rows: dict[str, dict] = {}
+            rets: dict[str, float] = {}
+            for sym, df in frames.items():
+                c = closes[sym]
+                n = len(c)
+                t = n - 1 - off
+                if t < _MIN_BARS - 1 or t + rebal > n - 1 or c[t] <= 0:
+                    continue
+                fdict = _compute_factors(df.iloc[: t + 1])
+                if fdict is None:
+                    continue
+                score_rows[sym] = fdict
+                rets[sym] = c[t + rebal] / c[t] - 1.0
+            if not score_rows:
+                continue
+            fdf = pd.DataFrame.from_dict(score_rows, orient="index")
+            per.append((_weighted_score(fdf, weights), rets))
+
+        for top_n in top_ns:
+            port_rets: list[float] = []
+            bench_rets: list[float] = []
+            for total, rets in per:
+                if len(total) < top_n:
+                    continue
+                picks = total.sort_values(ascending=False).head(top_n).index
+                port_rets.append(float(np.mean([rets[s] for s in picks])))
+                bench_rets.append(float(np.mean(list(rets.values()))))
+            if not port_rets:
+                continue
+            results.append({
+                "top_n": top_n,
+                "rebalance_days": rebal,
+                **_portfolio_metrics(port_rets, bench_rets, rebal),
+            })
+    return results

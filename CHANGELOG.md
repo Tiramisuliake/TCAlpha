@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.31] — 2026-06-26
+
+> 组合回测参数寻优：对 top_n × rebalance_days 网格扫描，按夏普 / 年化 / 超额画热力图找最优组合配置。性能优化——同一调仓周期下不同持仓数**共享因子计算**，避免 N×M 次完整重算。
+
+### Added — 组合参数寻优
+- 后端 `services/factors.py`：抽 `_portfolio_metrics`（单次回测 / 寻优共用绩效计算）；`factor_portfolio_sweep(weights, top_n_list, rebalance_list, lookback, max_scan)` —— 同一 rebalance 下先算每调仓日综合分序列 + 区间收益（一次），多 top_n 只是 `head(top_n)` 共享，返回每组合绩效网格；`factor_portfolio_backtest` 重构复用 `_portfolio_metrics`
+- 后端 `schemas/screener.py` `FactorPortfolioSweepRequest` / `PortfolioSweepCell` + `api/screener.py` `POST /screener/factor-portfolio-sweep`
+- 前端 `pages/Screener/FactorPortfolio`：加参数寻优区（持仓数网格 + 调仓周期网格 tags 输入 + 寻优指标选择）+ ECharts 热力图（x=持仓数 / y=调仓日 / 色=夏普·年化·超额，越红越优）；与单次回测共用权重
+- 测试：2×2 网格笛卡尔积覆盖 + 每 cell 指标齐全 / 参数去重排序 / 空库空网格（+3 用例，共 234 passed）
+
 ## [0.8.30] — 2026-06-26
 
 > 因子选股 → 组合回测打通（方向 C）：多因子综合分历史每调仓日选 top N 等权持有，拼组合净值并对比全市场等权基准。把因子从「当前截面选股」延伸到「历史收益验证」——选出的因子组合到底赚不赚钱、能不能跑赢市场。**造因子 → 选股 → 验因子 → 组合变现**全链路打通。

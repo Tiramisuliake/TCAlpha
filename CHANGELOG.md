@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.33] — 2026-06-27
+
+> 组合回测 walk-forward 样本外验证：调仓序列按时间切样本内(IS)/样本外(OOS)两段对比绩效，验证因子配置 / 寻优参数是否过拟合——OOS 还成立才是真 alpha。这是参数寻优的必要防过拟合配套。
+
+### Added — 组合回测 walk-forward
+- 后端 `services/factors.py`：抽 `_load_portfolio_frames` + `_collect_portfolio_series`（单次回测 / walk-forward 复用，backtest 重构无回归）；`factor_portfolio_walkforward(weights, top_n, rebalance_days, lookback, oos_ratio, max_scan)` —— 调仓序列前 (1−oos_ratio) 为 IS、后段 OOS，各算 `_portfolio_metrics` + 各段净值（独立从 1 起）
+- 后端 `schemas/screener.py` `FactorWalkforwardRequest` / `WalkforwardSegment` / `FactorWalkforwardResult`（in_sample / out_sample 避关键字）+ `api/screener.py` `POST /screener/factor-portfolio/walkforward`
+- 前端 `pages/Screener/FactorPortfolio`：加「样本外验证」按钮 + 样本外占比；IS vs OOS 指标对比表（总收益 / 年化 / 夏普 / 回撤 / 超额 + 衰减列）+ ECharts 分段净值（IS 蓝 / OOS 橙）
+- 测试：IS/OOS 分段 + 净值点数之和 = 调仓数 + split_index / 调仓点不足降级 / 空库 ready False；backtest 重构无回归（+3 用例，共 239 passed）
+
 ## [0.8.32] — 2026-06-27
 
 > 组合回测报告导出：组合回测结果一键导出自包含 HTML 报告（因子权重 + 核心指标 + 组合/基准净值曲线），离线可看可存档。复用 v0.8.7 的纯 Python HTML 报告基建（内联 SVG，零外部依赖）。因子线横向收尾。

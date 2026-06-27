@@ -4,6 +4,7 @@ import type {
   FactorICSummary,
   FactorPortfolioResult,
   FactorScreenFilters,
+  FactorWalkforwardResult,
   FactorWeights,
   LimitUpPremiumResult,
   PatternStatsResult,
@@ -51,6 +52,17 @@ export const runFactorPortfolioSweep = (payload: {
 }) =>
   api
     .post<PortfolioSweepCell[]>("/screener/factor-portfolio-sweep", payload)
+    .then((r) => r.data);
+
+export const runFactorWalkforward = (payload: {
+  weights: FactorWeights;
+  top_n?: number;
+  rebalance_days?: number;
+  lookback?: number;
+  oos_ratio?: number;
+}) =>
+  api
+    .post<FactorWalkforwardResult>("/screener/factor-portfolio/walkforward", payload)
     .then((r) => r.data);
 
 /** 导出组合回测自包含 HTML 报告（重跑回测 + 渲染，blob 触发浏览器保存）。 */

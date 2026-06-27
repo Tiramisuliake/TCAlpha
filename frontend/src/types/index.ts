@@ -425,6 +425,30 @@ export interface PortfolioSweepCell {
   excess_return: number;
 }
 
+/** walk-forward 单段绩效（样本内 / 样本外）。 */
+export interface WalkforwardSegment {
+  rebalance_count: number;
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  win_rate: number;
+  excess_return: number;
+}
+
+/** 组合回测 walk-forward 样本外验证结果。 */
+export interface FactorWalkforwardResult {
+  ready: boolean;
+  top_n: number;
+  rebalance_count: number;
+  split_index: number;
+  split_date: string;
+  in_sample: WalkforwardSegment;
+  out_sample: WalkforwardSegment;
+  in_curve: PortfolioPoint[];
+  out_curve: PortfolioPoint[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

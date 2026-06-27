@@ -387,3 +387,53 @@ def test_factor_portfolio_sweep_empty_lib(fake_arctic):
     from app.services.factors import factor_portfolio_sweep
 
     assert factor_portfolio_sweep(top_n_list=[10], rebalance_list=[20]) == []
+
+
+# ── 组合回测 walk-forward 样本外验证（v0.8.33）──────────────────────────
+
+
+def test_factor_portfolio_walkforward_splits(fake_arctic):
+    """12 票趋势：walk-forward 切 IS/OOS 两段，各有指标 + 净值，点数之和=总调仓数。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_walkforward
+
+    lib = get_library("bar_1d")
+    for i in range(12):
+        slope = (i - 5.5) * 0.01
+        closes = [10.0 * (1 + slope) ** k for k in range(200)]
+        lib.write(f"sh6000{i:02d}", _kline(closes))
+
+    res = factor_portfolio_walkforward(
+        top_n=3, rebalance_days=5, lookback=100, oos_ratio=0.3, max_scan=50
+    )
+    assert res["ready"] is True
+    assert res["rebalance_count"] >= 2
+    assert 0 < res["split_index"] < res["rebalance_count"]
+    # 两段净值点数之和 = 总调仓数
+    assert len(res["in_curve"]) + len(res["out_curve"]) == res["rebalance_count"]
+    assert len(res["in_curve"]) == res["split_index"]
+    # 两段指标字段齐全
+    for seg in (res["in_sample"], res["out_sample"]):
+        assert {"sharpe", "total_return", "annual_return", "excess_return"} <= set(seg)
+
+
+def test_factor_portfolio_walkforward_insufficient(fake_arctic):
+    """调仓点不足以分段 → ready True 但段为空。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_portfolio_walkforward
+
+    lib = get_library("bar_1d")
+    for i in range(4):
+        closes = [10.0 * (1 + (i - 1.5) * 0.01) ** k for k in range(120)]
+        lib.write(f"sh6000{i:02d}", _kline(closes))
+    # lookback 仅一个调仓点，无法切两段
+    res = factor_portfolio_walkforward(top_n=2, rebalance_days=5, lookback=5, oos_ratio=0.3, max_scan=50)
+    assert res["ready"] is True
+    assert res["in_curve"] == [] and res["out_curve"] == []
+
+
+def test_factor_portfolio_walkforward_empty_lib(fake_arctic):
+    """空库 → ready False。"""
+    from app.services.factors import factor_portfolio_walkforward
+
+    assert factor_portfolio_walkforward()["ready"] is False

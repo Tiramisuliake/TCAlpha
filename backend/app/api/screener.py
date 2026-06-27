@@ -17,6 +17,8 @@ from app.schemas.screener import (
     FactorPortfolioResult,
     FactorPortfolioSweepRequest,
     FactorScreenRequest,
+    FactorWalkforwardRequest,
+    FactorWalkforwardResult,
     LimitUpPremiumRequest,
     LimitUpPremiumResult,
     MatchPatternsRequest,
@@ -256,4 +258,24 @@ async def export_factor_portfolio_report(
     return HTMLResponse(
         html,
         headers={"Content-Disposition": "attachment; filename=tcalpha_portfolio.html"},
+    )
+
+
+@router.post(
+    "/factor-portfolio/walkforward",
+    response_model=FactorWalkforwardResult,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def run_factor_portfolio_walkforward(
+    payload: FactorWalkforwardRequest,
+    _: int = CurrentUserId,
+):
+    """组合回测 walk-forward：调仓序列切分样本内(IS)/样本外(OOS)，对比验证因子配置是否过拟合。
+
+    多调仓点切片重算因子 + 选股（同步 IO + 计算），丢线程池避免阻塞事件循环。
+    """
+    return await asyncio.to_thread(
+        factors_svc.factor_portfolio_walkforward,
+        payload.weights.model_dump(), payload.top_n, payload.rebalance_days,
+        payload.lookback, payload.oos_ratio, payload.max_scan,
     )

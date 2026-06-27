@@ -499,62 +499,46 @@ def _portfolio_metrics(port_rets: list[float], bench_rets: list[float], rebalanc
     }
 
 
-def factor_portfolio_backtest(
-    weights: dict | None = None,
-    top_n: int = 10,
-    rebalance_days: int = 20,
-    lookback: int = 480,
-    max_scan: int = 300,
-) -> dict:
-    """多因子组合回测：历史每调仓日按综合分选 top_n 等权持有到下次调仓，
-    拼组合净值并对比全市场等权基准。
-
-    复用 ``_compute_factors`` 切片到调仓日重算 + z-score 加权打分（同 factor_screen）。
-    调仓日按「距最新交易日偏移」对齐参考日历，净值为**调仓粒度**（非逐日）。
-    指标：总收益 / 年化 / 夏普（调仓收益序列年化）/ 最大回撤 / 调仓胜率 / 对基准超额。
-    """
+def _load_portfolio_frames(max_scan: int, min_extra: int):
+    """加载全市场日 K（过滤长度不足），返回 (frames, closes, ref_idx) 或 None。"""
     from app.db.arctic import get_library
-
-    empty = {
-        "ready": False, "rebalance_count": 0, "top_n": top_n,
-        "total_return": 0.0, "annual_return": 0.0, "sharpe": 0.0,
-        "max_drawdown": 0.0, "win_rate": 0.0, "excess_return": 0.0,
-        "equity_curve": [], "benchmark_curve": [],
-    }
 
     lib = get_library("bar_1d")
     symbols = lib.list_symbols()
     if not symbols:
-        return empty
-    symbols = symbols[:max_scan]
-
+        return None
     frames: dict[str, pd.DataFrame] = {}
     closes: dict[str, np.ndarray] = {}
-    for sym in symbols:
+    for sym in symbols[:max_scan]:
         try:
             df = lib.read(sym).data
         except Exception:
             continue
-        if df is None or len(df) < _MIN_BARS + rebalance_days or "close" not in df.columns:
+        if df is None or len(df) < _MIN_BARS + min_extra or "close" not in df.columns:
             continue
         frames[sym] = df
         closes[sym] = pd.to_numeric(df["close"], errors="coerce").to_numpy(dtype=float)
     if not frames:
-        return empty
-
-    weights = weights or {}
-    # 参考日历：取最长票的 index（A 股交易日对齐）
+        return None
     ref_idx = frames[max(frames, key=lambda s: len(frames[s]))].index
+    return frames, closes, ref_idx
+
+
+def _collect_portfolio_series(
+    frames: dict[str, pd.DataFrame],
+    closes: dict[str, np.ndarray],
+    ref_idx,
+    weights: dict,
+    top_n: int,
+    rebalance_days: int,
+    lookback: int,
+) -> tuple[list[float], list[float], list[str]]:
+    """历史每调仓日按综合分选 top_n 等权，返回 (组合收益序列, 基准收益序列, 调仓日期)。"""
     ref_n = len(ref_idx)
-
-    # 调仓点（距末尾偏移）：lookback → rebalance_days，步长 rebalance_days，早 → 晚
-    offsets = list(range(lookback, 0, -rebalance_days))
-
     port_rets: list[float] = []
     bench_rets: list[float] = []
     dates: list[str] = []
-
-    for off in offsets:
+    for off in range(lookback, 0, -rebalance_days):
         score_rows: dict[str, dict] = {}
         rets: dict[str, float] = {}
         for sym, df in frames.items():
@@ -570,14 +554,43 @@ def factor_portfolio_backtest(
             rets[sym] = c[t + rebalance_days] / c[t] - 1.0
         if len(score_rows) < top_n:
             continue
-
         fdf = pd.DataFrame.from_dict(score_rows, orient="index")
         picks = _weighted_score(fdf, weights).sort_values(ascending=False).head(top_n).index
         port_rets.append(float(np.mean([rets[s] for s in picks])))
         bench_rets.append(float(np.mean(list(rets.values()))))
         ref_t = ref_n - 1 - off
         dates.append(str(ref_idx[ref_t].date()) if 0 <= ref_t < ref_n else f"T-{off}")
+    return port_rets, bench_rets, dates
 
+
+def factor_portfolio_backtest(
+    weights: dict | None = None,
+    top_n: int = 10,
+    rebalance_days: int = 20,
+    lookback: int = 480,
+    max_scan: int = 300,
+) -> dict:
+    """多因子组合回测：历史每调仓日按综合分选 top_n 等权持有到下次调仓，
+    拼组合净值并对比全市场等权基准。
+
+    复用 ``_compute_factors`` 切片到调仓日重算 + z-score 加权打分（同 factor_screen）。
+    调仓日按「距最新交易日偏移」对齐参考日历，净值为**调仓粒度**（非逐日）。
+    指标：总收益 / 年化 / 夏普（调仓收益序列年化）/ 最大回撤 / 调仓胜率 / 对基准超额。
+    """
+    empty = {
+        "ready": False, "rebalance_count": 0, "top_n": top_n,
+        "total_return": 0.0, "annual_return": 0.0, "sharpe": 0.0,
+        "max_drawdown": 0.0, "win_rate": 0.0, "excess_return": 0.0,
+        "equity_curve": [], "benchmark_curve": [],
+    }
+    loaded = _load_portfolio_frames(max_scan, rebalance_days)
+    if loaded is None:
+        return empty
+    frames, closes, ref_idx = loaded
+
+    port_rets, bench_rets, dates = _collect_portfolio_series(
+        frames, closes, ref_idx, weights or {}, top_n, rebalance_days, lookback
+    )
     if not port_rets:
         return {**empty, "ready": True}
 
@@ -592,6 +605,55 @@ def factor_portfolio_backtest(
         **_portfolio_metrics(port_rets, bench_rets, rebalance_days),
         "equity_curve": equity_curve,
         "benchmark_curve": benchmark_curve,
+    }
+
+
+def factor_portfolio_walkforward(
+    weights: dict | None = None,
+    top_n: int = 10,
+    rebalance_days: int = 20,
+    lookback: int = 480,
+    oos_ratio: float = 0.3,
+    max_scan: int = 300,
+) -> dict:
+    """组合回测 walk-forward：调仓序列按时间切分样本内(IS)/样本外(OOS)两段，
+    各算绩效对比——验证因子配置 / 寻优参数是否过拟合（OOS 是否保持 IS 表现）。
+
+    复用 ``_collect_portfolio_series`` 得全调仓序列，前 (1-oos_ratio) 为 IS、后段为 OOS，
+    各段净值独立从 1 起。调仓点不足以分段时 ready=True 但段为空。
+    """
+    empty = {
+        "ready": False, "top_n": top_n, "rebalance_count": 0,
+        "split_index": 0, "split_date": "",
+        "in_sample": {}, "out_sample": {}, "in_curve": [], "out_curve": [],
+    }
+    loaded = _load_portfolio_frames(max_scan, rebalance_days)
+    if loaded is None:
+        return empty
+    frames, closes, ref_idx = loaded
+
+    port_rets, bench_rets, dates = _collect_portfolio_series(
+        frames, closes, ref_idx, weights or {}, top_n, rebalance_days, lookback
+    )
+    n = len(port_rets)
+    split = int(round(n * (1.0 - oos_ratio)))
+    if n < 2 or split < 1 or n - split < 1:
+        return {**empty, "ready": True, "rebalance_count": n}
+
+    def _curve(rets: list[float], base_dates: list[str]) -> list[dict]:
+        eq = np.cumprod([1.0 + r for r in rets])
+        return [{"dt": base_dates[i], "value": round(float(eq[i]), 4)} for i in range(len(rets))]
+
+    return {
+        "ready": True,
+        "top_n": top_n,
+        "rebalance_count": n,
+        "split_index": split,
+        "split_date": dates[split],
+        "in_sample": _portfolio_metrics(port_rets[:split], bench_rets[:split], rebalance_days),
+        "out_sample": _portfolio_metrics(port_rets[split:], bench_rets[split:], rebalance_days),
+        "in_curve": _curve(port_rets[:split], dates[:split]),
+        "out_curve": _curve(port_rets[split:], dates[split:]),
     }
 
 

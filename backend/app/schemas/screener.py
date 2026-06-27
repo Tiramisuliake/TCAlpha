@@ -237,6 +237,39 @@ class PortfolioSweepCell(BaseModel):
     excess_return: float
 
 
+class FactorWalkforwardRequest(BaseModel):
+    """组合回测 walk-forward 样本外验证请求。"""
+
+    weights: FactorWeights = Field(default_factory=FactorWeights)
+    top_n: int = Field(default=10, ge=1, le=100)
+    rebalance_days: int = Field(default=20, ge=1, le=120)
+    lookback: int = Field(default=480, ge=80, le=2000)
+    oos_ratio: float = Field(default=0.3, ge=0.1, le=0.5)  # 样本外占比
+    max_scan: int = Field(default=300, ge=1, le=2000)
+
+
+class WalkforwardSegment(BaseModel):
+    rebalance_count: int = 0
+    total_return: float = 0.0
+    annual_return: float = 0.0
+    sharpe: float = 0.0
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0
+    excess_return: float = 0.0
+
+
+class FactorWalkforwardResult(BaseModel):
+    ready: bool
+    top_n: int = 0
+    rebalance_count: int = 0
+    split_index: int = 0
+    split_date: str = ""
+    in_sample: WalkforwardSegment = Field(default_factory=WalkforwardSegment)
+    out_sample: WalkforwardSegment = Field(default_factory=WalkforwardSegment)
+    in_curve: list[PortfolioPoint] = []
+    out_curve: list[PortfolioPoint] = []
+
+
 class FactorICResult(BaseModel):
     ready: bool
     factor: str

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Button, Card, Divider, Empty, InputNumber, Select, Statistic, Tooltip, message } from "antd";
-import { DownloadOutlined, FundOutlined, RadarChartOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Divider, Empty, InputNumber, Select, Statistic, Table, Tooltip, message } from "antd";
+import { DownloadOutlined, ExperimentOutlined, FundOutlined, RadarChartOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
+import type { ColumnsType } from "antd/es/table";
 import ReactECharts from "echarts-for-react";
-import { downloadPortfolioReport, runFactorPortfolio, runFactorPortfolioSweep } from "@/api/screener";
+import { downloadPortfolioReport, runFactorPortfolio, runFactorPortfolioSweep, runFactorWalkforward } from "@/api/screener";
 import type { FactorWeights } from "@/types";
 import { DEFAULT_FACTOR_WEIGHTS, FACTORS } from "./factorMeta";
 
@@ -20,6 +21,26 @@ function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
 const UP = "#ef4444";
 const DOWN = "#10b981";
 const WARN = "#f59e0b";
+
+interface WfRow {
+  k: string;
+  is: number;
+  oos: number;
+  pct: boolean;
+}
+
+/** walk-forward 对比单元格：百分比/数值 + 涨跌色，衰减列带符号。 */
+function fmtSeg(v: number, pct: boolean, signed = false): ReactNode {
+  const num = pct ? `${(v * 100).toFixed(2)}%` : v.toFixed(2);
+  return <span className={`num ${v >= 0 ? "up" : "down"}`}>{signed && v > 0 ? `+${num}` : num}</span>;
+}
+
+const WF_COLS: ColumnsType<WfRow> = [
+  { title: "指标", dataIndex: "k", width: 96 },
+  { title: "样本内 IS", dataIndex: "is", align: "right", render: (v, r) => fmtSeg(v as number, r.pct) },
+  { title: "样本外 OOS", dataIndex: "oos", align: "right", render: (v, r) => fmtSeg(v as number, r.pct) },
+  { title: "衰减(OOS-IS)", key: "decay", align: "right", render: (_, r) => fmtSeg(r.oos - r.is, r.pct, true) },
+];
 
 const SWEEP_METRICS = [
   { value: "sharpe", label: "夏普" },
@@ -71,10 +92,23 @@ export default function FactorPortfolio() {
     onError: () => message.error("导出失败，请重试"),
   });
 
+  const [oosRatio, setOosRatio] = useState(0.3);
+  const wfMut = useMutation({
+    mutationFn: runFactorWalkforward,
+    onSuccess: (r) => {
+      if (!r.ready) message.info("尚无足够历史 K 线，请先到「数据」页下载日 K");
+      else if (!r.in_curve.length) message.info("调仓点不足以切分样本内/外，请增大回看窗口");
+      else message.success("样本外验证完成");
+    },
+  });
+  const wf = wfMut.data;
+
   const runOnce = () =>
     mut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback });
   const runSweep = () =>
     sweepMut.mutate({ weights, top_n_list: topNList, rebalance_list: rebalanceList, lookback });
+  const runWalkforward = () =>
+    wfMut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback, oos_ratio: oosRatio });
 
   const hasCurve = !!res?.ready && res.equity_curve.length > 0;
   const chartOption = hasCurve
@@ -146,6 +180,39 @@ export default function FactorPortfolio() {
         })()
       : null;
 
+  const wfChartOption =
+    wf?.ready && wf.in_curve.length > 0
+      ? {
+          tooltip: { trigger: "axis" },
+          legend: { data: ["样本内", "样本外"], top: 0, textStyle: { fontSize: 11 } },
+          grid: { left: 44, right: 16, top: 28, bottom: 40 },
+          xAxis: {
+            type: "category",
+            data: [...wf.in_curve.map((p) => p.dt), ...wf.out_curve.map((p) => p.dt)],
+            axisLabel: { rotate: 30, fontSize: 10 },
+          },
+          yAxis: { type: "value", scale: true },
+          series: [
+            {
+              name: "样本内",
+              type: "line",
+              data: [...wf.in_curve.map((p) => p.value), ...wf.out_curve.map(() => null)],
+              smooth: true,
+              symbol: "none",
+              lineStyle: { color: "#3b82f6", width: 2 },
+            },
+            {
+              name: "样本外",
+              type: "line",
+              data: [...wf.in_curve.map(() => null), ...wf.out_curve.map((p) => p.value)],
+              smooth: true,
+              symbol: "none",
+              lineStyle: { color: WARN, width: 2 },
+            },
+          ],
+        }
+      : null;
+
   return (
     <>
       <Card size="small" title="多因子组合回测（top_n 等权 + 定期调仓 + 全市场基准对比）">
@@ -177,6 +244,12 @@ export default function FactorPortfolio() {
           </Field>
           <Button type="primary" icon={<FundOutlined />} loading={mut.isPending} onClick={runOnce}>
             单次回测
+          </Button>
+          <Field label="样本外占比">
+            <InputNumber size="small" min={0.1} max={0.5} step={0.05} value={oosRatio} onChange={(v) => setOosRatio(v ?? 0.3)} />
+          </Field>
+          <Button icon={<ExperimentOutlined />} loading={wfMut.isPending} onClick={runWalkforward}>
+            样本外验证
           </Button>
           <Divider type="vertical" className="!h-8" />
           <Field label="持仓数网格">
@@ -255,6 +328,33 @@ export default function FactorPortfolio() {
           }
         >
           <ReactECharts option={chartOption} style={{ height: 300 }} notMerge />
+        </Card>
+      )}
+
+      {wf?.ready && wf.in_curve.length > 0 && (
+        <Card
+          size="small"
+          title={`样本外验证（IS ${wf.split_index} 段 / OOS ${wf.rebalance_count - wf.split_index} 段 · 分割于 ${wf.split_date}）`}
+        >
+          <Table<WfRow>
+            size="small"
+            pagination={false}
+            rowKey="k"
+            columns={WF_COLS}
+            dataSource={[
+              { k: "总收益", is: wf.in_sample.total_return, oos: wf.out_sample.total_return, pct: true },
+              { k: "年化收益", is: wf.in_sample.annual_return, oos: wf.out_sample.annual_return, pct: true },
+              { k: "夏普", is: wf.in_sample.sharpe, oos: wf.out_sample.sharpe, pct: false },
+              { k: "最大回撤", is: wf.in_sample.max_drawdown, oos: wf.out_sample.max_drawdown, pct: true },
+              { k: "对基准超额", is: wf.in_sample.excess_return, oos: wf.out_sample.excess_return, pct: true },
+            ]}
+          />
+          <div className="mt-3">
+            {wfChartOption && <ReactECharts option={wfChartOption} style={{ height: 260 }} notMerge />}
+          </div>
+          <div className="mt-1 text-xs text-slate-400">
+            样本内 / 外净值各从 1 起；OOS 指标显著低于 IS（衰减为负且大）提示参数过拟合，配置在未来未必成立。
+          </div>
         </Card>
       )}
 

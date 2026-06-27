@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.32] — 2026-06-27
+
+> 组合回测报告导出：组合回测结果一键导出自包含 HTML 报告（因子权重 + 核心指标 + 组合/基准净值曲线），离线可看可存档。复用 v0.8.7 的纯 Python HTML 报告基建（内联 SVG，零外部依赖）。因子线横向收尾。
+
+### Added — 组合回测报告导出
+- 后端 `services/report.py`：`build_portfolio_report(config, result)` —— 因子权重卡（仅展示启用因子中文名）+ 核心指标卡 + 组合 vs 全市场基准净值 SVG，复用 `_svg_equity` / `_fmt` / 样式
+- 后端 `api/screener.py` `POST /screener/factor-portfolio/report`（重跑回测 + 渲染 `HTMLResponse` + `Content-Disposition` 附件；无有效结果返回 400）
+- 前端 `api/screener.ts` `downloadPortfolioReport`（axios blob 触发浏览器保存）；FactorPortfolio 净值图卡加「导出报告」按钮（导出当前权重 + 参数配置）
+- 测试：报告含核心指标值 + 启用因子中文名 + 净值 SVG + 权重 0 因子不展示 / 空结果优雅降级（+2 用例，共 236 passed）
+
 ## [0.8.31] — 2026-06-26
 
 > 组合回测参数寻优：对 top_n × rebalance_days 网格扫描，按夏普 / 年化 / 超额画热力图找最优组合配置。性能优化——同一调仓周期下不同持仓数**共享因子计算**，避免 N×M 次完整重算。

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 
 from app.core.auth_deps import require_permission
 from app.deps import CurrentUserId
@@ -29,6 +30,7 @@ from app.schemas.screener import (
     ShortTermRequest,
 )
 from app.services import factors as factors_svc
+from app.services import report as report_svc
 from app.services import screener as screener_svc
 from app.services import short_term as short_term_svc
 
@@ -230,4 +232,28 @@ async def run_factor_portfolio_sweep(
         factors_svc.factor_portfolio_sweep,
         payload.weights.model_dump(), payload.top_n_list, payload.rebalance_list,
         payload.lookback, payload.max_scan,
+    )
+
+
+@router.post(
+    "/factor-portfolio/report",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def export_factor_portfolio_report(
+    payload: FactorPortfolioRequest,
+    _: int = CurrentUserId,
+):
+    """导出多因子组合回测自包含 HTML 报告（重跑回测 + 渲染，离线可看 / 存档）。"""
+    result = await asyncio.to_thread(
+        factors_svc.factor_portfolio_backtest,
+        payload.weights.model_dump(), payload.top_n, payload.rebalance_days,
+        payload.lookback, payload.max_scan,
+    )
+    if not result.get("ready") or result.get("rebalance_count", 0) == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "无有效回测结果，无法导出报告")
+    html = report_svc.build_portfolio_report(payload.model_dump(), result)
+    return HTMLResponse(
+        html,
+        headers={"Content-Disposition": "attachment; filename=tcalpha_portfolio.html"},
     )

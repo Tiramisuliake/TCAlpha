@@ -53,6 +53,24 @@ export const runFactorPortfolioSweep = (payload: {
     .post<PortfolioSweepCell[]>("/screener/factor-portfolio-sweep", payload)
     .then((r) => r.data);
 
+/** 导出组合回测自包含 HTML 报告（重跑回测 + 渲染，blob 触发浏览器保存）。 */
+export const downloadPortfolioReport = async (payload: {
+  weights: FactorWeights;
+  top_n?: number;
+  rebalance_days?: number;
+  lookback?: number;
+}) => {
+  const r = await api.post<Blob>("/screener/factor-portfolio/report", payload, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(r.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `tcalpha_portfolio_${Date.now()}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 export const runShortTerm = (filters: ShortTermFilters) =>
   api.post<ScreenResult>("/screener/short-term", filters).then((r) => r.data);
 

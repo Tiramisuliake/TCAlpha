@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from app.services.report import build_backtest_report
+from app.services.report import build_backtest_report, build_portfolio_report
 
 
 def _job(**overrides) -> SimpleNamespace:
@@ -98,3 +98,56 @@ def test_report_escapes_user_content():
     html = build_backtest_report(job, [])
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# ── 组合回测报告（v0.8.32）───────────────────────────────────────────────
+
+
+def test_portfolio_report_contains_metrics_and_curve():
+    """组合报告含核心指标值 + 启用因子中文名 + 净值 SVG；权重 0 因子不展示。"""
+    config = {
+        "weights": {"mom_20": 1.0, "rsi_14": 0},
+        "top_n": 10,
+        "rebalance_days": 20,
+        "lookback": 480,
+    }
+    result = {
+        "ready": True,
+        "top_n": 10,
+        "rebalance_count": 12,
+        "total_return": 0.25,
+        "annual_return": 0.15,
+        "sharpe": 1.5,
+        "max_drawdown": -0.12,
+        "win_rate": 0.6,
+        "excess_return": 0.08,
+        "equity_curve": [
+            {"dt": "2025-01-01", "value": 1.0},
+            {"dt": "2025-02-01", "value": 1.1},
+            {"dt": "2025-03-01", "value": 1.25},
+        ],
+        "benchmark_curve": [
+            {"dt": "2025-01-01", "value": 1.0},
+            {"dt": "2025-02-01", "value": 1.05},
+            {"dt": "2025-03-01", "value": 1.1},
+        ],
+    }
+    html = build_portfolio_report(config, result)
+
+    assert "<!DOCTYPE html>" in html
+    assert "组合回测报告" in html
+    assert "25.00%" in html          # total_return
+    assert "1.500" in html           # sharpe
+    assert "20日动量" in html        # mom_20 权重 1 → 展示中文名
+    assert "RSI超卖" not in html     # rsi_14 权重 0 → 不展示
+    assert "<svg" in html            # 净值曲线 SVG
+    assert "top 10" in html
+    assert "不构成投资建议" in html
+
+
+def test_portfolio_report_empty_degrades():
+    """空结果优雅降级：无启用因子提示 + 净值数据不足，不抛异常。"""
+    html = build_portfolio_report({"weights": {}, "top_n": 10}, {"ready": True})
+    assert "<!DOCTYPE html>" in html
+    assert "无启用因子" in html
+    assert "数据不足" in html

@@ -177,6 +177,70 @@ def _trades_table(trades: list[Any], limit: int = 200) -> str:
     )
 
 
+_PORTFOLIO_ROWS: list[tuple[str, str, str]] = [
+    ("total_return", "总收益率", "pct"),
+    ("annual_return", "年化收益", "pct"),
+    ("sharpe", "夏普比率", "num"),
+    ("max_drawdown", "最大回撤", "pct"),
+    ("win_rate", "调仓胜率", "pct"),
+    ("excess_return", "对基准超额", "pct"),
+    ("rebalance_count", "调仓次数", "int"),
+    ("top_n", "持仓数", "int"),
+]
+
+
+def build_portfolio_report(config: dict, result: dict) -> str:
+    """渲染多因子组合回测的自包含 HTML 报告（因子权重 + 指标 + 组合/基准净值 SVG）。"""
+    from app.services.factors import FACTORS
+
+    r: dict = result or {}
+    weights = config.get("weights") or {}
+    w_cells = "".join(
+        f'<div class="metric"><div class="label">{escape(FACTORS[k][0] if k in FACTORS else k)}</div>'
+        f'<div class="value">{float(v):.1f}</div></div>'
+        for k, v in weights.items()
+        if v
+    ) or '<p class="muted">（无启用因子）</p>'
+
+    metric_cells = "".join(
+        f'<div class="metric"><div class="label">{escape(label)}</div>'
+        f'<div class="value">{_fmt(r.get(key), kind)}</div></div>'
+        for key, label, kind in _PORTFOLIO_ROWS
+        if key in r
+    )
+
+    top_n = r.get("top_n") or config.get("top_n") or "-"
+    rebal = config.get("rebalance_days") or "-"
+    lookback = config.get("lookback") or "-"
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>TCAlpha 组合回测报告</title>
+<style>
+  body {{ font-family: -apple-system, "Microsoft YaHei", sans-serif; max-width: 920px;
+         margin: 24px auto; padding: 0 16px; color: #1e293b; }}
+  h1 {{ font-size: 22px; }} h2 {{ font-size: 16px; margin-top: 28px; }}
+  .muted {{ color: #64748b; font-size: 12px; }}
+  .metrics {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+  .metric {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; min-width: 110px; }}
+  .metric .label {{ font-size: 11px; color: #64748b; }}
+  .metric .value {{ font-size: 16px; font-weight: 600; }}
+  .up {{ color: #ef4444; }} .down {{ color: #10b981; }}
+</style></head><body>
+<h1>TCAlpha 多因子组合回测报告</h1>
+<p class="muted">持仓 top {escape(str(top_n))} ｜ 调仓 {escape(str(rebal))} 日 ｜ 回看 {escape(str(lookback))} 日
+ ｜ 生成于 {now_cn().strftime("%Y-%m-%d %H:%M")}</p>
+<h2>因子权重</h2>
+<div class="metrics">{w_cells}</div>
+<h2>核心指标</h2>
+<div class="metrics">{metric_cells}</div>
+<h2>组合净值 vs 全市场等权</h2>
+{_svg_equity(r.get("equity_curve") or [], r.get("benchmark_curve"))}
+<p class="muted">本报告由 TCAlpha 自动生成，仅供研究复盘，不构成投资建议。</p>
+</body></html>"""
+    return html
+
+
 def build_backtest_report(job: Any, trades: list[Any] | None = None) -> str:
     """渲染单个回测 Job 的自包含 HTML 报告。
 

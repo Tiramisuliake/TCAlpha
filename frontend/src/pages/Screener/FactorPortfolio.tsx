@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Alert, Button, Card, Divider, Empty, InputNumber, Select, Statistic, Tooltip, message } from "antd";
-import { FundOutlined, RadarChartOutlined } from "@ant-design/icons";
+import { DownloadOutlined, FundOutlined, RadarChartOutlined } from "@ant-design/icons";
 import { useMutation } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { runFactorPortfolio, runFactorPortfolioSweep } from "@/api/screener";
+import { downloadPortfolioReport, runFactorPortfolio, runFactorPortfolioSweep } from "@/api/screener";
 import type { FactorWeights } from "@/types";
 import { DEFAULT_FACTOR_WEIGHTS, FACTORS } from "./factorMeta";
 
@@ -65,6 +65,11 @@ export default function FactorPortfolio() {
     },
   });
   const sweepCells = sweepMut.data ?? [];
+
+  const exportMut = useMutation({
+    mutationFn: downloadPortfolioReport,
+    onError: () => message.error("导出失败，请重试"),
+  });
 
   const runOnce = () =>
     mut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback });
@@ -233,7 +238,22 @@ export default function FactorPortfolio() {
       )}
 
       {hasCurve && chartOption && (
-        <Card size="small" title={`组合净值 vs 全市场等权（top ${res.top_n}，每 ${rebalanceDays} 日调仓）`}>
+        <Card
+          size="small"
+          title={`组合净值 vs 全市场等权（top ${res.top_n}，每 ${rebalanceDays} 日调仓）`}
+          extra={
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={exportMut.isPending}
+              onClick={() =>
+                exportMut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback })
+              }
+            >
+              导出报告
+            </Button>
+          }
+        >
           <ReactECharts option={chartOption} style={{ height: 300 }} notMerge />
         </Card>
       )}

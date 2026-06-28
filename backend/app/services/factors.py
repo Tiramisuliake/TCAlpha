@@ -23,6 +23,9 @@
 """
 from __future__ import annotations
 
+import contextlib
+import io
+
 import numpy as np
 import pandas as pd
 
@@ -30,6 +33,10 @@ from app.services.short_term import _name_map
 
 # 需要 mom_60（close[-61]）+ 余量
 _MIN_BARS = 65
+
+# 因子快照缓存（最新截面因子原始值，与权重无关；每日收盘 beat 刷新）
+_FACTOR_CACHE_KEY = "factor:snapshot:v1"
+_FACTOR_CACHE_TTL = 60 * 60 * 24 + 3600  # 略超 1 天，留足到次日刷新
 
 # 因子定义：name -> (中文名, higher_better 方向)
 FACTORS: dict[str, tuple[str, bool]] = {
@@ -164,26 +171,20 @@ def _zscore(s: pd.Series) -> pd.Series:
     return ((s - mu) / sd).clip(-3.0, 3.0).fillna(0.0)
 
 
-def factor_screen(filters: dict) -> dict:
-    """多因子选股：截面 z-score 标准化 + 方向 + 加权综合分排序。
+def _compute_factor_frame(max_scan: int = 800) -> pd.DataFrame | None:
+    """全市场最新截面因子原始值 DataFrame（symbol/code/name/price + 因子），**不过滤**。
 
-    filters：weights（{factor: w}，缺省 1.0）· price_min/max · exclude_st（默认 True）·
-      limit（默认 50）· max_scan（默认 800）
-    返回 {ready, count, candidates}（结构对齐 screener.screen）。
+    供 factor_screen 现算 fallback 与缓存刷新共用——价格/ST 过滤与加权在请求时做，
+    缓存保持通用。无数据返回 None。
     """
     from app.db.arctic import get_library
 
     lib = get_library("bar_1d")
     symbols = lib.list_symbols()
     if not symbols:
-        return {"ready": False, "count": 0, "candidates": []}
-
-    max_scan = int(filters.get("max_scan") or 800)
+        return None
     symbols = symbols[:max_scan]
     names = _name_map(symbols)
-    exclude_st = filters.get("exclude_st", True)
-    price_min = filters.get("price_min")
-    price_max = filters.get("price_max")
 
     rows: list[dict] = []
     for sym in symbols:
@@ -194,19 +195,98 @@ def factor_screen(filters: dict) -> dict:
         f = _compute_factors(df)
         if f is None:
             continue
-        if price_min is not None and f["price"] < float(price_min):
-            continue
-        if price_max is not None and f["price"] > float(price_max):
-            continue
-        name = names.get(sym, "")
-        if exclude_st and "ST" in name.upper():
-            continue
-        rows.append({"symbol": sym, "code": _to_code(sym), "name": name, **f})
-
+        rows.append({"symbol": sym, "code": _to_code(sym), "name": names.get(sym, ""), **f})
     if not rows:
-        return {"ready": True, "count": 0, "candidates": []}
+        return None
 
     fdf = pd.DataFrame(rows)
+    for fname in FACTORS:
+        fdf[fname] = pd.to_numeric(fdf[fname], errors="coerce").round(4)
+    fdf["price"] = pd.to_numeric(fdf["price"], errors="coerce").round(2)
+    return fdf
+
+
+def refresh_factor_cache_sync(max_scan: int = 800) -> int:
+    """算全市场因子快照写 Redis（beat 调用，同步 redis 客户端）。返回行数。"""
+    import redis as sync_redis
+
+    from app.config import settings
+    from app.utils.trading_period import now_cn
+
+    frame = _compute_factor_frame(max_scan)
+    if frame is None or frame.empty:
+        return 0
+    payload = frame.to_json(orient="records", force_ascii=False)
+    r = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        r.set(_FACTOR_CACHE_KEY, payload, ex=_FACTOR_CACHE_TTL)
+        r.set(f"{_FACTOR_CACHE_KEY}:at", now_cn().strftime("%Y-%m-%d %H:%M"), ex=_FACTOR_CACHE_TTL)
+    finally:
+        r.close()
+    return len(frame)
+
+
+def _read_factor_cache() -> tuple[pd.DataFrame | None, str | None]:
+    """读 Redis 因子快照缓存 → (DataFrame, 缓存时间)；缺失/异常返回 (None, None)。"""
+    import redis as sync_redis
+
+    from app.config import settings
+
+    r = sync_redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=0.5)
+    try:
+        raw = r.get(_FACTOR_CACHE_KEY)
+        at = r.get(f"{_FACTOR_CACHE_KEY}:at")
+    except Exception:
+        return None, None
+    finally:
+        with contextlib.suppress(Exception):
+            r.close()
+    if not raw:
+        return None, None
+    df = pd.read_json(io.StringIO(raw), dtype={"symbol": str, "code": str, "name": str})
+    return df, at
+
+
+def _trigger_factor_cache_refresh() -> None:
+    """缓存未命中时触发后台刷新（下次命中）；无 broker 时静默忽略。"""
+    try:
+        from app.tasks.screen_tasks import refresh_factor_cache
+
+        refresh_factor_cache.delay()
+    except Exception:
+        pass
+
+
+def factor_screen(filters: dict) -> dict:
+    """多因子选股：截面 z-score 标准化 + 方向 + 加权综合分排序。
+
+    优先读 Redis 因子快照缓存（每日收盘 beat 刷新）——命中则跳过全市场 bar_1d 重算，
+    仅做过滤 + 内存加权（大幅提速）；未命中现算并触发后台刷新。
+
+    filters：weights · price_min/max · exclude_st（默认 True）· limit（默认 50）· max_scan（默认 800）
+    返回 {ready, count, candidates, cached, as_of}（结构对齐 screener.screen）。
+    """
+    max_scan = int(filters.get("max_scan") or 800)
+    fdf, as_of = _read_factor_cache()
+    cached = fdf is not None and not fdf.empty
+    if not cached:
+        fdf = _compute_factor_frame(max_scan)
+        _trigger_factor_cache_refresh()
+    if fdf is None or fdf.empty:
+        return {"ready": False, "count": 0, "candidates": [], "cached": False, "as_of": None}
+
+    fdf = fdf.copy()
+    price_min = filters.get("price_min")
+    price_max = filters.get("price_max")
+    if price_min is not None:
+        fdf = fdf[fdf["price"] >= float(price_min)]
+    if price_max is not None:
+        fdf = fdf[fdf["price"] <= float(price_max)]
+    if filters.get("exclude_st", True):
+        fdf = fdf[~fdf["name"].astype(str).str.upper().str.contains("ST", na=False)]
+    if fdf.empty:
+        return {"ready": True, "count": 0, "candidates": [], "cached": cached, "as_of": as_of}
+
     weights = filters.get("weights") or {}
     total = pd.Series(0.0, index=fdf.index)
     for fname, (_cn, higher) in FACTORS.items():
@@ -220,17 +300,15 @@ def factor_screen(filters: dict) -> dict:
     fdf["score"] = total.round(4)
     fdf = fdf.sort_values("score", ascending=False)
 
-    # 因子原始值 round，保证 JSON 紧凑
-    for fname in FACTORS:
-        fdf[fname] = pd.to_numeric(fdf[fname], errors="coerce").round(4)
-    fdf["price"] = pd.to_numeric(fdf["price"], errors="coerce").round(2)
-
     limit = int(filters.get("limit") or 50)
     records = fdf.head(limit).to_dict("records")
     candidates = [
         {k: (None if pd.isna(v) else v) for k, v in rec.items()} for rec in records
     ]
-    return {"ready": True, "count": len(candidates), "candidates": candidates}
+    return {
+        "ready": True, "count": len(candidates), "candidates": candidates,
+        "cached": cached, "as_of": as_of,
+    }
 
 
 def _empty_ic(factor: str, hold_days: int) -> dict:

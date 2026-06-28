@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.34] — 2026-06-28
+
+> 因子值缓存提速：多因子选股的因子值缓存到 Redis（每日收盘 beat 刷新），命中时跳过全市场 800 票 `bar_1d` 重算、只做内存加权——把选股从「秒级全市场重算」降到「毫秒级」。清理性能债。
+
+### Added — 因子快照缓存
+- 后端 `services/factors.py`：抽 `_compute_factor_frame`（全市场最新因子值 DataFrame，不过滤，缓存通用）；`refresh_factor_cache_sync` 写 Redis 快照（同步 redis）+ `_read_factor_cache` 读（连接超时 0.5s 优雅降级）；`factor_screen` 重构——优先读缓存 → 过滤(price/ST) + 内存加权 + 排序，未命中现算 + 触发后台刷新；返回加 `cached` / `as_of`
+- 后端 `tasks/screen_tasks.py` `refresh_factor_cache` task + `celery_app` beat（交易日收盘后 15:10 刷新全市场因子值）
+- 后端 `schemas/screener.py` `ScreenResult` 加 `cached` / `as_of`
+- 前端 `pages/Screener/FactorScreen`：结果卡显示数据时效（📦 因子快照 + 时间 / ⚡ 实时计算）
+- 测试：因子 frame 列完整 + 命中缓存 cached True + 未命中 fallback cached False + refresh 写 Redis（autouse 隔离缓存避免连 redis）（+5 用例，共 244 passed）
+
 ## [0.8.33] — 2026-06-27
 
 > 组合回测 walk-forward 样本外验证：调仓序列按时间切样本内(IS)/样本外(OOS)两段对比绩效，验证因子配置 / 寻优参数是否过拟合——OOS 还成立才是真 alpha。这是参数寻优的必要防过拟合配套。

@@ -32,6 +32,15 @@ def _no_names(monkeypatch):
     monkeypatch.setattr(factors, "_name_map", lambda syms: {})
 
 
+@pytest.fixture(autouse=True)
+def _isolate_factor_cache(monkeypatch):
+    """默认隔离因子快照缓存：走现算 fallback，不连 redis / broker（专门缓存测试自行覆盖）。"""
+    from app.services import factors
+
+    monkeypatch.setattr(factors, "_read_factor_cache", lambda: (None, None))
+    monkeypatch.setattr(factors, "_trigger_factor_cache_refresh", lambda: None)
+
+
 def _strong() -> pd.DataFrame:
     """持续上涨：高动量 + 正趋势斜率。"""
     return _kline([10 + i * 0.08 for i in range(70)])
@@ -437,3 +446,85 @@ def test_factor_portfolio_walkforward_empty_lib(fake_arctic):
     from app.services.factors import factor_portfolio_walkforward
 
     assert factor_portfolio_walkforward()["ready"] is False
+
+
+# ── 因子值缓存（v0.8.34）─────────────────────────────────────────────────
+
+
+def test_compute_factor_frame(fake_arctic, _no_names):
+    """全市场因子 frame：含 symbol/code/name/price + 全因子列。"""
+    from app.db.arctic import get_library
+    from app.services.factors import FACTORS, _compute_factor_frame
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _kline([10 + i * 0.08 for i in range(70)]))
+    lib.write("sz000002", _kline([10.0] * 70))
+
+    frame = _compute_factor_frame(800)
+    assert frame is not None and len(frame) == 2
+    for col in ("symbol", "code", "name", "price", *FACTORS):
+        assert col in frame.columns
+
+
+def test_compute_factor_frame_empty(fake_arctic, _no_names):
+    from app.services.factors import _compute_factor_frame
+
+    assert _compute_factor_frame(800) is None
+
+
+def test_factor_screen_fallback_uncached(fake_arctic, _no_names):
+    """无缓存 → 现算 fallback，cached False / as_of None。"""
+    from app.db.arctic import get_library
+    from app.services.factors import factor_screen
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _kline([10 + i * 0.08 for i in range(70)]))
+    lib.write("sz000002", _kline([10.0] * 70))
+
+    res = factor_screen({})
+    assert res["ready"] is True and res["count"] == 2
+    assert res["cached"] is False
+    assert res["as_of"] is None
+
+
+def test_factor_screen_uses_cache(fake_arctic, _no_names, monkeypatch):
+    """命中缓存 → 直接用缓存 frame 加权，cached True + as_of。"""
+    from app.db.arctic import get_library
+    from app.services import factors
+
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _kline([10 + i * 0.08 for i in range(70)]))
+    lib.write("sz000002", _kline([10.0] * 70))
+    frame = factors._compute_factor_frame(800)
+    assert frame is not None
+    monkeypatch.setattr(factors, "_read_factor_cache", lambda: (frame, "2026-06-28 15:10"))
+
+    res = factors.factor_screen({})
+    assert res["cached"] is True
+    assert res["as_of"] == "2026-06-28 15:10"
+    assert res["count"] == 2
+
+
+def test_refresh_factor_cache_sync_writes(fake_arctic, _no_names, monkeypatch):
+    """refresh 写 Redis：mock sync redis，验证行数 + 写入缓存 key。"""
+    import redis as sync_redis
+
+    from app.db.arctic import get_library
+    from app.services import factors
+
+    store: dict[str, str] = {}
+
+    class _FakeRedis:
+        def set(self, k, v, ex=None):
+            store[k] = v
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sync_redis, "from_url", lambda *a, **k: _FakeRedis())
+
+    get_library("bar_1d").write("sh600001", _kline([10 + i * 0.08 for i in range(70)]))
+
+    n = factors.refresh_factor_cache_sync(800)
+    assert n == 1
+    assert factors._FACTOR_CACHE_KEY in store

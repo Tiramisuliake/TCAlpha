@@ -178,17 +178,24 @@ export default function FactorScreen() {
         classNames={{ body: "flex-1 flex flex-col min-h-0" }}
         extra={
           candidates.length > 0 ? (
-            <Button
-              size="small"
-              type="primary"
-              ghost
-              icon={<StarOutlined />}
-              disabled={selectedKeys.length === 0}
-              loading={batchMut.isPending}
-              onClick={() => batchMut.mutate(selectedKeys.map(String))}
-            >
-              批量加自选{selectedKeys.length ? `（${selectedKeys.length}）` : ""}
-            </Button>
+            <Space>
+              <Tooltip title={result?.cached ? "因子值取自每日收盘快照缓存（秒级返回）" : "缓存未命中，本次实时全市场计算"}>
+                <span className="text-xs text-slate-400">
+                  {result?.cached ? `📦 因子快照 ${result.as_of ?? ""}` : "⚡ 实时计算"}
+                </span>
+              </Tooltip>
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                icon={<StarOutlined />}
+                disabled={selectedKeys.length === 0}
+                loading={batchMut.isPending}
+                onClick={() => batchMut.mutate(selectedKeys.map(String))}
+              >
+                批量加自选{selectedKeys.length ? `（${selectedKeys.length}）` : ""}
+              </Button>
+            </Space>
           ) : null
         }
       >

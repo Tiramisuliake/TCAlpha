@@ -29,6 +29,8 @@ class ScreenResult(BaseModel):
     ready: bool
     count: int
     candidates: list[dict[str, Any]]
+    cached: bool | None = None  # 多因子选股：是否命中因子快照缓存
+    as_of: str | None = None    # 因子快照缓存时间（命中时）
 
 
 class ShortTermRequest(BaseModel):

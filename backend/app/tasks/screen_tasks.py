@@ -149,3 +149,18 @@ def scan_multi_pattern_daily(
     by_pattern = {p: len(c) for p, c in results.items()}
     logger.info("scan_multi_pattern_daily: {} hit, pushed {}", total, by_pattern)
     return {"status": "ok", "count": total, "by_pattern": by_pattern}
+
+
+@celery_app.task(
+    name="app.tasks.screen_tasks.refresh_factor_cache",
+    bind=True,
+    time_limit=600,
+    soft_time_limit=540,
+)
+def refresh_factor_cache(self, max_scan: int = 800) -> dict:
+    """每日收盘刷新全市场因子快照缓存（多因子选股命中后免全市场重算）。"""
+    from app.services.factors import refresh_factor_cache_sync
+
+    n = refresh_factor_cache_sync(max_scan)
+    logger.info("refresh_factor_cache: {} symbols cached", n)
+    return {"status": "ok", "cached": n}

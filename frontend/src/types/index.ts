@@ -453,6 +453,8 @@ export interface ScreenResult {
   ready: boolean;
   count: number;
   candidates: ScreenCandidate[];
+  cached?: boolean; // 多因子选股：是否命中因子快照缓存
+  as_of?: string | null; // 因子快照缓存时间
 }
 
 /** 涨停次日溢价统计（打板复盘）。 */

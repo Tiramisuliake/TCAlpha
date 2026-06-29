@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.35] — 2026-06-29
+
+> 多因子选股每日自动推送：交易日收盘后用系统默认权重综合打分，top 10 经 `screen.factor` 事件推飞书——与短线选股推送对称，把多因子选股自动化。复用 screen_tasks beat + 因子快照缓存（秒级）+ 通知中心。
+
+### Added — 多因子选股自动推送
+- 后端 `tasks/screen_tasks.py`：`factor_screen_daily` task —— 默认权重跑 `factor_screen` top N（命中因子快照缓存秒级返回），经 `publish_event("screen.factor")` 推送；无候选不推（减噪）/ 周末跳过
+- 后端 `celery_app` beat：交易日收盘后 15:12（因子缓存 15:10 刷新后）触发
+- 后端 `schemas/notify.py` `EVENT_TYPES` 加 `screen.factor`（通知中心可勾选订阅，前端动态读取零改）
+- 测试：命中推送 + payload TOP1 / 无候选不推 / 无数据跳过 / 周末跳过（+4 用例，共 248 passed）
+
 ## [0.8.34] — 2026-06-28
 
 > 因子值缓存提速：多因子选股的因子值缓存到 Redis（每日收盘 beat 刷新），命中时跳过全市场 800 票 `bar_1d` 重算、只做内存加权——把选股从「秒级全市场重算」降到「毫秒级」。清理性能债。

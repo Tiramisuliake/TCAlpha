@@ -77,6 +77,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.screen_tasks.refresh_factor_cache",
         "schedule": crontab(hour=15, minute=10, day_of_week="1-5"),
     },
+    # 多因子选股：交易日收盘后（15:12，因子缓存刷新后）综合打分 top10 推送
+    "factor-screen-daily-close": {
+        "task": "app.tasks.screen_tasks.factor_screen_daily",
+        "schedule": crontab(hour=15, minute=12, day_of_week="1-5"),
+        "kwargs": {"top": 10},
+    },
     # 模拟账户：交易日收盘后（15:30）快照各用户净值，供净值曲线复盘
     "sim-equity-snapshot-close": {
         "task": "app.tasks.sim_tasks.snapshot_all_equity",

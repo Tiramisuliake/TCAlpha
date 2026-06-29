@@ -157,3 +157,62 @@ def test_multi_pattern_weekend_skip(monkeypatch, _capture):
 
     assert res["status"] == "skipped" and res["reason"] == "weekend"
     assert _capture == []
+
+
+# ── 多因子选股自动推送（v0.8.35）─────────────────────────────────────────
+
+
+def _stub_factor_screen(monkeypatch, result: dict):
+    """替换 factor_screen（task 内函数级 import → patch 源模块属性）。"""
+    from app.services import factors
+
+    monkeypatch.setattr(factors, "factor_screen", lambda filters: result)
+
+
+def test_factor_screen_daily_pushes(monkeypatch, _capture):
+    """命中 → publish_event("screen.factor") 且 payload 含命中数 + TOP1。"""
+    _stub_factor_screen(monkeypatch, {
+        "ready": True, "count": 2, "candidates": [
+            {"code": "600519", "name": "贵州茅台", "score": 2.1},
+            {"code": "000001", "name": "平安银行", "score": 1.3},
+        ],
+    })
+
+    res = screen_tasks.factor_screen_daily.run(top=10, force=True)
+
+    assert res["status"] == "ok" and res["count"] == 2
+    assert len(_capture) == 1
+    evt = _capture[0]
+    assert evt["type"] == "screen.factor"
+    assert evt["payload"]["命中"] == "2 只"
+    assert "600519" in evt["payload"]["TOP1"]
+
+
+def test_factor_screen_daily_no_push_empty(monkeypatch, _capture):
+    """无候选 → 不推送（减噪）。"""
+    _stub_factor_screen(monkeypatch, {"ready": True, "count": 0, "candidates": []})
+
+    res = screen_tasks.factor_screen_daily.run(force=True)
+
+    assert res["status"] == "ok" and res["count"] == 0
+    assert _capture == []
+
+
+def test_factor_screen_daily_skips_no_data(monkeypatch, _capture):
+    """无 K 线（ready False）→ skip。"""
+    _stub_factor_screen(monkeypatch, {"ready": False, "candidates": []})
+
+    res = screen_tasks.factor_screen_daily.run(force=True)
+
+    assert res["status"] == "skipped" and res["reason"] == "no_data"
+    assert _capture == []
+
+
+def test_factor_screen_daily_weekend_skip(monkeypatch, _capture):
+    """周末 force=False → skip。"""
+    monkeypatch.setattr(screen_tasks, "now_cn", lambda: datetime(2026, 6, 13, 15, 12))  # 周六
+
+    res = screen_tasks.factor_screen_daily.run(force=False)
+
+    assert res["status"] == "skipped" and res["reason"] == "weekend"
+    assert _capture == []

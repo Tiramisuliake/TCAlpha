@@ -24,6 +24,7 @@ KNOWN_EVENT_TYPES: list[dict[str, str]] = [
     {"type": "quote.surge", "desc": "行情急涨/急跌（Step 2）"},
     {"type": "quote.limit_up", "desc": "涨停（Step 2）"},
     {"type": "screen.short_term", "desc": "短线选股命中（每日收盘自动扫描）"},
+    {"type": "screen.factor", "desc": "多因子选股 top（每日收盘综合打分）"},
 ]
 
 CHANNELS = ["feishu"]  # v0.5.1 only

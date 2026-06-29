@@ -164,3 +164,53 @@ def refresh_factor_cache(self, max_scan: int = 800) -> dict:
     n = refresh_factor_cache_sync(max_scan)
     logger.info("refresh_factor_cache: {} symbols cached", n)
     return {"status": "ok", "cached": n}
+
+
+def _factor_summary(candidates: list[dict]) -> dict:
+    """多因子选股汇总 payload：命中数 + TOP3（代码名 + 综合分）；前 6 字段平铺飞书卡片。"""
+    payload: dict = {"策略": "多因子综合", "命中": f"{len(candidates)} 只"}
+    for i, c in enumerate(candidates[:3], 1):
+        score = c.get("score")
+        payload[f"TOP{i}"] = (
+            f"{c.get('code', '')} {c.get('name', '')}"
+            f"（综合分 {score if score is not None else '-'}）"
+        )
+    payload["日期"] = now_cn().strftime("%Y-%m-%d")
+    return payload
+
+
+@celery_app.task(
+    name="app.tasks.screen_tasks.factor_screen_daily",
+    bind=True,
+    time_limit=600,
+    soft_time_limit=540,
+)
+def factor_screen_daily(self, top: int = 10, force: bool = False) -> dict:
+    """每日收盘多因子选股 top N + 推送（系统默认权重，命中因子快照缓存秒级返回）。
+
+    用默认权重综合打分，把 top N 经 ``screen.factor`` 事件推送 —— 用户在通知中心
+    勾选该事件即可收飞书。无候选不推（减噪）。收盘后用工作日判断（beat cron 已限工作日）。
+
+    Args:
+        top: 推送展示的候选数量上限
+        force: True 跳过工作日判断（手动 / 调试）
+    """
+    if not force and now_cn().weekday() >= 5:
+        logger.info("factor_screen_daily: weekend, skip")
+        return {"status": "skipped", "reason": "weekend"}
+
+    from app.services.factors import factor_screen
+
+    res = factor_screen({"limit": top})
+    if not res.get("ready"):
+        logger.info("factor_screen_daily: no kline data, skip")
+        return {"status": "skipped", "reason": "no_data"}
+
+    candidates = res.get("candidates") or []
+    if not candidates:
+        logger.info("factor_screen_daily: 0 candidate")
+        return {"status": "ok", "count": 0}
+
+    publish_event("screen.factor", _factor_summary(candidates), level="info")
+    logger.info("factor_screen_daily: {} candidates, pushed", len(candidates))
+    return {"status": "ok", "count": len(candidates)}

@@ -99,3 +99,17 @@ class LimitUpLadder(BaseModel):
     max_board: int = 0    # 最高连板高度
     ladder: list[LadderBucket] = []
     leaders: list[LimitUpLeader] = []
+
+
+class NorthFlowPoint(BaseModel):
+    date: str
+    net: float
+
+
+class NorthFlowOut(BaseModel):
+    """北向资金流向（沪股通+深股通净流入，亿元）。"""
+
+    ready: bool
+    date: str = ""
+    net: float = 0.0      # 当日北向净流入（亿元，正流入负流出）
+    history: list[NorthFlowPoint] = []

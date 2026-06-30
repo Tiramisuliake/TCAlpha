@@ -4,6 +4,7 @@ import type {
   KlineResponse,
   LimitUpLadder,
   MarketSentiment,
+  NorthFlow,
   PatternMarker,
   SentimentPoint,
   SymbolListResponse,
@@ -44,3 +45,6 @@ export const getSentimentHistory = (days = 120) =>
 
 export const getLimitUpLadder = () =>
   api.get<LimitUpLadder>("/market/limit-up-ladder").then((r) => r.data);
+
+export const getNorthFlow = (days = 60) =>
+  api.get<NorthFlow>("/market/north-flow", { params: { days } }).then((r) => r.data);

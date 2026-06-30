@@ -71,6 +71,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.screen_tasks.snapshot_market_sentiment",
         "schedule": crontab(hour=15, minute=1, day_of_week="1-5"),
     },
+    # 北向资金：交易时段每 30 分钟刷新净流入（接口不稳时降级，不影响其它）
+    "north-flow-refresh": {
+        "task": "app.tasks.screen_tasks.refresh_north_flow",
+        "schedule": crontab(minute="*/30", hour="9-11,13-15", day_of_week="1-5"),
+    },
     # 短线选股：交易日收盘后（15:05）扫描全部 4 形态，汇总一条推送
     "short-term-scan-close": {
         "task": "app.tasks.screen_tasks.scan_multi_pattern_daily",

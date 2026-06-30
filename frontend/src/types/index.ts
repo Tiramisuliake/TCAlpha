@@ -493,6 +493,18 @@ export interface LimitUpLadder {
   leaders: LimitUpLeader[];
 }
 
+/** 北向资金流向（亿元）。 */
+export interface NorthFlowPoint {
+  date: string;
+  net: number;
+}
+export interface NorthFlow {
+  ready: boolean;
+  date: string;
+  net: number;
+  history: NorthFlowPoint[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

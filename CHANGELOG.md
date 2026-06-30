@@ -8,7 +8,13 @@
 - 后端 `services/market_sentiment.py`：`compute_limit_up_ladder(max_scan)` 全市场扫 `bar_1d` 复用 short_term 连板判定（按板块涨停价），算各档（1/2/3/4+ 板）家数 + 最高板 + 高板龙头（≥2 板，按板数降序 top20）
 - 后端 `schemas/market.py` `LimitUpLadder` / `LadderBucket` / `LimitUpLeader` + `api/market.py` `GET /market/limit-up-ladder`（`to_thread` + `data.read`）
 - 前端 `pages/Sentiment`：连板梯队卡——各档家数柱状图（最高板标记）+ 高板龙头表（代码 / 名称 / 连板数）
-- 测试：连板分档计数 + 最高板 + 龙头 ≥2 板 + 空库 ready False（+2 用例，共 255 passed）
+- 测试：连板分档计数 + 最高板 + 龙头 ≥2 板 + 空库 ready False（+2 用例）
+
+### Added — 北向资金流向
+- 后端 `services/market_sentiment.py`：`fetch_north_flow_sync`（AKShare `stock_hsgt_fund_flow_summary_em` 解析沪股通+深股通净流入，列名容错 + 整体 try/except **优雅降级**）+ `get_north_flow`（Redis 当日 + 历史）；`schemas/market.py` `NorthFlowOut` + `api/market.py` `GET /market/north-flow`；`tasks/screen_tasks.py` `refresh_north_flow` + beat 交易时段每 30min
+- 前端 `pages/Sentiment`：北向资金卡——当日净流入（流入红 / 流出绿）+ 历史净流入柱状图；接口不可用时降级提示
+- ⚠️ AKShare hsgt 接口东财改版频繁，解析做列名容错 + 整体降级，**生产需以真实返回校验接口名/字段**
+- 测试：北向净流入求和（南向不计）+ 单位元转亿 + 字段不符降级 + 拉取写 Redis + 接口抛错降级（+5 用例，共 260 passed）
 
 ## [0.8.36] — 2026-06-29
 

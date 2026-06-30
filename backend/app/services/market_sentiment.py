@@ -10,11 +10,14 @@ import io
 import json
 
 import pandas as pd
+from loguru import logger
 
 from app.db.redis_client import get_redis
 from app.services.short_term import _board_limit_pct
 
 _SENTIMENT_HIST_KEY = "market:sentiment:history"
+_NORTH_TODAY_KEY = "market:north:today"
+_NORTH_HIST_KEY = "market:north:history"
 
 
 def compute_sentiment(df: pd.DataFrame) -> dict:
@@ -168,3 +171,77 @@ def compute_limit_up_ladder(max_scan: int = 800) -> dict:
         "ladder": ladder,
         "leaders": leaders[:20],
     }
+
+
+# ── 北向资金流向 ─────────────────────────────────────────────────────────
+# 依赖 AKShare stock_hsgt_fund_flow_summary_em；东财该接口改版频繁，解析对列名做
+# 容错并整体 try/except 降级——接口不可用 / 字段变更时 ready=False，不影响其它功能。
+# ⚠️ 实际可用接口名与字段随 akshare 版本变化，生产部署需以真实返回为准校验。
+
+def _parse_north_net(df: pd.DataFrame | None) -> float | None:
+    """从沪深港通资金流向汇总解析北向（沪股通+深股通）净流入（亿元）；结构不符返回 None。"""
+    if df is None or getattr(df, "empty", True):
+        return None
+    cols = set(df.columns)
+    dir_col = next((c for c in ("资金方向", "类型", "板块", "name") if c in cols), None)
+    amt_col = next(
+        (c for c in ("成交净买额", "资金净流入", "净买额", "成交净买额(元)", "value") if c in cols),
+        None,
+    )
+    if not dir_col or not amt_col:
+        return None
+    mask = df[dir_col].astype(str).str.contains("沪股通|深股通|北向", na=False)
+    sub = df[mask]
+    if sub.empty:
+        return None
+    net = float(pd.to_numeric(sub[amt_col], errors="coerce").sum())
+    # 单位归一：akshare 可能给元或亿元，>1e6 视为元转亿
+    if abs(net) > 1e6:
+        net /= 1e8
+    return round(net, 2)
+
+
+def fetch_north_flow_sync() -> dict:
+    """拉北向资金当日净流入（亿元），存 Redis 当日 + 历史（beat 调用，同步 redis）。
+
+    接口 / 解析任一失败均优雅降级（ok=False），不抛异常影响 beat 链路。
+    """
+    import redis as sync_redis
+
+    from app.config import settings
+    from app.utils.trading_period import now_cn
+
+    try:
+        import akshare as ak
+
+        net = _parse_north_net(ak.stock_hsgt_fund_flow_summary_em())
+    except Exception as exc:
+        logger.warning("fetch_north_flow: akshare unavailable: {}", exc)
+        return {"ok": False, "reason": "akshare_unavailable"}
+    if net is None:
+        logger.warning("fetch_north_flow: parse failed (接口字段可能已变更)")
+        return {"ok": False, "reason": "parse_failed"}
+
+    today = now_cn().strftime("%Y-%m-%d")
+    payload = json.dumps({"date": today, "net": net}, ensure_ascii=False)
+    r = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        r.set(_NORTH_TODAY_KEY, payload, ex=60 * 60 * 24 + 3600)
+        r.hset(_NORTH_HIST_KEY, today, payload)
+    finally:
+        r.close()
+    return {"ok": True, "date": today, "net": net}
+
+
+async def get_north_flow(days: int = 60) -> dict:
+    """北向资金当日净流入 + 历史曲线（读 Redis 缓存）。缓存缺失 ready=False。"""
+    rds = get_redis()
+    today_raw = await rds.get(_NORTH_TODAY_KEY)
+    hist_raw = await rds.hgetall(_NORTH_HIST_KEY)
+    history = sorted(
+        (json.loads(v) for v in hist_raw.values()), key=lambda p: p.get("date", "")
+    )[-days:] if hist_raw else []
+    if not today_raw:
+        return {"ready": False, "date": "", "net": 0.0, "history": history}
+    today = json.loads(today_raw)
+    return {"ready": True, "date": today["date"], "net": today["net"], "history": history}

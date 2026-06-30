@@ -143,3 +143,80 @@ def test_limit_up_ladder_empty_lib(fake_arctic):
     from app.services.market_sentiment import compute_limit_up_ladder
 
     assert compute_limit_up_ladder()["ready"] is False
+
+
+# ── 北向资金流向（v0.8.37）───────────────────────────────────────────────
+
+
+def test_parse_north_net_sums_north_channels():
+    """沪股通 + 深股通净买额求和；南向（港股通）不计。"""
+    from app.services.market_sentiment import _parse_north_net
+
+    df = pd.DataFrame([
+        {"资金方向": "沪股通", "成交净买额": 30.5},
+        {"资金方向": "深股通", "成交净买额": 20.0},
+        {"资金方向": "港股通", "成交净买额": -10.0},
+    ])
+    assert _parse_north_net(df) == 50.5
+
+
+def test_parse_north_net_unit_yuan_to_yi():
+    """单位为元时转亿元。"""
+    from app.services.market_sentiment import _parse_north_net
+
+    df = pd.DataFrame([{"资金方向": "北向", "成交净买额": 5_050_000_000.0}])
+    assert _parse_north_net(df) == 50.5
+
+
+def test_parse_north_net_bad_structure():
+    """字段不符 / 空 → None（触发降级）。"""
+    from app.services.market_sentiment import _parse_north_net
+
+    assert _parse_north_net(pd.DataFrame([{"foo": 1}])) is None
+    assert _parse_north_net(None) is None
+
+
+def test_fetch_north_flow_sync_writes(monkeypatch):
+    """拉取成功 → 解析净流入并写 Redis 当日 + 历史（mock akshare + redis）。"""
+    import akshare as ak
+    import redis as sync_redis
+
+    from app.services import market_sentiment
+
+    monkeypatch.setattr(
+        ak, "stock_hsgt_fund_flow_summary_em",
+        lambda: pd.DataFrame([
+            {"资金方向": "沪股通", "成交净买额": 30.0},
+            {"资金方向": "深股通", "成交净买额": 20.0},
+        ]),
+    )
+    store: dict = {}
+
+    class _FakeR:
+        def set(self, k, v, ex=None):
+            store[k] = v
+
+        def hset(self, k, f, v):
+            store[(k, f)] = v
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sync_redis, "from_url", lambda *a, **k: _FakeR())
+
+    res = market_sentiment.fetch_north_flow_sync()
+    assert res["ok"] is True and res["net"] == 50.0
+    assert market_sentiment._NORTH_TODAY_KEY in store
+
+
+def test_fetch_north_flow_sync_degrades(monkeypatch):
+    """接口抛错 → ok False（降级，不抛异常）。"""
+    import akshare as ak
+
+    from app.services import market_sentiment
+
+    def _boom():
+        raise RuntimeError("hsgt api removed")
+
+    monkeypatch.setattr(ak, "stock_hsgt_fund_flow_summary_em", _boom)
+    assert market_sentiment.fetch_north_flow_sync()["ok"] is False

@@ -2,7 +2,7 @@ import { Alert, Card, Empty, Statistic, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { getLimitUpLadder, getSentiment, getSentimentHistory } from "@/api/market";
+import { getLimitUpLadder, getNorthFlow, getSentiment, getSentimentHistory } from "@/api/market";
 import type { LimitUpLeader } from "@/types";
 
 const LEADER_COLS: ColumnsType<LimitUpLeader> = [
@@ -49,6 +49,12 @@ export default function Sentiment() {
     staleTime: 5 * 60_000,
   });
 
+  const { data: north } = useQuery({
+    queryKey: ["north-flow"],
+    queryFn: () => getNorthFlow(60),
+    refetchInterval: 5 * 60_000,
+  });
+
   const ladderOption =
     ladder?.ready && ladder.ladder.length > 0
       ? {
@@ -63,6 +69,30 @@ export default function Sentiment() {
               barWidth: "52%",
               itemStyle: { color: "#ef4444" },
               label: { show: true, position: "top", fontSize: 11 },
+            },
+          ],
+        }
+      : null;
+
+  const northOption =
+    north?.ready && north.history.length > 0
+      ? {
+          tooltip: { trigger: "axis" },
+          grid: { left: 44, right: 12, top: 16, bottom: 40 },
+          xAxis: {
+            type: "category",
+            data: north.history.map((p) => p.date),
+            axisLabel: { rotate: 30, fontSize: 10 },
+          },
+          yAxis: { type: "value", name: "亿元" },
+          series: [
+            {
+              type: "bar",
+              data: north.history.map((p) => ({
+                value: p.net,
+                itemStyle: { color: p.net >= 0 ? UP : DOWN },
+              })),
+              barWidth: "55%",
             },
           ],
         }
@@ -215,6 +245,29 @@ export default function Sentiment() {
           </div>
         </Card>
       )}
+
+      <Card
+        size="small"
+        title="北向资金（沪股通 + 深股通净流入）"
+        extra={
+          north?.ready ? (
+            <span className={`num ${north.net >= 0 ? "up" : "down"}`}>
+              当日 {north.net >= 0 ? "+" : ""}
+              {north.net} 亿
+            </span>
+          ) : null
+        }
+      >
+        {north?.ready && northOption ? (
+          <ReactECharts option={northOption} style={{ height: 240 }} notMerge />
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            message="北向资金暂不可用——依赖 AKShare stock_hsgt 接口（东财改版频繁），需生产环境验证；盘中 beat 拉取成功后显示。"
+          />
+        )}
+      </Card>
 
       <Card
         size="small"

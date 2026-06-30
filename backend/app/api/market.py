@@ -10,6 +10,7 @@ from app.schemas.market import (
     DownloadTriggerResponse,
     KlineResponse,
     LimitUpLadder,
+    NorthFlowOut,
     RefreshTriggerResponse,
     SentimentOut,
     SentimentPoint,
@@ -128,3 +129,13 @@ async def limit_up_ladder():
     import asyncio
 
     return await asyncio.to_thread(sentiment_svc.compute_limit_up_ladder)
+
+
+@router.get(
+    "/north-flow",
+    response_model=NorthFlowOut,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def north_flow(days: int = Query(default=60, ge=5, le=250)):
+    """北向资金当日净流入 + 历史曲线（盘中 beat 更新；接口不可用时 ready=False）。"""
+    return await sentiment_svc.get_north_flow(days)

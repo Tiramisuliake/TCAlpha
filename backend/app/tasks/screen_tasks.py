@@ -187,6 +187,16 @@ def snapshot_market_sentiment(self, force: bool = False) -> dict:
     return {"status": "ok", **res}
 
 
+@celery_app.task(name="app.tasks.screen_tasks.refresh_north_flow", bind=True, time_limit=120)
+def refresh_north_flow(self) -> dict:
+    """盘中刷新北向资金净流入（接口不可用时优雅降级）。"""
+    from app.services.market_sentiment import fetch_north_flow_sync
+
+    res = fetch_north_flow_sync()
+    logger.info("refresh_north_flow: {}", res)
+    return {"status": "ok", **res}
+
+
 def _factor_summary(candidates: list[dict]) -> dict:
     """多因子选股汇总 payload：命中数 + TOP3（代码名 + 综合分）；前 6 字段平铺飞书卡片。"""
     payload: dict = {"策略": "多因子综合", "命中": f"{len(candidates)} 只"}

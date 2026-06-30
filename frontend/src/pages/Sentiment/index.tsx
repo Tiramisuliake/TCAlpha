@@ -1,7 +1,20 @@
-import { Alert, Card, Empty, Statistic, Tag } from "antd";
+import { Alert, Card, Empty, Statistic, Table, Tag } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { getSentiment, getSentimentHistory } from "@/api/market";
+import { getLimitUpLadder, getSentiment, getSentimentHistory } from "@/api/market";
+import type { LimitUpLeader } from "@/types";
+
+const LEADER_COLS: ColumnsType<LimitUpLeader> = [
+  { title: "代码", dataIndex: "code", width: 78, render: (v) => <span className="num">{v}</span> },
+  { title: "名称", dataIndex: "name" },
+  {
+    title: "连板",
+    dataIndex: "boards",
+    align: "right",
+    render: (v: number) => <Tag color="red" className="!m-0">{v} 板</Tag>,
+  },
+];
 
 const UP = "#ef4444";
 const DOWN = "#10b981";
@@ -30,6 +43,30 @@ export default function Sentiment() {
     queryFn: () => getSentimentHistory(120),
     staleTime: 5 * 60_000,
   });
+  const { data: ladder } = useQuery({
+    queryKey: ["limit-up-ladder"],
+    queryFn: getLimitUpLadder,
+    staleTime: 5 * 60_000,
+  });
+
+  const ladderOption =
+    ladder?.ready && ladder.ladder.length > 0
+      ? {
+          tooltip: { trigger: "axis" },
+          grid: { left: 34, right: 12, top: 16, bottom: 26 },
+          xAxis: { type: "category", data: ladder.ladder.map((b) => b.label) },
+          yAxis: { type: "value" },
+          series: [
+            {
+              type: "bar",
+              data: ladder.ladder.map((b) => b.count),
+              barWidth: "52%",
+              itemStyle: { color: "#ef4444" },
+              label: { show: true, position: "top", fontSize: 11 },
+            },
+          ],
+        }
+      : null;
 
   const ready = !!s?.ready;
   const temp = s?.temperature ?? 50;
@@ -155,6 +192,29 @@ export default function Sentiment() {
           </div>
         </Card>
       </div>
+
+      {ladder?.ready && ladder.total > 0 && (
+        <Card
+          size="small"
+          title="连板梯队（打板情绪高度）"
+          extra={<Tag color="red">最高 {ladder.max_board} 板</Tag>}
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div>
+              {ladderOption && <ReactECharts option={ladderOption} style={{ height: 220 }} notMerge />}
+            </div>
+            <Table<LimitUpLeader>
+              size="small"
+              rowKey="symbol"
+              columns={LEADER_COLS}
+              dataSource={ladder.leaders}
+              pagination={false}
+              scroll={{ y: 200 }}
+              locale={{ emptyText: "暂无 2 板以上龙头" }}
+            />
+          </div>
+        </Card>
+      )}
 
       <Card
         size="small"

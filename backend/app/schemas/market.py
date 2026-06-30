@@ -77,3 +77,25 @@ class SentimentPoint(BaseModel):
     down: int = 0
     limit_up: int = 0
     limit_down: int = 0
+
+
+class LadderBucket(BaseModel):
+    label: str   # 1板 / 2板 / 3板 / 4板+
+    count: int
+
+
+class LimitUpLeader(BaseModel):
+    symbol: str
+    code: str
+    name: str
+    boards: int
+
+
+class LimitUpLadder(BaseModel):
+    """连板梯队（全市场打板情绪高度）。"""
+
+    ready: bool
+    total: int = 0        # 涨停（含连板）家数
+    max_board: int = 0    # 最高连板高度
+    ladder: list[LadderBucket] = []
+    leaders: list[LimitUpLeader] = []

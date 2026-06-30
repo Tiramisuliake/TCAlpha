@@ -9,6 +9,7 @@ from app.deps import DB
 from app.schemas.market import (
     DownloadTriggerResponse,
     KlineResponse,
+    LimitUpLadder,
     RefreshTriggerResponse,
     SentimentOut,
     SentimentPoint,
@@ -115,3 +116,15 @@ async def market_sentiment_history(
 ):
     """市场情绪历史曲线（每日收盘 beat 存档）。"""
     return await sentiment_svc.get_sentiment_history(days)
+
+
+@router.get(
+    "/limit-up-ladder",
+    response_model=LimitUpLadder,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def limit_up_ladder():
+    """连板梯队：全市场各连板档家数 + 最高板 + 高板龙头（打板情绪高度）。"""
+    import asyncio
+
+    return await asyncio.to_thread(sentiment_svc.compute_limit_up_ladder)

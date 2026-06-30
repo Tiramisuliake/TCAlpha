@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.37] — 2026-07-01
+
+> 连板梯队：市场情绪页加连板梯队卡——全市场各连板档家数 + 最高板 + 高板龙头，刻画打板资金活跃度与情绪高度。择时深化三件套之一（北向资金、情绪择时回测随后）。
+
+### Added — 连板梯队
+- 后端 `services/market_sentiment.py`：`compute_limit_up_ladder(max_scan)` 全市场扫 `bar_1d` 复用 short_term 连板判定（按板块涨停价），算各档（1/2/3/4+ 板）家数 + 最高板 + 高板龙头（≥2 板，按板数降序 top20）
+- 后端 `schemas/market.py` `LimitUpLadder` / `LadderBucket` / `LimitUpLeader` + `api/market.py` `GET /market/limit-up-ladder`（`to_thread` + `data.read`）
+- 前端 `pages/Sentiment`：连板梯队卡——各档家数柱状图（最高板标记）+ 高板龙头表（代码 / 名称 / 连板数）
+- 测试：连板分档计数 + 最高板 + 龙头 ≥2 板 + 空库 ready False（+2 用例，共 255 passed）
+
 ## [0.8.36] — 2026-06-29
 
 > 市场情绪温度计：平台第一个**择时**维度（区别于此前全是选股）。全市场涨跌停家数 / 涨跌比 / 赚钱效应聚合成大盘冷热温度计（0-100）+ 历史情绪曲线，回答「现在该重仓还是空仓」。复用现有 spot 快照，零新数据源。

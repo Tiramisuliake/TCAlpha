@@ -112,3 +112,59 @@ async def get_sentiment_history(days: int = 120) -> list[dict]:
     points = [json.loads(v) for v in raw.values()]
     points.sort(key=lambda p: p.get("date", ""))
     return points[-days:]
+
+
+def compute_limit_up_ladder(max_scan: int = 800) -> dict:
+    """全市场连板梯队：扫历史日 K 算每票当前连板数，分档统计 + 最高板 + 高板龙头。
+
+    复用 short_term 的连板判定（按板块涨停价）。连板情绪是打板资金活跃度的核心刻度——
+    最高板代表市场情绪高度，连板家数代表参与广度。读 ArcticDB（同步 IO），路由层 to_thread。
+    """
+    from app.db.arctic import get_library
+    from app.services.short_term import _board_limit_pct, _count_boards, _name_map
+
+    empty = {"ready": False, "total": 0, "max_board": 0, "ladder": [], "leaders": []}
+    lib = get_library("bar_1d")
+    symbols = lib.list_symbols()
+    if not symbols:
+        return empty
+    symbols = symbols[:max_scan]
+    names = _name_map(symbols)
+
+    counts: dict[int, int] = {}
+    leaders: list[dict] = []
+    for sym in symbols:
+        try:
+            df = lib.read(sym).data
+        except Exception:
+            continue
+        if df is None or "close" not in df.columns or len(df) < 2:
+            continue
+        close = pd.to_numeric(df["close"], errors="coerce").dropna()
+        if len(close) < 2:
+            continue
+        boards = _count_boards(close, _board_limit_pct(sym))
+        if boards < 1:
+            continue
+        counts[boards] = counts.get(boards, 0) + 1
+        if boards >= 2:  # 2 板及以上为高板龙头
+            code = sym[2:] if sym[:2] in ("sh", "sz", "bj") else sym
+            leaders.append({"symbol": sym, "code": code, "name": names.get(sym, ""), "boards": boards})
+
+    if not counts:
+        return {**empty, "ready": True}
+
+    buckets = {"1板": 0, "2板": 0, "3板": 0, "4板+": 0}
+    for b, c in counts.items():
+        key = f"{b}板" if b < 4 else "4板+"
+        buckets[key] += c
+    ladder = [{"label": k, "count": v} for k, v in buckets.items()]
+    leaders.sort(key=lambda x: x["boards"], reverse=True)
+
+    return {
+        "ready": True,
+        "total": sum(counts.values()),
+        "max_board": max(counts),
+        "ladder": ladder,
+        "leaders": leaders[:20],
+    }

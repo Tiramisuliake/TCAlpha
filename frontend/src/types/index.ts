@@ -474,6 +474,25 @@ export interface SentimentPoint {
   limit_down: number;
 }
 
+/** 连板梯队（打板情绪高度）。 */
+export interface LadderBucket {
+  label: string;
+  count: number;
+}
+export interface LimitUpLeader {
+  symbol: string;
+  code: string;
+  name: string;
+  boards: number;
+}
+export interface LimitUpLadder {
+  ready: boolean;
+  total: number;
+  max_board: number;
+  ladder: LadderBucket[];
+  leaders: LimitUpLeader[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

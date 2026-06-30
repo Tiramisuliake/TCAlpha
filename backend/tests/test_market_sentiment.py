@@ -98,3 +98,48 @@ def test_snapshot_sentiment_sync_no_snapshot(monkeypatch):
 
     monkeypatch.setattr(sync_redis, "from_url", lambda *a, **k: _FakeR())
     assert market_sentiment.snapshot_sentiment_sync()["ok"] is False
+
+
+# ── 连板梯队（v0.8.37）───────────────────────────────────────────────────
+
+
+def _limit_kline(boards: int, base: float = 10.0) -> pd.DataFrame:
+    """主板 N 连板日 K：前 40 横盘，末 N 根精确涨停（×1.1）。"""
+    closes = [base] * 40
+    last = base
+    for _ in range(boards):
+        last = round(last * 1.1, 2)
+        closes.append(last)
+    idx = pd.date_range("2024-01-01", periods=len(closes), freq="B")
+    return pd.DataFrame(
+        {"close": closes, "high": closes, "low": [c * 0.97 for c in closes]}, index=idx
+    )
+
+
+def test_limit_up_ladder_buckets_and_leaders(fake_arctic, monkeypatch):
+    """3 连板 + 1 板 + 普通票：分档计数 + 最高板 3 + 高板龙头含 3 板。"""
+    from app.db.arctic import get_library
+    from app.services import market_sentiment, short_term
+
+    monkeypatch.setattr(short_term, "_name_map", lambda syms: {})
+    lib = get_library("bar_1d")
+    lib.write("sh600001", _limit_kline(3))
+    lib.write("sh600002", _limit_kline(1))
+    lib.write("sz000099", _limit_kline(0))  # 纯横盘，无涨停
+
+    res = market_sentiment.compute_limit_up_ladder()
+    assert res["ready"] is True
+    assert res["max_board"] == 3
+    assert res["total"] == 2  # 600001 + 600002
+    buckets = {b["label"]: b["count"] for b in res["ladder"]}
+    assert buckets["3板"] == 1 and buckets["1板"] == 1
+    assert any(lead["boards"] == 3 for lead in res["leaders"])
+    # 1 板不入龙头（仅 ≥2 板）
+    assert all(lead["boards"] >= 2 for lead in res["leaders"])
+
+
+def test_limit_up_ladder_empty_lib(fake_arctic):
+    """空库 → ready False。"""
+    from app.services.market_sentiment import compute_limit_up_ladder
+
+    assert compute_limit_up_ladder()["ready"] is False

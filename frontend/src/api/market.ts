@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   DataHealth,
   KlineResponse,
+  LimitUpLadder,
   MarketSentiment,
   PatternMarker,
   SentimentPoint,
@@ -40,3 +41,6 @@ export const getSentimentHistory = (days = 120) =>
   api
     .get<SentimentPoint[]>("/market/sentiment/history", { params: { days } })
     .then((r) => r.data);
+
+export const getLimitUpLadder = () =>
+  api.get<LimitUpLadder>("/market/limit-up-ladder").then((r) => r.data);

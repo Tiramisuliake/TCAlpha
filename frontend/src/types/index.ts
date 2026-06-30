@@ -449,6 +449,31 @@ export interface FactorWalkforwardResult {
   out_curve: PortfolioPoint[];
 }
 
+/** 市场情绪温度计（择时维度）。 */
+export interface MarketSentiment {
+  ready: boolean;
+  total: number;
+  up: number;
+  down: number;
+  flat: number;
+  limit_up: number;
+  limit_down: number;
+  adv_decline_ratio: number;
+  profit_effect: number;
+  avg_pct_chg: number;
+  temperature: number;
+}
+
+/** 情绪历史曲线点（每日一条）。 */
+export interface SentimentPoint {
+  date: string;
+  temperature: number;
+  up: number;
+  down: number;
+  limit_up: number;
+  limit_down: number;
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

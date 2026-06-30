@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.36] — 2026-06-29
+
+> 市场情绪温度计：平台第一个**择时**维度（区别于此前全是选股）。全市场涨跌停家数 / 涨跌比 / 赚钱效应聚合成大盘冷热温度计（0-100）+ 历史情绪曲线，回答「现在该重仓还是空仓」。复用现有 spot 快照，零新数据源。
+
+### Added — 市场情绪温度计（择时维度）
+- 后端 `services/market_sentiment.py`（新）：`compute_sentiment` 从全市场 spot 快照向量化算 上涨/下跌/涨停/跌停（按板块涨停线 10/20/30%）/涨跌比/赚钱效应/温度（上涨÷活跃×100）；`get_current_sentiment`（实时读 screener 快照）+ `snapshot_sentiment_sync`/`get_sentiment_history`（Redis hash 按日存档）
+- 后端 `schemas/market.py` `SentimentOut` / `SentimentPoint` + `api/market.py` `GET /market/sentiment` + `/sentiment/history`
+- 后端 `tasks/screen_tasks.py` `snapshot_market_sentiment` task（先刷新 spot 快照再存当日情绪）+ `celery_app` beat 交易日收盘后 15:01
+- 前端 `pages/Sentiment`（新）：ECharts 温度计仪表盘（冷热色阶 + 过热/中性/冰点档位文案）+ 涨跌分布 Statistic + 情绪历史曲线（50 多空分界）；App 侧栏「市场情绪」菜单 + 路由 + WorkspaceTabs 图标（`data.read`）
+- 测试：涨跌停按板块线判定 + 温度映射 + 空快照中性 + 全涨 100 + snapshot 写 Redis（+5 用例，共 253 passed）
+
 ## [0.8.35] — 2026-06-29
 
 > 多因子选股每日自动推送：交易日收盘后用系统默认权重综合打分，top 10 经 `screen.factor` 事件推飞书——与短线选股推送对称，把多因子选股自动化。复用 screen_tasks beat + 因子快照缓存（秒级）+ 通知中心。

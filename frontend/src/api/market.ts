@@ -1,5 +1,12 @@
 import { api } from "./client";
-import type { DataHealth, KlineResponse, PatternMarker, SymbolListResponse } from "@/types";
+import type {
+  DataHealth,
+  KlineResponse,
+  MarketSentiment,
+  PatternMarker,
+  SentimentPoint,
+  SymbolListResponse,
+} from "@/types";
 
 export interface SymbolsParams {
   search?: string;
@@ -25,3 +32,11 @@ export const refreshSymbols = () =>
 
 export const getDataHealth = () =>
   api.get<DataHealth>("/data/health").then((r) => r.data);
+
+export const getSentiment = () =>
+  api.get<MarketSentiment>("/market/sentiment").then((r) => r.data);
+
+export const getSentimentHistory = (days = 120) =>
+  api
+    .get<SentimentPoint[]>("/market/sentiment/history", { params: { days } })
+    .then((r) => r.data);

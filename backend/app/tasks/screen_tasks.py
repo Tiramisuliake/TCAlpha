@@ -166,6 +166,27 @@ def refresh_factor_cache(self, max_scan: int = 800) -> dict:
     return {"status": "ok", "cached": n}
 
 
+@celery_app.task(
+    name="app.tasks.screen_tasks.snapshot_market_sentiment",
+    bind=True,
+    time_limit=300,
+    soft_time_limit=270,
+)
+def snapshot_market_sentiment(self, force: bool = False) -> dict:
+    """每日收盘刷新全市场快照 + 存当日市场情绪温度（择时曲线）。"""
+    if not force and now_cn().weekday() >= 5:
+        logger.info("snapshot_market_sentiment: weekend, skip")
+        return {"status": "skipped", "reason": "weekend"}
+
+    from app.services.market_sentiment import snapshot_sentiment_sync
+    from app.services.screener import refresh_snapshot_cache_sync
+
+    refresh_snapshot_cache_sync()  # 先刷新 spot 快照，确保用收盘数据
+    res = snapshot_sentiment_sync()
+    logger.info("snapshot_market_sentiment: {}", res)
+    return {"status": "ok", **res}
+
+
 def _factor_summary(candidates: list[dict]) -> dict:
     """多因子选股汇总 payload：命中数 + TOP3（代码名 + 综合分）；前 6 字段平铺飞书卡片。"""
     payload: dict = {"策略": "多因子综合", "命中": f"{len(candidates)} 只"}

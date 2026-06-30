@@ -10,10 +10,13 @@ from app.schemas.market import (
     DownloadTriggerResponse,
     KlineResponse,
     RefreshTriggerResponse,
+    SentimentOut,
+    SentimentPoint,
     SymbolListResponse,
 )
 from app.schemas.screener import PatternMarker
 from app.services import market as market_svc
+from app.services import market_sentiment as sentiment_svc
 
 router = APIRouter()
 
@@ -90,3 +93,25 @@ async def kline_patterns(
     from app.services import short_term as short_term_svc
 
     return await asyncio.to_thread(short_term_svc.pattern_markers, symbol, lookback)
+
+
+@router.get(
+    "/sentiment",
+    response_model=SentimentOut,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def market_sentiment():
+    """市场情绪温度计：实时聚合全市场 spot 快照的涨跌停 / 涨跌比 / 赚钱效应 / 温度。"""
+    return await sentiment_svc.get_current_sentiment()
+
+
+@router.get(
+    "/sentiment/history",
+    response_model=list[SentimentPoint],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def market_sentiment_history(
+    days: int = Query(default=120, ge=5, le=500),
+):
+    """市场情绪历史曲线（每日收盘 beat 存档）。"""
+    return await sentiment_svc.get_sentiment_history(days)

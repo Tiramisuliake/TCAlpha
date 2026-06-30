@@ -9,6 +9,7 @@ export type WorkspaceRouteKey =
   | "trade"
   | "data"
   | "screener"
+  | "sentiment"
   | "monitor"
   | "ai"
   | "notify"
@@ -33,6 +34,7 @@ export const WORKSPACE_ROUTES: Record<WorkspaceRouteKey, WorkspaceRouteMeta> = {
   trade: { path: "/trade", title: "模拟交易", closable: true },
   data: { path: "/data", title: "数据管理", closable: true },
   screener: { path: "/screener", title: "选股器", closable: true },
+  sentiment: { path: "/sentiment", title: "市场情绪", closable: true },
   monitor: { path: "/monitor", title: "盯盘", closable: true },
   ai: { path: "/ai", title: "AI 助手", closable: true },
   notify: { path: "/notify", title: "通知中心", closable: true },

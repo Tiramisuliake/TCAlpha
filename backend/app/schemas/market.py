@@ -50,3 +50,30 @@ class DownloadTriggerResponse(BaseModel):
 class RefreshTriggerResponse(BaseModel):
     task_id: str
     message: str = Field(default="refresh task submitted")
+
+
+class SentimentOut(BaseModel):
+    """市场情绪温度计（实时聚合自全市场 spot 快照）。"""
+
+    ready: bool
+    total: int = 0
+    up: int = 0
+    down: int = 0
+    flat: int = 0
+    limit_up: int = 0
+    limit_down: int = 0
+    adv_decline_ratio: float = 0.0  # 涨跌比 = 上涨/下跌
+    profit_effect: float = 0.0      # 赚钱效应 = 上涨/总数
+    avg_pct_chg: float = 0.0        # 全市场平均涨跌幅
+    temperature: int = 50           # 情绪温度 0-100（上涨/活跃 ×100）
+
+
+class SentimentPoint(BaseModel):
+    """情绪历史曲线点（每日一条）。"""
+
+    date: str
+    temperature: int
+    up: int = 0
+    down: int = 0
+    limit_up: int = 0
+    limit_down: int = 0

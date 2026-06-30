@@ -66,6 +66,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.data_tasks.push_quote_snapshot",
         "schedule": crontab(minute="*", hour="9-11,13-14"),
     },
+    # 市场情绪：交易日收盘后（15:01）刷新全市场快照 + 存当日情绪温度（择时曲线）
+    "market-sentiment-snapshot-close": {
+        "task": "app.tasks.screen_tasks.snapshot_market_sentiment",
+        "schedule": crontab(hour=15, minute=1, day_of_week="1-5"),
+    },
     # 短线选股：交易日收盘后（15:05）扫描全部 4 形态，汇总一条推送
     "short-term-scan-close": {
         "task": "app.tasks.screen_tasks.scan_multi_pattern_daily",

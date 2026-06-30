@@ -12,6 +12,7 @@ import {
   DatabaseOutlined,
   ExperimentOutlined,
   FilterOutlined,
+  FireOutlined,
   FundOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
@@ -25,6 +26,7 @@ import Backtest from "./pages/Backtest";
 import Trade from "./pages/Trade";
 import DataMgr from "./pages/Data";
 import Screener from "./pages/Screener";
+import Sentiment from "./pages/Sentiment";
 import Monitor from "./pages/Monitor";
 import AI from "./pages/AI";
 import Notify from "./pages/Notify";
@@ -58,6 +60,7 @@ const MENU_ITEMS: MenuItem[] = [
   { key: "trade", icon: <DollarOutlined />, label: "模拟交易", perm: "sim.order.read" },
   { key: "data", icon: <DatabaseOutlined />, label: "数据管理", perm: "data.read" },
   { key: "screener", icon: <FilterOutlined />, label: "选股器", perm: "data.read" },
+  { key: "sentiment", icon: <FireOutlined />, label: "市场情绪", perm: "data.read" },
   { key: "monitor", icon: <FundOutlined />, label: "盯盘", perm: "ai.watch" },
   { key: "ai", icon: <RobotOutlined />, label: "AI 助手", perm: "ai.chat" },
   { key: "notify", icon: <BellOutlined />, label: "通知中心", perm: "notify.rule.read" },
@@ -201,6 +204,7 @@ export default function App() {
         <Route path="/trade" element={<RequirePerm perm="sim.order.read"><Trade /></RequirePerm>} />
         <Route path="/data" element={<RequirePerm perm="data.read"><DataMgr /></RequirePerm>} />
         <Route path="/screener" element={<RequirePerm perm="data.read"><Screener /></RequirePerm>} />
+        <Route path="/sentiment" element={<RequirePerm perm="data.read"><Sentiment /></RequirePerm>} />
         <Route path="/monitor" element={<RequirePerm perm="ai.watch"><Monitor /></RequirePerm>} />
         <Route path="/ai" element={<RequirePerm perm="ai.chat"><AI /></RequirePerm>} />
         <Route path="/notify" element={<RequirePerm perm="notify.rule.read"><Notify /></RequirePerm>} />

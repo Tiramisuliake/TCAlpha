@@ -29,6 +29,7 @@ import {
   resetAccount,
 } from "@/api/sim";
 import { getSymbols } from "@/api/market";
+import { downloadWeeklyReport } from "@/api/report";
 import type {
   EquityCurveOut,
   PlaceOrderRequest,
@@ -279,6 +280,11 @@ export default function TradePage() {
     },
   });
 
+  const weeklyMut = useMutation({
+    mutationFn: () => downloadWeeklyReport(true),
+    onError: () => message.error("周报生成失败，请重试"),
+  });
+
   // 实时刷新：监听 /ws/orders（多 worker 通过 Redis 广播；按当前用户订阅）
   const wsUrl = useMemo(() => {
     if (!userId) return "";
@@ -509,6 +515,15 @@ export default function TradePage() {
             }
             size="small"
             className="mb-3"
+            extra={
+              <Button
+                size="small"
+                loading={weeklyMut.isPending}
+                onClick={() => weeklyMut.mutate()}
+              >
+                AI 周报
+              </Button>
+            }
           >
             {equityQuery.data && equityQuery.data.points.length > 0 ? (
               <ReactECharts option={equityChartOption(equityQuery.data)} style={{ height: 220 }} notMerge />

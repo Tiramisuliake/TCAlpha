@@ -10,6 +10,13 @@
 - 前端 `pages/Sentiment` 顶部仓位建议卡：评分 + 档位 Tag + 解读 + 三维构成明细
 - 测试：热市高分重仓 / 冷市低分空仓 / 北向缺失重分配权重（+3 用例）
 
+### Added — AI 投研周报
+- 后端 `services/weekly_report.py`（新）：`collect_weekly_sync`（SyncSessionLocal 查本周净值快照 + sync redis 情绪历史，均容错降级）+ `ai_weekly_summary`（AI 综述段落，失败/无 key 降级为空）+ `build_weekly_html`（自包含 HTML：净值周涨跌 + 情绪温度表 + AI 综述 + 免责声明）
+- 后端 `api/report.py`（新）`GET /api/report/weekly?ai=`（`data.read` + 按登录用户聚合）+ main 挂载 `/api/report`
+- 前端 `api/report.ts` `downloadWeeklyReport`（blob 下载）；Trade 页净值曲线卡加「AI 周报」按钮
+- 周报按用户聚合（净值 per-user），不走全局事件广播——beat 自动推送暂不做，手动下载闭环
+- 测试：本周净值/情绪聚合（他人不计 + 上月不入）/ HTML 分区完整 / 无 AI 降级提示 / AI 抛错降级空串（+4 用例）
+
 ## [0.8.37] — 2026-07-01
 
 > 市场情绪深化：**连板梯队**（打板情绪高度）+ **北向资金流向**（沪深股通净流入）两件，在温度计基础上把择时维度做厚。（三件套第三件「情绪择时回测」待温度历史积累够后补，见 v0.8.36 起每日存档）

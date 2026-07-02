@@ -18,6 +18,7 @@ from app.services.short_term import _board_limit_pct
 _SENTIMENT_HIST_KEY = "market:sentiment:history"
 _NORTH_TODAY_KEY = "market:north:today"
 _NORTH_HIST_KEY = "market:north:history"
+_INDUSTRY_KEY = "market:industry:today"
 
 
 def compute_sentiment(df: pd.DataFrame) -> dict:
@@ -245,6 +246,79 @@ async def get_north_flow(days: int = 60) -> dict:
         return {"ready": False, "date": "", "net": 0.0, "history": history}
     today = json.loads(today_raw)
     return {"ready": True, "date": today["date"], "net": today["net"], "history": history}
+
+
+# ── 行业热度（板块涨跌排行）─────────────────────────────────────────────
+# 依赖 AKShare stock_board_industry_name_em（东财行业板块）；同北向做列名容错 +
+# 整体降级——接口 / 字段变更时 ready=False，不影响其它功能。
+
+def _parse_industry_boards(df: pd.DataFrame | None) -> list[dict] | None:
+    """解析行业板块行情：[{name, pct_chg, leader}]；结构不符返回 None。"""
+    if df is None or getattr(df, "empty", True):
+        return None
+    cols = set(df.columns)
+    name_col = next((c for c in ("板块名称", "名称", "name") if c in cols), None)
+    pct_col = next((c for c in ("涨跌幅", "涨跌幅(%)", "pct_chg") if c in cols), None)
+    if not name_col or not pct_col:
+        return None
+    leader_col = next((c for c in ("领涨股票", "领涨股", "leader") if c in cols), None)
+    out: list[dict] = []
+    for _, row in df.iterrows():
+        pct = pd.to_numeric(pd.Series([row[pct_col]]), errors="coerce").iloc[0]
+        if pd.isna(pct):
+            continue
+        out.append({
+            "name": str(row[name_col]),
+            "pct_chg": round(float(pct), 2),
+            "leader": str(row[leader_col]) if leader_col and pd.notna(row.get(leader_col)) else "",
+        })
+    return out or None
+
+
+def fetch_industry_boards_sync() -> dict:
+    """拉行业板块涨跌排行写 Redis（beat 调用）；接口 / 解析失败优雅降级。"""
+    import redis as sync_redis
+
+    from app.config import settings
+    from app.utils.trading_period import now_cn
+
+    try:
+        import akshare as ak
+
+        boards = _parse_industry_boards(ak.stock_board_industry_name_em())
+    except Exception as exc:
+        logger.warning("fetch_industry_boards: akshare unavailable: {}", exc)
+        return {"ok": False, "reason": "akshare_unavailable"}
+    if boards is None:
+        logger.warning("fetch_industry_boards: parse failed (接口字段可能已变更)")
+        return {"ok": False, "reason": "parse_failed"}
+
+    boards.sort(key=lambda b: b["pct_chg"], reverse=True)
+    payload = json.dumps(
+        {"updated_at": now_cn().strftime("%Y-%m-%d %H:%M"), "boards": boards},
+        ensure_ascii=False,
+    )
+    r = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        r.set(_INDUSTRY_KEY, payload, ex=60 * 60 * 24)
+    finally:
+        r.close()
+    return {"ok": True, "count": len(boards)}
+
+
+async def get_industry_heat(top: int = 10) -> dict:
+    """行业热度：涨幅 top N + 跌幅 top N（读 Redis 缓存）。缓存缺失 ready=False。"""
+    raw = await get_redis().get(_INDUSTRY_KEY)
+    if not raw:
+        return {"ready": False, "updated_at": "", "gainers": [], "losers": []}
+    data = json.loads(raw)
+    boards = data.get("boards", [])
+    return {
+        "ready": True,
+        "updated_at": data.get("updated_at", ""),
+        "gainers": boards[:top],
+        "losers": boards[-top:][::-1],
+    }
 
 
 # ── 综合择时信号（仓位建议）─────────────────────────────────────────────

@@ -17,6 +17,12 @@
 - 周报按用户聚合（净值 per-user），不走全局事件广播——beat 自动推送暂不做，手动下载闭环
 - 测试：本周净值/情绪聚合（他人不计 + 上月不入）/ HTML 分区完整 / 无 AI 降级提示 / AI 抛错降级空串（+4 用例）
 
+### Added — 行业热度
+- 后端 `services/market_sentiment.py`：`fetch_industry_boards_sync`（AKShare `stock_board_industry_name_em` 东财行业板块，列名容错 + 整体降级同北向框架）按涨跌幅降序写 Redis + `get_industry_heat`（涨幅/跌幅 top N）
+- 后端 `schemas/market.py` `IndustryHeatOut` / `IndustryBoard` + `api/market.py` `GET /market/industry-heat` + beat 交易时段每 30min 刷新
+- 前端 `pages/Sentiment` 行业热度卡：领涨板块（含领涨股）/ 领跌板块两列排行
+- 测试：东财列名解析 + 字段不符降级 + 降序写缓存 + 接口抛错降级（+4 用例）
+
 ## [0.8.37] — 2026-07-01
 
 > 市场情绪深化：**连板梯队**（打板情绪高度）+ **北向资金流向**（沪深股通净流入）两件，在温度计基础上把择时维度做厚。（三件套第三件「情绪择时回测」待温度历史积累够后补，见 v0.8.36 起每日存档）

@@ -237,6 +237,16 @@ def refresh_north_flow(self) -> dict:
     return {"status": "ok", **res}
 
 
+@celery_app.task(name="app.tasks.screen_tasks.refresh_industry_boards", bind=True, time_limit=120)
+def refresh_industry_boards(self) -> dict:
+    """盘中刷新行业板块涨跌排行（接口不可用时优雅降级）。"""
+    from app.services.market_sentiment import fetch_industry_boards_sync
+
+    res = fetch_industry_boards_sync()
+    logger.info("refresh_industry_boards: {}", res)
+    return {"status": "ok", **res}
+
+
 def _factor_summary(candidates: list[dict]) -> dict:
     """多因子选股汇总 payload：命中数 + TOP3（代码名 + 综合分）；前 6 字段平铺飞书卡片。"""
     payload: dict = {"策略": "多因子综合", "命中": f"{len(candidates)} 只"}

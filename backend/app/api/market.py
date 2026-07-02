@@ -8,14 +8,15 @@ from app.core.auth_deps import require_permission
 from app.deps import DB
 from app.schemas.market import (
     DownloadTriggerResponse,
+    IndustryHeatOut,
     KlineResponse,
     LimitUpLadder,
     NorthFlowOut,
     RefreshTriggerResponse,
-    TimingSignalOut,
     SentimentOut,
     SentimentPoint,
     SymbolListResponse,
+    TimingSignalOut,
 )
 from app.schemas.screener import PatternMarker
 from app.services import market as market_svc
@@ -150,3 +151,13 @@ async def north_flow(days: int = Query(default=60, ge=5, le=250)):
 async def timing_signal():
     """综合择时信号：温度 + 涨跌停强度 + 北向资金合成仓位建议（全走缓存，毫秒级）。"""
     return await sentiment_svc.get_timing_signal()
+
+
+@router.get(
+    "/industry-heat",
+    response_model=IndustryHeatOut,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def industry_heat(top: int = Query(default=10, ge=3, le=30)):
+    """行业热度：板块涨幅/跌幅排行（盘中 beat 更新；接口不可用时 ready=False）。"""
+    return await sentiment_svc.get_industry_heat(top)

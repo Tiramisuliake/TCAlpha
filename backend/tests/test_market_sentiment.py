@@ -1,6 +1,8 @@
 """市场情绪温度计（services/market_sentiment.py）单元测试。"""
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 
@@ -246,6 +248,75 @@ def test_compose_timing_cold_market():
     )
     assert sig["score"] < 35
     assert sig["level"] == "空仓观望"
+
+
+def test_parse_industry_boards():
+    """东财列名解析：按涨跌幅可用、领涨股可选。"""
+    from app.services.market_sentiment import _parse_industry_boards
+
+    df = pd.DataFrame([
+        {"板块名称": "半导体", "涨跌幅": 3.21, "领涨股票": "中芯国际"},
+        {"板块名称": "银行", "涨跌幅": -0.55, "领涨股票": "工商银行"},
+    ])
+    boards = _parse_industry_boards(df)
+    assert boards is not None and len(boards) == 2
+    assert boards[0]["name"] == "半导体" and boards[0]["pct_chg"] == 3.21
+    assert boards[0]["leader"] == "中芯国际"
+
+
+def test_parse_industry_boards_bad_structure():
+    """字段不符 / 空 → None（触发降级）。"""
+    from app.services.market_sentiment import _parse_industry_boards
+
+    assert _parse_industry_boards(pd.DataFrame([{"foo": 1}])) is None
+    assert _parse_industry_boards(None) is None
+
+
+def test_fetch_industry_boards_sync_writes(monkeypatch):
+    """拉取成功 → 按涨跌幅降序写 Redis（mock akshare + redis）。"""
+    import akshare as ak
+    import redis as sync_redis
+
+    from app.services import market_sentiment
+
+    monkeypatch.setattr(
+        ak, "stock_board_industry_name_em",
+        lambda: pd.DataFrame([
+            {"板块名称": "银行", "涨跌幅": -0.5},
+            {"板块名称": "半导体", "涨跌幅": 3.2},
+        ]),
+    )
+    store: dict = {}
+
+    class _FakeR:
+        def set(self, k, v, ex=None):
+            store[k] = v
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sync_redis, "from_url", lambda *a, **k: _FakeR())
+
+    res = market_sentiment.fetch_industry_boards_sync()
+    assert res["ok"] is True and res["count"] == 2
+    saved = json.loads(store[market_sentiment._INDUSTRY_KEY])
+    assert saved["boards"][0]["name"] == "半导体"  # 降序第一
+
+
+def test_fetch_industry_boards_sync_degrades(monkeypatch):
+    """接口抛错 → ok False（降级）。"""
+    import akshare as ak
+
+    from app.services import market_sentiment
+
+    def _boom():
+        raise RuntimeError("board api removed")
+
+    monkeypatch.setattr(ak, "stock_board_industry_name_em", _boom)
+    assert market_sentiment.fetch_industry_boards_sync()["ok"] is False
+
+
+# ── 综合择时信号（继续）─────────────────────────────────────────────────
 
 
 def test_compose_timing_no_north_reweights():

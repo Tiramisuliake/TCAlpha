@@ -2,7 +2,7 @@ import { Alert, Card, Empty, Statistic, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { getLimitUpLadder, getNorthFlow, getSentiment, getSentimentHistory, getTimingSignal } from "@/api/market";
+import { getIndustryHeat, getLimitUpLadder, getNorthFlow, getSentiment, getSentimentHistory, getTimingSignal } from "@/api/market";
 import type { LimitUpLeader } from "@/types";
 
 const LEADER_COLS: ColumnsType<LimitUpLeader> = [
@@ -58,6 +58,11 @@ export default function Sentiment() {
     queryKey: ["timing-signal"],
     queryFn: getTimingSignal,
     refetchInterval: 60_000,
+  });
+  const { data: industry } = useQuery({
+    queryKey: ["industry-heat"],
+    queryFn: () => getIndustryHeat(10),
+    refetchInterval: 5 * 60_000,
   });
 
   const LEVEL_COLOR: Record<string, string> = {
@@ -283,6 +288,37 @@ export default function Sentiment() {
               scroll={{ y: 200 }}
               locale={{ emptyText: "暂无 2 板以上龙头" }}
             />
+          </div>
+        </Card>
+      )}
+
+      {industry?.ready && (
+        <Card size="small" title={`行业热度（${industry.updated_at} 更新）`}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-slate-400 mb-1">领涨板块</div>
+              {industry.gainers.map((b) => (
+                <div key={b.name} className="flex justify-between text-sm py-0.5">
+                  <span>
+                    {b.name}
+                    {b.leader && <span className="text-xs text-slate-400 ml-2">领涨 {b.leader}</span>}
+                  </span>
+                  <span className="num up">+{b.pct_chg.toFixed(2)}%</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="text-xs text-slate-400 mb-1">领跌板块</div>
+              {industry.losers.map((b) => (
+                <div key={b.name} className="flex justify-between text-sm py-0.5">
+                  <span>{b.name}</span>
+                  <span className={`num ${b.pct_chg >= 0 ? "up" : "down"}`}>
+                    {b.pct_chg >= 0 ? "+" : ""}
+                    {b.pct_chg.toFixed(2)}%
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </Card>
       )}

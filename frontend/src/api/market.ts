@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
   DataHealth,
+  IndustryHeat,
   KlineResponse,
   LimitUpLadder,
   MarketSentiment,
@@ -52,3 +53,6 @@ export const getNorthFlow = (days = 60) =>
 
 export const getTimingSignal = () =>
   api.get<TimingSignal>("/market/timing-signal").then((r) => r.data);
+
+export const getIndustryHeat = (top = 10) =>
+  api.get<IndustryHeat>("/market/industry-heat", { params: { top } }).then((r) => r.data);

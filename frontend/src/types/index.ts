@@ -505,6 +505,19 @@ export interface NorthFlow {
   history: NorthFlowPoint[];
 }
 
+/** 行业热度（板块涨跌排行）。 */
+export interface IndustryBoard {
+  name: string;
+  pct_chg: number;
+  leader: string;
+}
+export interface IndustryHeat {
+  ready: boolean;
+  updated_at: string;
+  gainers: IndustryBoard[];
+  losers: IndustryBoard[];
+}
+
 /** 综合择时信号（仓位建议）。 */
 export interface TimingPart {
   name: string;

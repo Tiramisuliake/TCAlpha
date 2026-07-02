@@ -115,6 +115,21 @@ class NorthFlowOut(BaseModel):
     history: list[NorthFlowPoint] = []
 
 
+class IndustryBoard(BaseModel):
+    name: str
+    pct_chg: float
+    leader: str = ""
+
+
+class IndustryHeatOut(BaseModel):
+    """行业热度（东财行业板块涨跌排行）。"""
+
+    ready: bool
+    updated_at: str = ""
+    gainers: list[IndustryBoard] = []
+    losers: list[IndustryBoard] = []
+
+
 class TimingPart(BaseModel):
     name: str
     score: int

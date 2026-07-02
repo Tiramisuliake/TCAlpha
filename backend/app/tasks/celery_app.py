@@ -76,6 +76,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.screen_tasks.refresh_north_flow",
         "schedule": crontab(minute="*/30", hour="9-11,13-15", day_of_week="1-5"),
     },
+    # 行业热度：交易时段每 30 分钟刷新板块涨跌排行（降级框架同北向）
+    "industry-boards-refresh": {
+        "task": "app.tasks.screen_tasks.refresh_industry_boards",
+        "schedule": crontab(minute="*/30", hour="9-11,13-15", day_of_week="1-5"),
+    },
     # 短线选股：交易日收盘后（15:05）扫描全部 4 形态，汇总一条推送
     "short-term-scan-close": {
         "task": "app.tasks.screen_tasks.scan_multi_pattern_daily",

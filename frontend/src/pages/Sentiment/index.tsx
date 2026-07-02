@@ -2,7 +2,7 @@ import { Alert, Card, Empty, Statistic, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useQuery } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
-import { getLimitUpLadder, getNorthFlow, getSentiment, getSentimentHistory } from "@/api/market";
+import { getLimitUpLadder, getNorthFlow, getSentiment, getSentimentHistory, getTimingSignal } from "@/api/market";
 import type { LimitUpLeader } from "@/types";
 
 const LEADER_COLS: ColumnsType<LimitUpLeader> = [
@@ -54,6 +54,18 @@ export default function Sentiment() {
     queryFn: () => getNorthFlow(60),
     refetchInterval: 5 * 60_000,
   });
+  const { data: timing } = useQuery({
+    queryKey: ["timing-signal"],
+    queryFn: getTimingSignal,
+    refetchInterval: 60_000,
+  });
+
+  const LEVEL_COLOR: Record<string, string> = {
+    重仓: "red",
+    半仓: "orange",
+    轻仓: "gold",
+    空仓观望: "green",
+  };
 
   const ladderOption =
     ladder?.ready && ladder.ladder.length > 0
@@ -185,6 +197,35 @@ export default function Sentiment() {
     <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-auto">
       {s && !ready && (
         <Alert type="info" showIcon message="全市场快照刷新中（需 Celery worker），请稍后；或交易时段数据更实时" />
+      )}
+
+      {timing?.ready && (
+        <Card size="small">
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+            <Statistic
+              title="综合择时评分"
+              value={timing.score}
+              suffix="/ 100"
+              valueStyle={{ fontSize: 22, fontWeight: 600 }}
+            />
+            <div className="flex flex-col gap-1">
+              <Tag color={LEVEL_COLOR[timing.level] ?? "default"} className="text-base !px-3 !py-0.5 self-start">
+                {timing.level}
+              </Tag>
+              <span className="text-xs text-slate-400">{timing.advice}</span>
+            </div>
+            <div className="flex gap-6">
+              {timing.parts.map((p) => (
+                <Statistic
+                  key={p.name}
+                  title={`${p.name}（×${p.weight}）`}
+                  value={p.score}
+                  valueStyle={{ fontSize: 16 }}
+                />
+              ))}
+            </div>
+          </div>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">

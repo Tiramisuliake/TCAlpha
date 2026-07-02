@@ -113,3 +113,19 @@ class NorthFlowOut(BaseModel):
     date: str = ""
     net: float = 0.0      # 当日北向净流入（亿元，正流入负流出）
     history: list[NorthFlowPoint] = []
+
+
+class TimingPart(BaseModel):
+    name: str
+    score: int
+    weight: float
+
+
+class TimingSignalOut(BaseModel):
+    """综合择时信号（温度 + 涨跌停强度 + 北向合成仓位建议）。"""
+
+    ready: bool
+    score: int = 50           # 0-100
+    level: str = ""           # 重仓 / 半仓 / 轻仓 / 空仓观望
+    advice: str = ""
+    parts: list[TimingPart] = []

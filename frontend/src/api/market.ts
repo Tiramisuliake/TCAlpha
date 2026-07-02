@@ -8,6 +8,7 @@ import type {
   PatternMarker,
   SentimentPoint,
   SymbolListResponse,
+  TimingSignal,
 } from "@/types";
 
 export interface SymbolsParams {
@@ -48,3 +49,6 @@ export const getLimitUpLadder = () =>
 
 export const getNorthFlow = (days = 60) =>
   api.get<NorthFlow>("/market/north-flow", { params: { days } }).then((r) => r.data);
+
+export const getTimingSignal = () =>
+  api.get<TimingSignal>("/market/timing-signal").then((r) => r.data);

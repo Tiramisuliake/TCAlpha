@@ -220,3 +220,40 @@ def test_fetch_north_flow_sync_degrades(monkeypatch):
 
     monkeypatch.setattr(ak, "stock_hsgt_fund_flow_summary_em", _boom)
     assert market_sentiment.fetch_north_flow_sync()["ok"] is False
+
+
+# ── 综合择时信号（v0.8.38）───────────────────────────────────────────────
+
+
+def test_compose_timing_hot_market():
+    """高温 + 涨停占优 + 北向大额流入 → 高分重仓。"""
+    from app.services.market_sentiment import _compose_timing
+
+    sig = _compose_timing(
+        {"temperature": 90, "limit_up": 80, "limit_down": 5}, north_net=80.0
+    )
+    assert sig["score"] >= 75
+    assert sig["level"] == "重仓"
+    assert len(sig["parts"]) == 3
+
+
+def test_compose_timing_cold_market():
+    """低温 + 跌停占优 + 北向流出 → 低分空仓观望。"""
+    from app.services.market_sentiment import _compose_timing
+
+    sig = _compose_timing(
+        {"temperature": 10, "limit_up": 2, "limit_down": 60}, north_net=-90.0
+    )
+    assert sig["score"] < 35
+    assert sig["level"] == "空仓观望"
+
+
+def test_compose_timing_no_north_reweights():
+    """北向缺失 → 仅 2 部分且权重 0.6/0.4。"""
+    from app.services.market_sentiment import _compose_timing
+
+    sig = _compose_timing({"temperature": 50, "limit_up": 0, "limit_down": 0}, north_net=None)
+    assert len(sig["parts"]) == 2
+    assert [p["weight"] for p in sig["parts"]] == [0.6, 0.4]
+    assert sig["score"] == 50  # 全中性
+    assert sig["level"] == "轻仓"  # 50 落在 [35,55) → 轻仓

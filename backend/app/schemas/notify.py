@@ -25,6 +25,7 @@ KNOWN_EVENT_TYPES: list[dict[str, str]] = [
     {"type": "quote.limit_up", "desc": "涨停（Step 2）"},
     {"type": "screen.short_term", "desc": "短线选股命中（每日收盘自动扫描）"},
     {"type": "screen.factor", "desc": "多因子选股 top（每日收盘综合打分）"},
+    {"type": "market.timing", "desc": "综合择时信号（每日收盘仓位建议）"},
 ]
 
 CHANNELS = ["feishu"]  # v0.5.1 only

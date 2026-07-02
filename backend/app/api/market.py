@@ -12,6 +12,7 @@ from app.schemas.market import (
     LimitUpLadder,
     NorthFlowOut,
     RefreshTriggerResponse,
+    TimingSignalOut,
     SentimentOut,
     SentimentPoint,
     SymbolListResponse,
@@ -139,3 +140,13 @@ async def limit_up_ladder():
 async def north_flow(days: int = Query(default=60, ge=5, le=250)):
     """北向资金当日净流入 + 历史曲线（盘中 beat 更新；接口不可用时 ready=False）。"""
     return await sentiment_svc.get_north_flow(days)
+
+
+@router.get(
+    "/timing-signal",
+    response_model=TimingSignalOut,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def timing_signal():
+    """综合择时信号：温度 + 涨跌停强度 + 北向资金合成仓位建议（全走缓存，毫秒级）。"""
+    return await sentiment_svc.get_timing_signal()

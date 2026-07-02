@@ -505,6 +505,20 @@ export interface NorthFlow {
   history: NorthFlowPoint[];
 }
 
+/** 综合择时信号（仓位建议）。 */
+export interface TimingPart {
+  name: string;
+  score: number;
+  weight: number;
+}
+export interface TimingSignal {
+  ready: boolean;
+  score: number;
+  level: string;
+  advice: string;
+  parts: TimingPart[];
+}
+
 export interface ScreenResult {
   ready: boolean;
   count: number;

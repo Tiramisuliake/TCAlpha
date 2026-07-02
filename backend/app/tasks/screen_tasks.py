@@ -184,7 +184,47 @@ def snapshot_market_sentiment(self, force: bool = False) -> dict:
     refresh_snapshot_cache_sync()  # 先刷新 spot 快照，确保用收盘数据
     res = snapshot_sentiment_sync()
     logger.info("snapshot_market_sentiment: {}", res)
+
+    # 顺带推送当日综合择时信号（仓位建议）
+    if res.get("ok"):
+        _push_timing_signal()
     return {"status": "ok", **res}
+
+
+def _push_timing_signal() -> None:
+    """收盘后合成并推送综合择时信号（北向缺失自动降级权重）。"""
+    import json as _json
+
+    import redis as sync_redis
+
+    from app.config import settings
+    from app.services.market_sentiment import (
+        _NORTH_TODAY_KEY,
+        _SENTIMENT_HIST_KEY,
+        _compose_timing,
+    )
+
+    r = sync_redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        today = now_cn().strftime("%Y-%m-%d")
+        senti_raw = r.hget(_SENTIMENT_HIST_KEY, today)
+        north_raw = r.get(_NORTH_TODAY_KEY)
+    finally:
+        r.close()
+    if not senti_raw:
+        return
+    north = _json.loads(north_raw) if north_raw else None
+    sig = _compose_timing(_json.loads(senti_raw), north["net"] if north else None)
+    publish_event(
+        "market.timing",
+        {
+            "仓位建议": f"{sig['level']}（{sig['score']} 分）",
+            "解读": sig["advice"],
+            **{p["name"]: f"{p['score']} 分" for p in sig["parts"]},
+            "日期": today,
+        },
+        level="info",
+    )
 
 
 @celery_app.task(name="app.tasks.screen_tasks.refresh_north_flow", bind=True, time_limit=120)

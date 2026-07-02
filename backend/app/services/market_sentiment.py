@@ -245,3 +245,51 @@ async def get_north_flow(days: int = 60) -> dict:
         return {"ready": False, "date": "", "net": 0.0, "history": history}
     today = json.loads(today_raw)
     return {"ready": True, "date": today["date"], "net": today["net"], "history": history}
+
+
+# ── 综合择时信号（仓位建议）─────────────────────────────────────────────
+
+_TIMING_LEVELS = [
+    (75, "重仓", "情绪火热，可积极参与，注意过热风险"),
+    (55, "半仓", "情绪偏暖，正常参与"),
+    (35, "轻仓", "情绪偏冷，控制仓位"),
+    (0, "空仓观望", "情绪冰冷，以防守为主"),
+]
+
+
+def _compose_timing(sentiment: dict, north_net: float | None) -> dict:
+    """温度 + 涨跌停强度 + 北向净流入 合成仓位建议评分（纯函数，api / beat 共用）。
+
+    权重：温度 0.5 / 涨跌停强度 0.3 / 北向 0.2；北向不可用时按 0.6/0.4 重分配。
+    涨跌停强度 = 涨停/(涨停+跌停)×100（无涨跌停给中性 50）；
+    北向分 = 50 + clip(净流入, ±100 亿)/2（+100 亿→100 分）。
+    """
+    temp = float(sentiment.get("temperature", 50))
+    lu, ld = int(sentiment.get("limit_up", 0)), int(sentiment.get("limit_down", 0))
+    limit_score = (lu / (lu + ld) * 100) if (lu + ld) > 0 else 50.0
+
+    parts = [
+        {"name": "情绪温度", "score": round(temp), "weight": 0.5},
+        {"name": "涨跌停强度", "score": round(limit_score), "weight": 0.3},
+    ]
+    if north_net is not None:
+        north_score = 50.0 + max(-100.0, min(100.0, north_net)) / 2
+        parts.append({"name": "北向资金", "score": round(north_score), "weight": 0.2})
+    else:
+        # 北向缺失：温度/涨跌停按 0.6/0.4 重分配
+        parts[0]["weight"], parts[1]["weight"] = 0.6, 0.4
+
+    score = round(sum(p["score"] * p["weight"] for p in parts))
+    score = max(0, min(100, score))
+    level, advice = next((lv, ad) for th, lv, ad in _TIMING_LEVELS if score >= th)
+    return {"score": score, "level": level, "advice": advice, "parts": parts}
+
+
+async def get_timing_signal() -> dict:
+    """实时综合择时信号：聚合当前情绪 + 北向（全走 Redis 缓存，毫秒级）。"""
+    sentiment = await get_current_sentiment()
+    if not sentiment.get("ready"):
+        return {"ready": False, "score": 50, "level": "", "advice": "", "parts": []}
+    north = await get_north_flow(days=1)
+    net = north["net"] if north.get("ready") else None
+    return {"ready": True, **_compose_timing(sentiment, net)}

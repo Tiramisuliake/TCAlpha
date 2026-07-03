@@ -1,7 +1,7 @@
 """组合回测结果存档 CRUD（按用户隔离）。"""
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.portfolio_record import PortfolioBacktestRecord
@@ -32,11 +32,13 @@ async def list_records(
 
 
 async def delete_record(db: AsyncSession, user_id: int, record_id: int) -> bool:
-    result = await db.execute(
-        delete(PortfolioBacktestRecord).where(
-            PortfolioBacktestRecord.id == record_id,
-            PortfolioBacktestRecord.user_id == user_id,
-        )
+    stmt = select(PortfolioBacktestRecord).where(
+        PortfolioBacktestRecord.id == record_id,
+        PortfolioBacktestRecord.user_id == user_id,
     )
+    obj = (await db.execute(stmt)).scalar_one_or_none()
+    if obj is None:
+        return False
+    await db.delete(obj)
     await db.commit()
-    return (result.rowcount or 0) > 0
+    return True

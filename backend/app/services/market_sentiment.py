@@ -342,18 +342,20 @@ def _compose_timing(sentiment: dict, north_net: float | None) -> dict:
     lu, ld = int(sentiment.get("limit_up", 0)), int(sentiment.get("limit_down", 0))
     limit_score = (lu / (lu + ld) * 100) if (lu + ld) > 0 else 50.0
 
-    parts = [
-        {"name": "情绪温度", "score": round(temp), "weight": 0.5},
-        {"name": "涨跌停强度", "score": round(limit_score), "weight": 0.3},
+    # (名称, 分数, 权重)——用元组累计保证类型明确，最后再转 dict 输出
+    comps: list[tuple[str, int, float]] = [
+        ("情绪温度", round(temp), 0.5),
+        ("涨跌停强度", round(limit_score), 0.3),
     ]
     if north_net is not None:
         north_score = 50.0 + max(-100.0, min(100.0, north_net)) / 2
-        parts.append({"name": "北向资金", "score": round(north_score), "weight": 0.2})
+        comps.append(("北向资金", round(north_score), 0.2))
     else:
         # 北向缺失：温度/涨跌停按 0.6/0.4 重分配
-        parts[0]["weight"], parts[1]["weight"] = 0.6, 0.4
+        comps = [(comps[0][0], comps[0][1], 0.6), (comps[1][0], comps[1][1], 0.4)]
 
-    score = round(sum(p["score"] * p["weight"] for p in parts))
+    parts = [{"name": n, "score": s, "weight": w} for n, s, w in comps]
+    score = round(sum(s * w for _, s, w in comps))
     score = max(0, min(100, score))
     level, advice = next((lv, ad) for th, lv, ad in _TIMING_LEVELS if score >= th)
     return {"score": score, "level": level, "advice": advice, "parts": parts}

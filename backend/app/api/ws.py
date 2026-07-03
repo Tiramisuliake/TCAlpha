@@ -103,7 +103,8 @@ async def _redis_to_ws(ws: WebSocket, channel: str) -> None:
         with suppress(Exception):
             await pubsub.unsubscribe(channel)
         with suppress(Exception):
-            await pubsub.aclose()
+            # redis-py 5.x 推荐 aclose()（close 已弃用）；types-redis stub 落后缺该方法
+            await pubsub.aclose()  # type: ignore[attr-defined]
         logger.info("ws closed channel={}", channel)
 
 

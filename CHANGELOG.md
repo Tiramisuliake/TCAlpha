@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.39] — 2026-07-03
+
+> 质量收口：v0.8.22→v0.8.38 连发 17 版后的全量类型检查与修复。mypy 新增代码全部清零（仅剩 backtest_engine 7 处历史豁免——annotated_types 协议类型限制，运行无误、可读性优先，维持上轮审查决定）；全量 273 passed / ruff / tsc / eslint 全绿。
+
+### Fixed — mypy 类型修复
+- `services/portfolio_records.py`：`delete_record` 由 `delete()` + `rowcount`（`Result` 类型不含该属性）改为「查再删」——对齐 watchlist 既有模式，类型干净且 404 语义更明确
+- `services/market_sentiment.py`：`_compose_timing` 构成项由 dict 混型累加改为 `(名称, 分数, 权重)` 元组列表计算、输出前再转 dict——消除 `object` 运算符错误，类型全程明确
+- `api/ws.py`：`pubsub.aclose()` 加 `type: ignore[attr-defined]` + 注释——redis-py 5.x 官方推荐方法（`close` 已弃用），`types-redis` stub 落后缺失
+
 ## [0.8.38] — 2026-07-02
 
 > 四方向合集：**综合择时信号**（仓位建议）+ **AI 投研周报** + **行业热度** + **回测持久化**。择时线收口出可操作结论，研究产出可存档可追溯。

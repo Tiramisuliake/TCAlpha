@@ -5,9 +5,10 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_deps import require_permission
-from app.deps import CurrentUserId
+from app.deps import DB, CurrentUserId
 from app.schemas.screener import (
     FactorICAllRequest,
     FactorICRequest,
@@ -25,6 +26,8 @@ from app.schemas.screener import (
     PatternStatsAllRequest,
     PatternStatsRequest,
     PatternStatsResult,
+    PortfolioRecordCreate,
+    PortfolioRecordOut,
     PortfolioSweepCell,
     ResonanceRequest,
     ScreenRequest,
@@ -32,6 +35,7 @@ from app.schemas.screener import (
     ShortTermRequest,
 )
 from app.services import factors as factors_svc
+from app.services import portfolio_records as records_svc
 from app.services import report as report_svc
 from app.services import screener as screener_svc
 from app.services import short_term as short_term_svc
@@ -279,3 +283,49 @@ async def run_factor_portfolio_walkforward(
         payload.weights.model_dump(), payload.top_n, payload.rebalance_days,
         payload.lookback, payload.oos_ratio, payload.max_scan,
     )
+
+
+@router.post(
+    "/factor-portfolio/records",
+    response_model=PortfolioRecordOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def save_portfolio_record(
+    payload: PortfolioRecordCreate,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """保存组合回测结果存档（配置 + 绩效快照，按用户隔离）。"""
+    return await records_svc.save_record(
+        db, user_id, payload.name, payload.kind, payload.config, payload.metrics
+    )
+
+
+@router.get(
+    "/factor-portfolio/records",
+    response_model=list[PortfolioRecordOut],
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def list_portfolio_records(
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """历史回测存档列表（按创建时间倒序，最多 50 条）。"""
+    return await records_svc.list_records(db, user_id)
+
+
+@router.delete(
+    "/factor-portfolio/records/{record_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("data.read"))],
+)
+async def delete_portfolio_record(
+    record_id: int,
+    user_id: int = CurrentUserId,
+    db: AsyncSession = DB,
+):
+    """删除自己的回测存档。"""
+    ok = await records_svc.delete_record(db, user_id, record_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "record not found")

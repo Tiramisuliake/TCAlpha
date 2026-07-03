@@ -23,6 +23,12 @@
 - 前端 `pages/Sentiment` 行业热度卡：领涨板块（含领涨股）/ 领跌板块两列排行
 - 测试：东财列名解析 + 字段不符降级 + 降序写缓存 + 接口抛错降级（+4 用例）
 
+### Added — 回测持久化（历史存档）
+- 后端 `db/models/portfolio_record.py`（新）`PortfolioBacktestRecord`（user_id / name / kind / config JSON / metrics JSON，不存净值曲线——配置在手随时重跑复现）+ 手写迁移 `c7e1a9d20b44`（已 upgrade head）
+- 后端 `services/portfolio_records.py` save / list / delete（按用户隔离）+ `api/screener.py` `/factor-portfolio/records` POST / GET / DELETE
+- 前端 `pages/Screener/FactorPortfolio`：净值卡加「存档」（自动命名 topN/调仓周期）+「历史」Drawer（名称 / 夏普 / 年化 / 超额 / 时间 + 删除，多次结果对比）
+- 测试：模型 JSON 字段往返 + 用户隔离（service 为 AsyncSession 薄样板，无 async sqlite fixture，以模型级测试覆盖）（+2 用例，共 273 passed）
+
 ## [0.8.37] — 2026-07-01
 
 > 市场情绪深化：**连板梯队**（打板情绪高度）+ **北向资金流向**（沪深股通净流入）两件，在温度计基础上把择时维度做厚。（三件套第三件「情绪择时回测」待温度历史积累够后补，见 v0.8.36 起每日存档）

@@ -436,6 +436,16 @@ export interface WalkforwardSegment {
   excess_return: number;
 }
 
+/** 组合回测结果存档。 */
+export interface PortfolioRecord {
+  id: number;
+  name: string;
+  kind: string;
+  config: Record<string, unknown>;
+  metrics: Record<string, number>;
+  created_at: string;
+}
+
 /** 组合回测 walk-forward 样本外验证结果。 */
 export interface FactorWalkforwardResult {
   ready: boolean;

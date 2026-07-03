@@ -1,12 +1,20 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Alert, Button, Card, Divider, Empty, InputNumber, Select, Statistic, Table, Tooltip, message } from "antd";
-import { DownloadOutlined, ExperimentOutlined, FundOutlined, RadarChartOutlined } from "@ant-design/icons";
-import { useMutation } from "@tanstack/react-query";
+import { Alert, Button, Card, Divider, Drawer, Empty, InputNumber, Popconfirm, Select, Statistic, Table, Tooltip, message } from "antd";
+import { DeleteOutlined, DownloadOutlined, ExperimentOutlined, FundOutlined, HistoryOutlined, RadarChartOutlined, SaveOutlined } from "@ant-design/icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnsType } from "antd/es/table";
 import ReactECharts from "echarts-for-react";
-import { downloadPortfolioReport, runFactorPortfolio, runFactorPortfolioSweep, runFactorWalkforward } from "@/api/screener";
-import type { FactorWeights } from "@/types";
+import {
+  deletePortfolioRecord,
+  downloadPortfolioReport,
+  listPortfolioRecords,
+  runFactorPortfolio,
+  runFactorPortfolioSweep,
+  runFactorWalkforward,
+  savePortfolioRecord,
+} from "@/api/screener";
+import type { FactorWeights, PortfolioRecord } from "@/types";
 import { DEFAULT_FACTOR_WEIGHTS, FACTORS } from "./factorMeta";
 
 function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
@@ -91,6 +99,65 @@ export default function FactorPortfolio() {
     mutationFn: downloadPortfolioReport,
     onError: () => message.error("导出失败，请重试"),
   });
+
+  // 历史存档
+  const qc = useQueryClient();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: records } = useQuery({
+    queryKey: ["portfolio-records"],
+    queryFn: listPortfolioRecords,
+    enabled: historyOpen,
+  });
+  const saveMut = useMutation({
+    mutationFn: savePortfolioRecord,
+    onSuccess: () => {
+      message.success("已存档");
+      qc.invalidateQueries({ queryKey: ["portfolio-records"] });
+    },
+  });
+  const delMut = useMutation({
+    mutationFn: deletePortfolioRecord,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portfolio-records"] }),
+  });
+
+  const recordCols: ColumnsType<PortfolioRecord> = [
+    { title: "名称", dataIndex: "name", ellipsis: true },
+    {
+      title: "夏普",
+      key: "sharpe",
+      align: "right",
+      render: (_, r) => <span className="num">{(r.metrics.sharpe ?? 0).toFixed(2)}</span>,
+    },
+    {
+      title: "年化",
+      key: "annual",
+      align: "right",
+      render: (_, r) => {
+        const v = r.metrics.annual_return ?? 0;
+        return <span className={`num ${v >= 0 ? "up" : "down"}`}>{(v * 100).toFixed(1)}%</span>;
+      },
+    },
+    {
+      title: "超额",
+      key: "excess",
+      align: "right",
+      render: (_, r) => {
+        const v = r.metrics.excess_return ?? 0;
+        return <span className={`num ${v >= 0 ? "up" : "down"}`}>{(v * 100).toFixed(1)}%</span>;
+      },
+    },
+    { title: "时间", dataIndex: "created_at", width: 96, render: (v: string) => v.slice(0, 10) },
+    {
+      title: "",
+      key: "del",
+      width: 42,
+      render: (_, r) => (
+        <Popconfirm title="删除该存档？" onConfirm={() => delMut.mutate(r.id)}>
+          <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      ),
+    },
+  ];
 
   const [oosRatio, setOosRatio] = useState(0.3);
   const wfMut = useMutation({
@@ -315,16 +382,45 @@ export default function FactorPortfolio() {
           size="small"
           title={`组合净值 vs 全市场等权（top ${res.top_n}，每 ${rebalanceDays} 日调仓）`}
           extra={
-            <Button
-              size="small"
-              icon={<DownloadOutlined />}
-              loading={exportMut.isPending}
-              onClick={() =>
-                exportMut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback })
-              }
-            >
-              导出报告
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="small"
+                icon={<SaveOutlined />}
+                loading={saveMut.isPending}
+                onClick={() =>
+                  res &&
+                  saveMut.mutate({
+                    name: `top${res.top_n}/${rebalanceDays}d 组合`,
+                    kind: "backtest",
+                    config: { weights, top_n: topN, rebalance_days: rebalanceDays, lookback },
+                    metrics: {
+                      total_return: res.total_return,
+                      annual_return: res.annual_return,
+                      sharpe: res.sharpe,
+                      max_drawdown: res.max_drawdown,
+                      win_rate: res.win_rate,
+                      excess_return: res.excess_return,
+                      rebalance_count: res.rebalance_count,
+                    },
+                  })
+                }
+              >
+                存档
+              </Button>
+              <Button size="small" icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>
+                历史
+              </Button>
+              <Button
+                size="small"
+                icon={<DownloadOutlined />}
+                loading={exportMut.isPending}
+                onClick={() =>
+                  exportMut.mutate({ weights, top_n: topN, rebalance_days: rebalanceDays, lookback })
+                }
+              >
+                导出报告
+              </Button>
+            </div>
           }
         >
           <ReactECharts option={chartOption} style={{ height: 300 }} notMerge />
@@ -374,6 +470,22 @@ export default function FactorPortfolio() {
           </Card>
         )
       )}
+
+      <Drawer
+        title="回测历史存档（配置 + 绩效快照，可对比多次结果）"
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        width={560}
+      >
+        <Table<PortfolioRecord>
+          size="small"
+          rowKey="id"
+          columns={recordCols}
+          dataSource={records ?? []}
+          pagination={false}
+          locale={{ emptyText: "暂无存档——单次回测后点「存档」保存" }}
+        />
+      </Drawer>
     </>
   );
 }

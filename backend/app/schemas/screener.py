@@ -1,9 +1,10 @@
 """选股器 DTO。"""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScreenRequest(BaseModel):
@@ -258,6 +259,26 @@ class WalkforwardSegment(BaseModel):
     max_drawdown: float = 0.0
     win_rate: float = 0.0
     excess_return: float = 0.0
+
+
+class PortfolioRecordCreate(BaseModel):
+    """保存组合回测结果请求。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    kind: str = Field(default="backtest", pattern="^(backtest|walkforward)$")
+    config: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class PortfolioRecordOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    kind: str
+    config: dict[str, Any]
+    metrics: dict[str, Any]
+    created_at: datetime
 
 
 class FactorWalkforwardResult(BaseModel):

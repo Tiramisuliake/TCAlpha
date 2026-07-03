@@ -8,6 +8,7 @@ import type {
   FactorWeights,
   LimitUpPremiumResult,
   PatternStatsResult,
+  PortfolioRecord,
   PortfolioSweepCell,
   ScreenFilters,
   ScreenResult,
@@ -64,6 +65,20 @@ export const runFactorWalkforward = (payload: {
   api
     .post<FactorWalkforwardResult>("/screener/factor-portfolio/walkforward", payload)
     .then((r) => r.data);
+
+export const savePortfolioRecord = (payload: {
+  name: string;
+  kind?: string;
+  config: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+}) =>
+  api.post<PortfolioRecord>("/screener/factor-portfolio/records", payload).then((r) => r.data);
+
+export const listPortfolioRecords = () =>
+  api.get<PortfolioRecord[]>("/screener/factor-portfolio/records").then((r) => r.data);
+
+export const deletePortfolioRecord = (id: number) =>
+  api.delete(`/screener/factor-portfolio/records/${id}`).then((r) => r.data);
 
 /** 导出组合回测自包含 HTML 报告（重跑回测 + 渲染，blob 触发浏览器保存）。 */
 export const downloadPortfolioReport = async (payload: {

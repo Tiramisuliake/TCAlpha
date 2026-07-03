@@ -4,6 +4,10 @@
 
 > 质量收口：v0.8.22→v0.8.38 连发 17 版后的全量类型检查与修复。mypy 新增代码全部清零（仅剩 backtest_engine 7 处历史豁免——annotated_types 协议类型限制，运行无误、可读性优先，维持上轮审查决定）；全量 273 passed / ruff / tsc / eslint 全绿。
 
+### Added — 首页仓位建议卡 + 路线图刷新
+- 前端 `pages/Dashboard`：运行概览区首位加「仓位建议」卡（综合择时评分 + 档位 Tag + 一句解读，点击跳 `/sentiment`；`data.read` + ready 条件渲染），概览区扩为 4 列——最有决策价值的一个数字进首页
+- `README.md` 路线图刷新：补 v0.8.2~0.8.38 三条主线（策略库与短线选股 / 多因子研究 / 择时与产出沉淀）；Phase 9 实盘标注明确暂缓；新增「待数据积累」项（情绪择时回测）
+
 ### Fixed — mypy 类型修复
 - `services/portfolio_records.py`：`delete_record` 由 `delete()` + `rowcount`（`Result` 类型不含该属性）改为「查再删」——对齐 watchlist 既有模式，类型干净且 404 语义更明确
 - `services/market_sentiment.py`：`_compose_timing` 构成项由 dict 混型累加改为 `(名称, 分数, 权重)` 元组列表计算、输出前再转 dict——消除 `object` 运算符错误，类型全程明确

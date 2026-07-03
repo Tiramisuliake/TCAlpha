@@ -7,12 +7,13 @@ import {
   DatabaseOutlined,
   DollarOutlined,
   ExperimentOutlined,
+  FireOutlined,
   LineChartOutlined,
   RobotOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { root } from "@/api/client";
-import { getDataHealth, getSymbols } from "@/api/market";
+import { getDataHealth, getSymbols, getTimingSignal } from "@/api/market";
 import { getAccount } from "@/api/sim";
 import { listAlerts } from "@/api/ai_alerts";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -75,11 +76,24 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   });
 
+  const { data: timing } = useQuery({
+    queryKey: ["dashboard-timing"],
+    queryFn: getTimingSignal,
+    enabled: canData,
+    refetchInterval: 60_000,
+  });
+
   const shortcuts = SHORTCUTS.filter((s) => !s.perm || has(s.perm));
   const showOverview = canData || canSim || canWatch;
 
   const pnl = account ? account.total_asset - account.init_capital : 0;
   const latestAlert = alerts?.[0];
+  const LEVEL_COLOR: Record<string, string> = {
+    重仓: "red",
+    半仓: "orange",
+    轻仓: "gold",
+    空仓观望: "green",
+  };
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-auto">
@@ -105,9 +119,31 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* 运行概览（按权限聚合数据健康 / 模拟账户 / AI 告警，点击跳转对应页） */}
+      {/* 运行概览（按权限聚合择时信号 / 数据健康 / 模拟账户 / AI 告警，点击跳转对应页） */}
       {showOverview && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {canData && timing?.ready && (
+            <Link to="/sentiment" className="block">
+              <Card hoverable size="small">
+                <Statistic
+                  title={
+                    <span>
+                      <FireOutlined /> 仓位建议
+                    </span>
+                  }
+                  value={timing.score}
+                  suffix="/ 100"
+                  formatter={(v) => (
+                    <span>
+                      {String(v)}{" "}
+                      <Tag color={LEVEL_COLOR[timing.level] ?? "default"}>{timing.level}</Tag>
+                    </span>
+                  )}
+                />
+                <div className="text-xs text-slate-400 mt-1 truncate">{timing.advice}</div>
+              </Card>
+            </Link>
+          )}
           {canData && (
             <Link to="/data" className="block">
               <Card hoverable size="small">

@@ -133,6 +133,30 @@ def test_factor_screen_price_filter(fake_arctic, _no_names):
     assert syms == {"sh600001"}
 
 
+def test_compute_factors_dirty_data_no_crash():
+    """close 含 NaN（错位源）+ volume 含 NaN（OBV polyfit 崩溃源）→ 正常返回不抛异常。"""
+    import numpy as np
+
+    from app.services.factors import _compute_factors
+
+    n = 75
+    closes = [10 + i * 0.05 for i in range(n)]
+    closes[10] = np.nan  # close 缺一行：valid 对齐后仍 ≥ _MIN_BARS
+    vols = [1e6] * n
+    vols[50] = np.nan    # volume 缺一行：fillna(0) 兜底
+    idx = pd.date_range("2024-01-01", periods=n, freq="B", tz="Asia/Shanghai")
+    df = pd.DataFrame(
+        {"open": closes, "high": closes, "low": closes, "close": closes,
+         "volume": vols, "amount": [c * 1e6 if c == c else np.nan for c in closes]},
+        index=idx,
+    )
+
+    f = _compute_factors(df)
+    assert f is not None
+    for v in f.values():
+        assert v == v and abs(v) != float("inf")  # 全部有限值，无 NaN/inf
+
+
 def test_factor_screen_empty_lib_not_ready(fake_arctic, _no_names):
     """空库 → ready False（提示先下载数据）。"""
     from app.services.factors import factor_screen

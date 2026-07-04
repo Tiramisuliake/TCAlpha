@@ -185,9 +185,12 @@ def snapshot_market_sentiment(self, force: bool = False) -> dict:
     res = snapshot_sentiment_sync()
     logger.info("snapshot_market_sentiment: {}", res)
 
-    # 顺带推送当日综合择时信号（仓位建议）
+    # 顺带推送当日综合择时信号（仓位建议）；推送失败不拖垮存档结果
     if res.get("ok"):
-        _push_timing_signal()
+        try:
+            _push_timing_signal()
+        except Exception as exc:
+            logger.warning("push timing signal failed: {}", exc)
     return {"status": "ok", **res}
 
 

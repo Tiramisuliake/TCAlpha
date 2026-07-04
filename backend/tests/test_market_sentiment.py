@@ -162,6 +162,19 @@ def test_parse_north_net_sums_north_channels():
     assert _parse_north_net(df) == 50.5
 
 
+def test_parse_north_net_summary_row_no_double_count():
+    """含「北向资金」汇总行 + 沪深明细行（东财常见结构）→ 只取汇总，不双计。"""
+    from app.services.market_sentiment import _parse_north_net
+
+    df = pd.DataFrame([
+        {"资金方向": "北向资金", "成交净买额": 50.5},
+        {"资金方向": "沪股通", "成交净买额": 30.5},
+        {"资金方向": "深股通", "成交净买额": 20.0},
+        {"资金方向": "南向资金", "成交净买额": -8.0},
+    ])
+    assert _parse_north_net(df) == 50.5  # 而非 101.0
+
+
 def test_parse_north_net_unit_yuan_to_yi():
     """单位为元时转亿元。"""
     from app.services.market_sentiment import _parse_north_net

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.40] — 2026-07-04
+
+> 逻辑深审修复：继 v0.8.39 类型收口后，对 v0.8.22 以来核心 service 做逻辑层审查（未来函数 / 边界 / 双计 / 异常传播），发现并修复 3 个实质问题——北向净流入可能翻倍、脏数据崩掉整条因子链、beat 推送失败拖垮存档。
+
+### Fixed — 代码审查（逻辑层）
+- `market_sentiment._parse_north_net`：**北向双计**——东财接口常同时返回「北向资金」汇总行 + 沪股通/深股通明细行，原 `contains("沪股通|深股通|北向")` 把汇总与明细一起求和 → 净流入翻倍。改为优先取汇总行、无汇总才沪+深求和
+- `factors._compute_factors`：**脏数据崩溃**——`c` 为 close dropna 后数组而 volume/amount 取自未过滤原始列：close 含 NaN 时长度错位（OBV 的 `sign(diff(c))*vol[1:]` 广播报错）、volume 含 NaN 时 OBV 带 NaN → `np.polyfit` 抛 LinAlgError；而调用侧 try 只包 `lib.read`，一只脏票即崩掉整个多因子选股 / 组合回测 / IC 检验。改为三列按 close 有效行对齐 + fillna(0)
+- `screen_tasks.snapshot_market_sentiment`：`_push_timing_signal` 裸调——推送环节（redis / 事件总线）抛错会把整个情绪存档 task 标为 FAILURE（尽管存档已成功）。加 try/except 隔离，失败仅记 warning
+- 回归测试：北向含汇总行不双计 / 脏数据（close+volume 各含 NaN）全因子有限值不崩（+2 用例，共 275 passed）
+
 ## [0.8.39] — 2026-07-03
 
 > 质量收口：v0.8.22→v0.8.38 连发 17 版后的全量类型检查与修复。mypy 新增代码全部清零（仅剩 backtest_engine 7 处历史豁免——annotated_types 协议类型限制，运行无误、可读性优先，维持上轮审查决定）；全量 273 passed / ruff / tsc / eslint 全绿。

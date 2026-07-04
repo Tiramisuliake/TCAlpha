@@ -191,8 +191,11 @@ def _parse_north_net(df: pd.DataFrame | None) -> float | None:
     )
     if not dir_col or not amt_col:
         return None
-    mask = df[dir_col].astype(str).str.contains("沪股通|深股通|北向", na=False)
-    sub = df[mask]
+    labels = df[dir_col].astype(str)
+    # 东财常同时给「北向资金」汇总行 + 沪股通/深股通明细行：优先只取汇总行，
+    # 否则汇总+明细一起 sum 会把净流入翻倍；无汇总行才用沪+深求和。
+    north_mask = labels.str.contains("北向", na=False)
+    sub = df[north_mask] if north_mask.any() else df[labels.str.contains("沪股通|深股通", na=False)]
     if sub.empty:
         return None
     net = float(pd.to_numeric(sub[amt_col], errors="coerce").sum())

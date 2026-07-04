@@ -72,10 +72,11 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
     """单只票的因子原始值；数据不足返回 None。"""
     if df is None or len(df) < _MIN_BARS or "close" not in df.columns:
         return None
-    close = pd.to_numeric(df["close"], errors="coerce").dropna()
-    if len(close) < _MIN_BARS:
+    close_ser = pd.to_numeric(df["close"], errors="coerce")
+    valid = close_ser.notna()
+    if int(valid.sum()) < _MIN_BARS:
         return None
-    c = close.to_numpy(dtype=float)
+    c = close_ser[valid].to_numpy(dtype=float)
 
     mom_20 = c[-1] / c[-21] - 1.0
     mom_60 = c[-1] / c[-61] - 1.0
@@ -89,13 +90,15 @@ def _compute_factors(df: pd.DataFrame) -> dict | None:
     x = np.arange(len(y), dtype=float)
     slope = float(np.polyfit(x, y, 1)[0]) * 252.0
 
-    # 量、额序列（与 close 同长，A 股日 K 无停牌缺口假设）
+    # 量、额序列：按 close 有效行对齐（否则 close 含 NaN 时与 c 长度错位，
+    # OBV 的 sign(diff(c)) * vol[1:] 会广播报错）；自身 NaN 填 0（缺量当 0 处理，
+    # 各因子内的 >0 guard 会自然跳过，且保证 polyfit 输入无 NaN 不抛 LinAlgError）
     vol_arr = (
-        pd.to_numeric(df["volume"], errors="coerce").to_numpy(dtype=float)
+        pd.to_numeric(df["volume"], errors="coerce")[valid].fillna(0.0).to_numpy(dtype=float)
         if "volume" in df.columns else np.zeros(len(c))
     )
     amt_arr = (
-        pd.to_numeric(df["amount"], errors="coerce").to_numpy(dtype=float)
+        pd.to_numeric(df["amount"], errors="coerce")[valid].fillna(0.0).to_numpy(dtype=float)
         if "amount" in df.columns else np.zeros(len(c))
     )
 
